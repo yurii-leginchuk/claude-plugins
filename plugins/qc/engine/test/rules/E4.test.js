@@ -1,7 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readdirSync } from 'node:fs'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import rule from '../../src/rules/static/E4-tel-format.js'
 import { runStaticRules, allRules } from '../../src/rules/index.js'
+
+const here = dirname(fileURLToPath(import.meta.url))
+const rulesDir = join(here, '../../src/rules/static')
 
 const pageWith = (raws) => ({
   url: 'https://ex.com/a',
@@ -15,18 +21,20 @@ test('accepts a clean E.164 number', () => {
   assert.deepEqual(rule.check(pageWith(['tel:+17189690845']), {}), [])
 })
 
-test('flags dashes, spaces and dots', () => {
-  const f = rule.check(pageWith(['tel:855-607-8758']), {})
+test('flags separators-only defect with existing country code at high confidence', () => {
+  const f = rule.check(pageWith(['tel:+1-855-607-8758']), {})
   assert.equal(f.length, 1)
   assert.equal(f[0].rule, 'E4')
   assert.equal(f[0].expected, 'tel:+18556078758')
   assert.equal(f[0].severity, 'major')
+  assert.equal(f[0].confidence, 'high')
 })
 
-test('flags a missing country code', () => {
+test('flags bare 10-digit number at heuristic confidence', () => {
   const f = rule.check(pageWith(['tel:7189690845']), {})
   assert.equal(f.length, 1)
-  assert.equal(f[0].expected, 'tel:+17189690845')
+  assert.equal(f[0].expected, 'tel:+<код страны><10 цифр>')
+  assert.equal(f[0].confidence, 'heuristic')
 })
 
 test('ignores non-tel links', () => {
@@ -37,7 +45,9 @@ test('ignores non-tel links', () => {
 })
 
 test('does not crash on an empty tel', () => {
-  assert.equal(rule.check(pageWith(['tel:']), {}).length, 1)
+  const f = rule.check(pageWith(['tel:']), {})
+  assert.equal(f.length, 1)
+  assert.equal(f[0].confidence, 'heuristic')
 })
 
 test('runStaticRules catches throwing rules and emits note-severity findings', async () => {
@@ -59,8 +69,21 @@ test('runStaticRules catches throwing rules and emits note-severity findings', a
   assert.match(findings[0].found, /rule crashed/)
 })
 
-test('production registry contains only expected rules', async () => {
+test('production registry has no test artifacts and valid rule contracts', async () => {
+  // Assert no test artifact files
+  const files = readdirSync(rulesDir).filter(f => f.endsWith('.js'))
+  const testArtifactPattern = /^TEST-|\.test\.js$|\.stub\.js$|\.skip\.js$/
+  const artifacts = files.filter(f => testArtifactPattern.test(f))
+  assert.equal(artifacts.length, 0, `Found test artifacts in production: ${artifacts.join(', ')}`)
+
+  // Assert every loaded rule has valid contract
   const rules = await allRules()
-  const ruleIds = rules.map(r => r.id).sort()
-  assert.deepEqual(ruleIds, ['E4'])
+  for (const r of rules) {
+    assert(typeof r.id === 'string' && r.id.length > 0, `Rule has invalid id: ${r.id}`)
+    assert(['critical', 'major', 'minor', 'note'].includes(r.severity),
+      `Rule ${r.id} has invalid severity: ${r.severity}`)
+    assert(typeof r.engine === 'string' && r.engine.length > 0,
+      `Rule ${r.id} has invalid engine: ${r.engine}`)
+    assert(typeof r.check === 'function', `Rule ${r.id} has invalid check: not a function`)
+  }
 })
