@@ -1,0 +1,5 @@
+node_modules/
+.qc-cache/
+*.log
+.DS_Store
+.idea/
