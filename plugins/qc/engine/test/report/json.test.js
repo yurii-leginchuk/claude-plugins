@@ -74,19 +74,54 @@ test('rollUp with mixed severity in same rule uses most severe but counts all', 
   assert.equal(group.example.severity, 'critical', 'example should be from most severe')
 })
 
-// Judgement call 3: Handle volatile values in found field
-test('diffRuns normalizes volatile patterns in found field', () => {
-  // Simulate messages with counts that change between runs
-  const prev = [f({ found: 'Missing 5 images', selector: '.img' })]
-  const cur = [f({ found: 'Missing 6 images', selector: '.img' })]
+// Judgement call 3: Rule-specific normalization for volatile found values
+// Only I1 and I6 have count normalization; other rules keep exact found value
 
-  // With normalization, numbers are replaced with 'N', so these are treated as same
+test('diffRuns: HTTP status changes (404 vs 500) remain different for E1', () => {
+  // E1 emits different HTTP codes for same URL - these should be treated as different findings
+  // because the status code IS the defect, not metadata about it
+  const prev = [f({ rule: 'E1', found: 'HTTP 404:', page: 'https://ex.com/a' })]
+  const cur = [f({ rule: 'E1', found: 'HTTP 500:', page: 'https://ex.com/a' })]
+
   const d = diffRuns(cur, prev)
+  assert.equal(d.fixed.length, 1, 'old HTTP status shows as fixed')
+  assert.equal(d.added.length, 1, 'new HTTP status shows as added')
+  assert.equal(d.remaining.length, 0, 'different status codes are different issues')
+})
 
-  // These should be treated as the same issue (remaining), not fixed+added
-  assert.equal(d.fixed.length, 0, 'volatile finding not treated as fixed')
-  assert.equal(d.added.length, 0, 'volatile finding not treated as added')
-  assert.equal(d.remaining.length, 1, 'volatile finding identified as same issue')
+test('diffRuns: H1 count changes normalize for I1', () => {
+  // I1 emits "H1 на странице: N" where N is discovered quantity
+  // Change from 2 to 3 H1s is the same issue type (too many H1s)
+  const prev = [f({ rule: 'I1', found: 'H1 на странице: 2', page: 'https://ex.com/a' })]
+  const cur = [f({ rule: 'I1', found: 'H1 на странице: 3', page: 'https://ex.com/a' })]
+
+  const d = diffRuns(cur, prev)
+  assert.equal(d.fixed.length, 0, 'H1 count change not treated as fixed (rule I1 normalizes)')
+  assert.equal(d.added.length, 0, 'H1 count change not treated as added')
+  assert.equal(d.remaining.length, 1, 'H1 count identified as same issue')
+})
+
+test('diffRuns: Title duplication count changes normalize for I6', () => {
+  // I6 emits "дубль title на N страницах" where N is discovered quantity
+  const prev = [f({ rule: 'I6', found: 'дубль title на 47 страницах', page: 'https://ex.com/a' })]
+  const cur = [f({ rule: 'I6', found: 'дубль title на 12 страницах', page: 'https://ex.com/a' })]
+
+  const d = diffRuns(cur, prev)
+  assert.equal(d.fixed.length, 0, 'title dup count change not treated as fixed (rule I6 normalizes)')
+  assert.equal(d.added.length, 0, 'title dup count change not treated as added')
+  assert.equal(d.remaining.length, 1, 'title dup count identified as same issue')
+})
+
+test('diffRuns: Phone number changes are different defects for E4', () => {
+  // E4 emits tel: links with the actual phone number - the number IS the defect
+  // Going from wrong number to different wrong number is two different bugs
+  const prev = [f({ rule: 'E4', found: 'tel:855-607-8758', page: 'https://ex.com/a' })]
+  const cur = [f({ rule: 'E4', found: 'tel:855-607-8759', page: 'https://ex.com/a' })]
+
+  const d = diffRuns(cur, prev)
+  assert.equal(d.fixed.length, 1, 'old phone number shows as fixed')
+  assert.equal(d.added.length, 1, 'new phone number shows as added')
+  assert.equal(d.remaining.length, 0, 'different phone numbers are different defects')
 })
 
 // Judgement call 4: diffRuns with empty current and non-empty previous
@@ -107,4 +142,59 @@ test('rollUp with empty findings returns empty array', () => {
 // Test that verdict with empty findings returns Pass
 test('verdict with empty findings returns Pass', () => {
   assert.equal(verdict([]), 'Pass')
+})
+
+// Defensive: diffRuns accounts for multiplicity (duplicate findings)
+test('diffRuns with identical duplicates in current and empty previous yields two added', () => {
+  const cur = [f({ found: 'dup' }), f({ found: 'dup' })]
+  const d = diffRuns(cur, null)
+  assert.equal(d.added.length, 2, 'both duplicates should be counted as added')
+  assert.equal(d.fixed.length, 0)
+  assert.equal(d.remaining.length, 0)
+})
+
+test('diffRuns from one to two identical findings yields one added', () => {
+  const prev = [f({ found: 'dup' })]
+  const cur = [f({ found: 'dup' }), f({ found: 'dup' })]
+  const d = diffRuns(cur, prev)
+  assert.equal(d.remaining.length, 1, 'first occurrence remains')
+  assert.equal(d.added.length, 1, 'second occurrence is new')
+  assert.equal(d.fixed.length, 0)
+})
+
+test('diffRuns from two to one identical findings yields one fixed', () => {
+  const prev = [f({ found: 'dup' }), f({ found: 'dup' })]
+  const cur = [f({ found: 'dup' })]
+  const d = diffRuns(cur, prev)
+  assert.equal(d.remaining.length, 1, 'one occurrence remains')
+  assert.equal(d.fixed.length, 1, 'one occurrence was fixed')
+  assert.equal(d.added.length, 0)
+})
+
+// Defensive: rollUp on non-iterable throws clear error
+test('rollUp on non-iterable throws TypeError', () => {
+  assert.throws(
+    () => rollUp(null),
+    TypeError,
+    'rollUp(null) should throw with clear message'
+  )
+  assert.throws(
+    () => rollUp(42),
+    TypeError,
+    'rollUp(42) should throw with clear message'
+  )
+})
+
+// Defensive: unknown severity sorts last
+test('rollUp with unknown severity sorts to end', () => {
+  const findings = [
+    f({ rule: 'E1', severity: 'critical' }),
+    f({ rule: 'E2', severity: 'unknown' }),  // unknown severity
+    f({ rule: 'E3', severity: 'minor' }),
+  ]
+  const r = rollUp(findings)
+  // Should sort: critical (0), minor (2), unknown (999)
+  assert.equal(r[0].severity, 'critical', 'critical should be first')
+  assert.equal(r[1].severity, 'minor', 'minor should be second')
+  assert.equal(r[2].severity, 'unknown', 'unknown should be last')
 })
