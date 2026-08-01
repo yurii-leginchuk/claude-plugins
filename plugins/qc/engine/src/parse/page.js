@@ -20,11 +20,15 @@ function protocolOf(raw) {
 function parseRobots(root) {
   const el = root.querySelector('meta[name="robots" i]')
   const raw = el ? (el.getAttribute('content') || '') : null
-  const v = (raw || '').toLowerCase()
+  // Split on commas into individual directive tokens rather than substring-matching the
+  // raw string: `content="none"` is the single-token shorthand for `noindex, nofollow`,
+  // and token matching avoids false positives from directives like `max-image-preview`.
+  const tokens = (raw || '').toLowerCase().split(',').map((t) => t.trim())
+  const none = tokens.includes('none')
   return {
     raw,
-    index: !v.includes('noindex'),
-    follow: !v.includes('nofollow'),
+    index: !none && !tokens.includes('noindex'),
+    follow: !none && !tokens.includes('nofollow'),
   }
 }
 
@@ -120,7 +124,7 @@ export function parsePage({ url, html, status = 200, headers = {} }) {
       src: normalizeUrl(img.getAttribute('src') || img.getAttribute('data-src') || '', url),
       alt: alt == null ? null : alt,
       hasAlt: alt != null,
-      decorative: alt === '' || img.getAttribute('role') === 'presentation',
+      decorative: alt === '' || ['presentation', 'none'].includes(img.getAttribute('role') || ''),
       selector: selectorOf(img),
     }
   })
