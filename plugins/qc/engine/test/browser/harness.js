@@ -1,11 +1,23 @@
 import { createServer } from 'node:http'
 import { readFileSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { join, dirname, extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser, preparePage } from '../../src/browser/launch.js'
 import { buildBundle } from '../../src/browser/bundle.js'
 
 const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
+
+// X2's real-lazy-image test needs an actual binary asset on the wire (a
+// data: URI never exercises the network-defer behaviour loading=lazy is
+// meant to trigger). Content-type is derived from the extension so the
+// browser doesn't have to guess.
+const CONTENT_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.png': 'image/png',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.js': 'application/javascript',
+}
 
 export async function serveFixtures() {
   const server = createServer((req, res) => {
@@ -17,13 +29,17 @@ export async function serveFixtures() {
     // deliberately reference URLs that don't exist on disk (missing.png,
     // definitely-missing-asset.png) to produce real 404s, so this path is
     // no longer a rare edge case -- it's load-bearing for those tests.
+    // readFileSync is called with no encoding (Buffer, not 'utf8') so binary
+    // fixtures like real-lazy.gif survive intact instead of being mangled by
+    // a forced UTF-8 decode.
     let body
     try {
-      body = readFileSync(join(fixturesDir, name), 'utf8')
+      body = readFileSync(join(fixturesDir, name))
     } catch {
       res.writeHead(404); res.end('not found'); return
     }
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    const type = CONTENT_TYPES[extname(name).toLowerCase()] || 'application/octet-stream'
+    res.writeHead(200, { 'content-type': type })
     res.end(body)
   })
   await new Promise(r => server.listen(0, r))

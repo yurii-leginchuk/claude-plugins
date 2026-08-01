@@ -3,10 +3,13 @@
 <body><main><h1>Images</h1>
 <img src="/missing.png" alt="broken">
 <div class="spacer"></div>
-<img id="lazy-ok" loading="lazy" alt="lazy"
-  src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
-<img id="lazy-spacer" loading="lazy" alt="permanent spacer"
+<img id="lazy-ok" loading="lazy" alt="lazy" src="/real-lazy.gif">
+<img id="lazy-spacer" alt="permanent spacer"
   src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
 <img id="lazy-unresolved" loading="lazy" alt="unresolved placeholder" data-src="/never-swapped.png"
+  src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+<img id="lazy-data-attr" loading="lazy" alt="unlisted swap attribute" data-lazy="/never-swapped-2.png"
+  src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+<img id="lazy-class" class="lazyload" alt="class-only signal"
   src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
 </main></body></html>
