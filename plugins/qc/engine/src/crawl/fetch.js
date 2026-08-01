@@ -16,6 +16,13 @@ const THROTTLE_CONCURRENCY = 2
 // an unbounded sleep between attempts.
 const RETRY_BACKOFF_CAP_MS = 5000
 
+// The engine's standard per-attempt network timeout. Exported so any other
+// module that makes its own bare `fetch()` call outside of fetchOne/fetchAll
+// (e.g. sheet.js downloading a binary workbook, which cannot go through
+// fetchOne because that reads bodies as text) can bind it under the same
+// politeness contract instead of inventing a second timeout value.
+export const DEFAULT_TIMEOUT_MS = 20000
+
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 const backoff = (attempt) => Math.min(400 * (attempt + 1), RETRY_BACKOFF_CAP_MS)
 const isThrottleStatus = (status) => status === 429 || status === 503
@@ -27,7 +34,7 @@ const isThrottleStatus = (status) => status === 429 || status === 503
 // 503 into a 200 before fetchAll ever sees the final result, and a
 // politeness signal that gets silently retried away is exactly the kind of
 // transient overload the back-off exists to catch.
-export async function fetchOne(url, { timeout = 20000, retries = 2, method = 'GET' } = {}) {
+export async function fetchOne(url, { timeout = DEFAULT_TIMEOUT_MS, retries = 2, method = 'GET' } = {}) {
   let lastError = null
   let throttled = false
   for (let attempt = 0; attempt <= retries; attempt++) {

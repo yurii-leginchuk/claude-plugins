@@ -323,3 +323,61 @@ test('loadStrategySheet surfaces a non-ok response as a clear error, without a s
 test('loadStrategySheet rejects a URL that is not a Google Sheets link', async () => {
   await assert.rejects(() => loadStrategySheet('https://example.com/not-a-sheet'), /Google Sheets/)
 })
+
+// --- loadStrategySheet: the download is bounded, never an unbounded hang --
+//
+// Every other network call in this engine runs through fetchOne's 20s
+// timeout. loadStrategySheet's single download bypasses fetchOne (on
+// purpose -- fetchOne decodes bodies as text, which would corrupt the
+// binary ZIP) but must still be bounded the same way, or an unattended QC
+// run across a portfolio of sites can hang forever on one stalled
+// connection to Google's export endpoint.
+//
+// The stub below deliberately ignores the AbortSignal it's given (as a
+// naive `fetch` implementation might) and never settles, so this test only
+// passes if loadStrategySheet enforces the bound itself rather than relying
+// entirely on the callee to honour the signal.
+test('loadStrategySheet is bounded by a timeout and never hangs on a stalled connection', async () => {
+  const realFetch = globalThis.fetch
+  let calls = 0
+  globalThis.fetch = () => {
+    calls++
+    return new Promise(() => {}) // never settles, ignores any signal passed in
+  }
+  const started = Date.now()
+  try {
+    await assert.rejects(
+      () => loadStrategySheet(SHEET, { timeout: 50 }),
+      /(таймаут|время ожидания|timed? ?out)/i
+    )
+    const elapsed = Date.now() - started
+    assert.ok(elapsed < 2000, `expected the call to reject quickly after the 50ms timeout, took ${elapsed}ms`)
+    assert.equal(calls, 1, `expected exactly one fetch call even on timeout, got ${calls}`)
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
+
+// The existing single-download guarantee must survive the timeout fix.
+test('loadStrategySheet still downloads exactly once when the timeout path is not hit', async () => {
+  const buf = await fixture()
+  const realFetch = globalThis.fetch
+  let calls = 0
+  globalThis.fetch = async (url) => {
+    calls++
+    return {
+      ok: true,
+      status: 200,
+      async arrayBuffer() {
+        return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
+      },
+    }
+  }
+  try {
+    const out = await loadStrategySheet(SHEET, { timeout: 5000 })
+    assert.equal(calls, 1, `expected exactly one fetch call, got ${calls}`)
+    assert.equal(out.sheet, 'Phase 3 Page Design List')
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})

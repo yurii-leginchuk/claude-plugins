@@ -1,5 +1,6 @@
 import { readXlsx } from './xlsx.js'
 import { normalizeUrl } from '../lib/url.js'
+import { DEFAULT_TIMEOUT_MS } from './fetch.js'
 
 // Column headers differ per client, so match on meaning rather than exact text.
 // Each pattern is checked against the *whole* trimmed header cell, so a
@@ -75,7 +76,7 @@ export function pickPageList(workbook) {
   return { sheet: best.sheet.name, header: best.header, columns: best.map, rows }
 }
 
-export async function loadStrategySheet(sheetUrl) {
+export async function loadStrategySheet(sheetUrl, { timeout = DEFAULT_TIMEOUT_MS } = {}) {
   const id = /\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/.exec(sheetUrl)?.[1]
   if (!id) throw new Error(`не похоже на ссылку Google Sheets: ${sheetUrl}`)
   const exportUrl = `https://docs.google.com/spreadsheets/d/${id}/export?format=xlsx`
@@ -84,7 +85,37 @@ export async function loadStrategySheet(sheetUrl) {
   // text, which would corrupt this binary ZIP -- so fetch the bytes directly
   // with global fetch and check status on that same response, instead of
   // probing status through one request and re-fetching bytes through another.
-  const res = await fetch(exportUrl)
+  //
+  // That bare fetch still needs the same bound every other network call in
+  // this engine gets from fetchOne: a timed-out or stalled connection to
+  // Google's export endpoint must not hang the whole QC run. An
+  // AbortController carries the timeout, same as fetchOne, and its abort
+  // event is also raced directly against the fetch call -- not just passed
+  // in as a signal -- so the bound holds even against a `fetch` that does
+  // not itself honour AbortSignal (e.g. an unattended run against an
+  // unusual host, or a test double). One bounded attempt, no retries: if it
+  // fails or times out, that surfaces as a clear error naming the sheet URL,
+  // never a hang and never a silently empty result.
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), timeout)
+  let res
+  try {
+    res = await Promise.race([
+      fetch(exportUrl, { signal: ac.signal }),
+      new Promise((_, reject) => {
+        ac.signal.addEventListener('abort', () =>
+          reject(new Error(`превышено время ожидания (${timeout} мс) при скачивании таблицы: ${sheetUrl}`)))
+      }),
+    ])
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      throw new Error(`превышено время ожидания (${timeout} мс) при скачивании таблицы: ${sheetUrl}`)
+    }
+    throw new Error(`не удалось скачать таблицу (${sheetUrl}): ${e.message}`)
+  } finally {
+    clearTimeout(timer)
+  }
+
   if (!res.ok) throw new Error(`таблица недоступна: HTTP ${res.status}`)
   const buf = Buffer.from(await res.arrayBuffer())
 
