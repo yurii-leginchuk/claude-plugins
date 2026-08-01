@@ -1,4 +1,6 @@
-import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync, statSync } from 'node:fs'
+import {
+  mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync, statSync, appendFileSync,
+} from 'node:fs'
 import { join, resolve, basename, normalize, relative } from 'node:path'
 import { homedir } from 'node:os'
 
@@ -265,6 +267,33 @@ export function clearAll() {
   }
 
   return hostsToDelete.length
+}
+
+// Browser-pass results (Task 7): one row per page, appended as the pass
+// progresses rather than written once at the end. That is what makes an
+// interrupted run leave a usable partial result -- a crash or a Ctrl-C after
+// page 200 of 348 still leaves 200 rows on disk, and loadBrowserResults()
+// (via runBrowserPass's `already` set) is what makes a rerun resume instead
+// of redoing them. A row is `{ url, widths, findings, error }`; run.js may
+// add extra fields (e.g. widthsFailed for a page that opened but measured
+// incompletely at one width) -- this store treats a row as an opaque object.
+export function appendBrowserResult(host, row) {
+  const dir = snapshotDir(host)
+  mkdirSync(dir, { recursive: true })
+  appendFileSync(join(dir, 'browser.jsonl'), JSON.stringify(row) + '\n')
+}
+
+export function loadBrowserResults(host) {
+  const p = join(snapshotDir(host), 'browser.jsonl')
+  if (!existsSync(p)) return []
+  return readFileSync(p, 'utf8').split('\n').filter(Boolean).map(l => {
+    try { return JSON.parse(l) } catch { return null }
+  }).filter(Boolean)
+}
+
+export function clearBrowserResults(host) {
+  const p = join(snapshotDir(host), 'browser.jsonl')
+  if (existsSync(p)) rmSync(p, { force: true })
 }
 
 export function saveRun(host, findings, reportHtml) {

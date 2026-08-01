@@ -1,6 +1,6 @@
 import { test, before, after, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs'
 import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -584,5 +584,53 @@ test('clearAll ignores junk subdirectories without meta.json', () => {
 
     // Verify root survives (has junk dir)
     assert(existsSync(testDir), 'cache root should survive')
+  })
+})
+
+// --- Browser-pass result rows (Task 7) --------------------------------------
+
+test('appendBrowserResult writes rows that loadBrowserResults reads back in order', () => {
+  withTempCache(() => {
+    store.appendBrowserResult('b.com', { url: 'https://b.com/1', widths: [1440], findings: [], error: null })
+    store.appendBrowserResult('b.com', { url: 'https://b.com/2', widths: [1440], findings: [{ rule: 'X1' }], error: null })
+    const rows = store.loadBrowserResults('b.com')
+    assert.equal(rows.length, 2)
+    assert.equal(rows[0].url, 'https://b.com/1')
+    assert.equal(rows[1].findings[0].rule, 'X1')
+  })
+})
+
+test('loadBrowserResults on a host with no browser pass yet returns an empty array', () => {
+  withTempCache(() => {
+    assert.deepEqual(store.loadBrowserResults('never-run.com'), [])
+  })
+})
+
+test('appendBrowserResult tolerates a corrupted trailing line instead of losing every row before it', () => {
+  withTempCache((testDir) => {
+    store.appendBrowserResult('c.com', { url: 'https://c.com/1', widths: [1440], findings: [], error: null })
+    const p = join(store.snapshotDir('c.com'), 'browser.jsonl')
+    // Simulate a crash mid-write on the second row: a line that isn't valid JSON.
+    writeFileSync(p, readFileSync(p, 'utf8') + 'not json\n')
+    const rows = store.loadBrowserResults('c.com')
+    assert.equal(rows.length, 1, 'the one well-formed row before the corruption is still readable')
+    assert.equal(rows[0].url, 'https://c.com/1')
+  })
+})
+
+test('clearBrowserResults removes only the browser.jsonl file for that host', () => {
+  withTempCache(() => {
+    store.appendBrowserResult('d.com', { url: 'https://d.com/1', widths: [1440], findings: [], error: null })
+    store.saveSnapshot('d.com', { meta: { host: 'd.com' }, pages: [{ url: 'https://d.com/1' }] })
+    store.clearBrowserResults('d.com')
+    assert.deepEqual(store.loadBrowserResults('d.com'), [])
+    // The static snapshot (a separate file) must survive clearing only the browser results.
+    assert.ok(store.loadSnapshot('d.com'), 'the static snapshot is untouched')
+  })
+})
+
+test('clearBrowserResults on a host with no browser results is a harmless no-op', () => {
+  withTempCache(() => {
+    assert.doesNotThrow(() => store.clearBrowserResults('never-touched.com'))
   })
 })
