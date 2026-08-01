@@ -1,0 +1,9 @@
+{
+  "name": "qc-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "qc": "./src/cli.js" },
+  "scripts": { "test": "node --test" },
+  "dependencies": { "node-html-parser": "^7.0.1" }
+}
