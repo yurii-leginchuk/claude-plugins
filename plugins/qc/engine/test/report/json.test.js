@@ -171,17 +171,35 @@ test('diffRuns from two to one identical findings yields one fixed', () => {
   assert.equal(d.added.length, 0)
 })
 
-// Defensive: rollUp on non-iterable throws clear error
-test('rollUp on non-iterable throws TypeError', () => {
+// Defensive: rollUp requires actual array, not just iterable
+test('rollUp requires an array and rejects non-arrays', () => {
+  // null, undefined, numbers
   assert.throws(
     () => rollUp(null),
     TypeError,
-    'rollUp(null) should throw with clear message'
+    'rollUp(null) should throw'
+  )
+  assert.throws(
+    () => rollUp(undefined),
+    TypeError,
+    'rollUp(undefined) should throw'
   )
   assert.throws(
     () => rollUp(42),
     TypeError,
-    'rollUp(42) should throw with clear message'
+    'rollUp(42) should throw'
+  )
+  // strings (iterable but not array)
+  assert.throws(
+    () => rollUp('nonsense'),
+    TypeError,
+    'rollUp("nonsense") should throw - strings are iterable but not arrays'
+  )
+  // objects (not iterable)
+  assert.throws(
+    () => rollUp({}),
+    TypeError,
+    'rollUp({}) should throw'
   )
 })
 
@@ -197,4 +215,35 @@ test('rollUp with unknown severity sorts to end', () => {
   assert.equal(r[0].severity, 'critical', 'critical should be first')
   assert.equal(r[1].severity, 'minor', 'minor should be second')
   assert.equal(r[2].severity, 'unknown', 'unknown should be last')
+})
+
+// Defensive: diffRuns requires current to be array, and previous to be null/undefined/array
+test('diffRuns requires current to be an array', () => {
+  // current must be array
+  assert.throws(
+    () => diffRuns('x', []),
+    TypeError,
+    'diffRuns("x", []) should throw - current must be array'
+  )
+  assert.throws(
+    () => diffRuns({}, []),
+    TypeError,
+    'diffRuns({}, []) should throw - current must be array'
+  )
+  // previous can be null/undefined/array, but not string/object
+  assert.throws(
+    () => diffRuns([], 'x'),
+    TypeError,
+    'diffRuns([], "x") should throw - previous cannot be string'
+  )
+  assert.throws(
+    () => diffRuns([], {}),
+    TypeError,
+    'diffRuns([], {}) should throw - previous cannot be object'
+  )
+  // But null and undefined are OK for previous
+  const d1 = diffRuns([f({})], null)
+  assert.equal(d1.added.length, 1, 'diffRuns with null previous should work')
+  const d2 = diffRuns([f({})], undefined)
+  assert.equal(d2.added.length, 1, 'diffRuns with undefined previous should work')
 })

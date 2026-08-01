@@ -36,9 +36,10 @@ function normalizeFound(found, rule) {
 const key = (f) => [f.rule, f.page, f.selector, normalizeFound(f.found, f.rule)].join('|')
 
 export function rollUp(findings) {
-  // Validate that findings is iterable
-  if (!findings || typeof findings[Symbol.iterator] !== 'function') {
-    throw new TypeError(`rollUp requires an iterable collection, got ${typeof findings}`)
+  // Validate that findings is an array (not just iterable, which includes strings)
+  if (!Array.isArray(findings)) {
+    const received = findings === null ? 'null' : findings === undefined ? 'undefined' : typeof findings
+    throw new TypeError(`rollUp requires an array, got ${received}`)
   }
 
   const groups = new Map()
@@ -77,6 +78,18 @@ export function verdict(findings) {
 }
 
 export function diffRuns(current, previous) {
+  // Validate current is an array
+  if (!Array.isArray(current)) {
+    const received = current === null ? 'null' : current === undefined ? 'undefined' : typeof current
+    throw new TypeError(`diffRuns requires current to be an array, got ${received}`)
+  }
+
+  // Validate previous is null/undefined or an array (null is allowed as "no previous run")
+  if (previous !== null && previous !== undefined && !Array.isArray(previous)) {
+    const received = typeof previous
+    throw new TypeError(`diffRuns requires previous to be null, undefined, or an array, got ${received}`)
+  }
+
   // Handle null/missing previous
   const prevList = previous || []
 
