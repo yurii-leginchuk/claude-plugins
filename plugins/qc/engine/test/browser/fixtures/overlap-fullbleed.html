@@ -1,0 +1,16 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Full-bleed decorative layer</title>
+<style>
+body{margin:0;position:relative}
+/* Ordinary Elementor-style output: a full-bleed decorative hero background
+   implemented as an absolutely-positioned div rather than a background-image
+   -- NOT a modal, drawer, or overlay. It legitimately covers most of the
+   viewport by design. */
+.hero-bg{position:absolute;top:0;left:0;width:100%;height:700px;background:#eef}
+/* A genuinely mispositioned panel that should sit elsewhere but overlaps the
+   decorative layer -- the real bug this fixture exists to exercise. */
+.stray-panel{position:absolute;top:100px;left:100px;width:300px;height:200px;background:#f00}
+</style></head>
+<body>
+<div class="hero-bg"></div>
+<div class="stray-panel">this panel is in the wrong place</div>
+</body></html>

@@ -78,6 +78,34 @@ test('B6 still catches a genuine fixed-vs-fixed collision (back-to-top landing i
   ))
 })
 
+// The realistic-chrome fixture must not just contain the one genuine
+// collision -- it must produce ONLY that one finding. Any other pairing
+// (header, dropdown menu, modal backdrop, modal dialog) would be noise.
+test('B6 produces exactly the one genuine finding on the realistic-chrome page, nothing else', async () => {
+  const f = await findingsFor('overlap-realistic.html', { only: ['B6'] })
+  assert.equal(f.length, 1)
+})
+
+// Review-round regression: the original 50%-viewport-area cut applied to
+// BOTH `absolute` and `fixed` candidates, which eliminates noise from real
+// full-page overlays (modals, drawers) but also silently drops ordinary
+// full-bleed decorative content -- e.g. a hero background implemented as a
+// `position:absolute` div covering most of the viewport, ordinary Elementor
+// output, not an overlay. Once that decorative layer is excluded from the
+// candidate set, there is nothing left to compare a genuinely mispositioned
+// panel against, and B6 goes silent on a real bug. The fix narrows the
+// area-based cut to `position:fixed` only -- real modals/drawers/backdrops
+// are virtually always `fixed` (frequently `inset:0`), while ordinary
+// full-bleed page content laid out with `position:absolute` is not, so this
+// keeps the noise cut without discarding legitimate candidates.
+test('B6 flags a mispositioned panel over a full-bleed ABSOLUTE decorative layer (the layer must stay a candidate)', async () => {
+  const f = await findingsFor('overlap-fullbleed.html', { only: ['B6'] })
+  assert.ok(f.some(x =>
+    (/hero-bg/.test(x.selector) && /stray-panel/.test(x.found)) ||
+    (/stray-panel/.test(x.selector) && /hero-bg/.test(x.found))
+  ))
+})
+
 // --- Judgement call 2: J3 and inherited/composited backgrounds -------------
 
 test('J3 walks up to a distant ancestor to find its background color', async () => {
@@ -101,6 +129,28 @@ test('J3 composites a semi-transparent background instead of treating it as opaq
   // page-level overlay a real audit hits far more often, see report.
   const f = await findingsFor('contrast.html', { only: ['J3'] })
   assert.ok(!f.some(x => /over-overlay/.test(x.selector)))
+})
+
+// Review-round addition: the alpha-compositing fix is load-bearing (it
+// changes whether a real finding fires, not just its exact ratio), but
+// nothing before this pinned a case where the naive "ignore alpha, use the
+// raw rgb" reading and the correct composited reading actually disagree on
+// PASS vs FAIL. #translucent-fail is #333 text inside
+// rgba(255,255,255,.3) on a #000 section: naively (alpha ignored, treated
+// as opaque white) that reads ~12.63:1 -- comfortably passing, would NOT be
+// flagged. Composited correctly (30% white over solid black, per source-over
+// alpha blending) it resolves to a mid-gray (~rgb(77,77,77)) behind #333
+// text, which reads ~1.48:1 -- well under the 4.5:1 minimum, and must be
+// flagged. This is the case that would fail silently (revert to the naive
+// reading) if the compositing path ever regresses.
+test('J3 flags dark text over a translucent white panel on a black section (naive reading would wrongly pass)', async () => {
+  const f = await findingsFor('contrast.html', { only: ['J3'] })
+  const finding = f.find(x => /translucent-fail/.test(x.selector))
+  assert.ok(finding, 'expected #translucent-fail to be flagged')
+  assert.equal(finding.confidence, 'heuristic')
+  const ratio = parseFloat(/^контраст ([\d.]+):1/.exec(finding.found)[1])
+  assert.ok(ratio < 4.5, `expected a low composited ratio, got ${ratio}`)
+  assert.ok(ratio > 1, `expected a plausible contrast ratio, got ${ratio}`)
 })
 
 // --- Judgement call 3: F1 and hover declared on a parent selector ----------

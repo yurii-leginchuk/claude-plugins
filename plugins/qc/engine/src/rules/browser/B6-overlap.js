@@ -26,12 +26,25 @@ export function check(ctx) {
   // nav drawer baked "open" in the DOM, as a real page can be crawled
   // mid-interaction) structurally overlaps EVERY other absolute/fixed
   // candidate at once, turning one legitimate, by-design element into one
-  // finding per other candidate on the page. Excluding any candidate whose
-  // own footprint covers more than half the viewport removes that source
-  // entirely while leaving small/medium chrome (headers, banners, buttons,
-  // menus, badges) fully compared against each other, including real
-  // fixed-vs-fixed collisions. See task-5-report.md for the exact measured
-  // counts.
+  // finding per other candidate on the page.
+  //
+  // Review-round correction: the first version of this fix excluded ANY
+  // candidate (absolute or fixed) whose own footprint covered more than
+  // half the viewport. That over-corrected -- it also excludes ordinary,
+  // legitimate `position:absolute` page content that happens to be large,
+  // most commonly a full-bleed decorative hero background implemented as an
+  // absolutely-positioned div rather than a background-image (routine
+  // Elementor/page-builder output). Once that layer is dropped from the
+  // candidate set, there is nothing left to compare a genuinely
+  // mispositioned panel sitting on top of it against, so B6 goes silent on
+  // a real bug -- a silent miss, which never surfaces and never gets
+  // calibrated away the way visible noise does. Real modals, drawers and
+  // full-screen overlays are virtually always `position:fixed` (frequently
+  // `inset:0`); ordinary large page content is essentially never `fixed`.
+  // The area-based exclusion is therefore scoped to `fixed` candidates only
+  // -- it removes the same measured noise source without discarding
+  // absolutely-positioned page content. See task-5-report.md for the exact
+  // measured counts, including the case this correction fixes.
   const candidates = []
   const all = document.querySelectorAll('body *')
   const viewportArea = window.innerWidth * window.innerHeight
@@ -42,7 +55,9 @@ export function check(ctx) {
     if (cs.position !== 'absolute' && cs.position !== 'fixed') continue
     const r = el.getBoundingClientRect()
     if (r.width < 8 || r.height < 8) continue
-    if (viewportArea > 0 && (r.width * r.height) > 0.5 * viewportArea) continue   // full-page overlay, not a layout bug
+    // full-page overlay (modal/drawer/backdrop), not a layout bug -- only
+    // applied to `fixed`, never `absolute`, see judgement-call comment above
+    if (cs.position === 'fixed' && viewportArea > 0 && (r.width * r.height) > 0.5 * viewportArea) continue
     candidates.push({ el: el, r: r })
     if (candidates.length > 150) break        // guard against pathological pages
   }
