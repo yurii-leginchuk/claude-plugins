@@ -33,3 +33,27 @@ test('a plain host with indexable pages reads as prod', () => {
 test('no pages yields unknown', () => {
   assert.equal(detectEnv({ host: 'cleaningny.com', pages: [] }).env, 'unknown')
 })
+
+test('one all-noindex page does not conclude dev (insufficient sample)', () => {
+  assert.equal(detectEnv({ host: 'ex.com', pages: pages(1, true) }).env, 'unknown')
+})
+
+test('four all-noindex pages do not conclude dev (below threshold)', () => {
+  assert.equal(detectEnv({ host: 'ex.com', pages: pages(4, true) }).env, 'unknown')
+})
+
+test('five all-noindex pages conclude dev (minimum threshold)', () => {
+  assert.equal(detectEnv({ host: 'ex.com', pages: pages(5, true) }).env, 'dev')
+})
+
+test('starshep-dev.example.com is recognised as dev', () => {
+  assert.equal(detectEnv({ host: 'starshep-dev.example.com', pages: pages(1) }).env, 'dev')
+})
+
+test('acme-staging.com is recognised as dev', () => {
+  assert.equal(detectEnv({ host: 'acme-staging.com', pages: pages(1) }).env, 'dev')
+})
+
+test('dev.ex.com is recognised as dev', () => {
+  assert.equal(detectEnv({ host: 'dev.ex.com', pages: pages(1) }).env, 'dev')
+})
