@@ -64,6 +64,13 @@ test('every browser rule check is self-contained and survives serialisation', as
 // are expected and irrelevant -- the assertion only ever looks at the
 // bundle's crash marker (see bundle.js's try/catch), which is unambiguous
 // regardless of how many legitimate findings also come back alongside it.
+//
+// Task 4 (F4/F5) extended this content: without a <style> element,
+// document.styleSheets is empty, so F5's sheet/cssRules/hover-match loops
+// would all run zero iterations -- the exact "loop body never runs" gap this
+// test was written to close (see above). The added <style> block declares a
+// real :hover rule matching the existing <a> so F5's full path executes. The
+// added <button> exercises F4's native-form-control exclusion branch.
 test('every browser rule check executes without crashing (module-scope contract)', async () => {
   const { launchBrowser } = await import('../../src/browser/launch.js')
   const { buildBundle } = await import('../../src/browser/bundle.js')
@@ -71,9 +78,12 @@ test('every browser rule check executes without crashing (module-scope contract)
   const { browser, newPage } = await launchBrowser()
   try {
     const page = await newPage()
-    await page.setContent(`<!doctype html><html lang="en"><body>
+    await page.setContent(`<!doctype html><html lang="en"><head>
+      <style>a:hover{color:red}</style>
+      </head><body>
       <div>content</div>
       <a href="/">link</a>
+      <button>plain button</button>
       <img alt="x" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
     </body></html>`)
     // X1 reads this array rather than iterating live DOM; seed one entry so
