@@ -1,0 +1,63 @@
+// plugins/qc/engine/test/rules/E3-E5-E6.test.js
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import E3 from '../../src/rules/static/E3-target-blank.js'
+import E5 from '../../src/rules/static/E5-duplicate-plus-one.js'
+import E6 from '../../src/rules/static/E6-mailto-and-bare-contacts.js'
+
+const link = (o) => ({
+  raw: '', href: null, protocol: null, rel: null, target: null,
+  text: '', internal: false, selector: 'a', ...o,
+})
+const page = (links, text = '') => ({ url: 'https://ex.com/a', links, text })
+
+test('E3 flags an internal link opening in a new tab', () => {
+  const f = E3.check(page([link({ raw: '/about', href: 'https://ex.com/about', internal: true, target: '_blank' })]), {})
+  assert.equal(f.length, 1)
+  assert.equal(f[0].rule, 'E3')
+})
+
+test('E3 flags an external link without target and without noopener', () => {
+  const f = E3.check(page([link({ raw: 'https://out.com/x', href: 'https://out.com/x', internal: false })]), {})
+  assert.equal(f.length, 1)
+})
+
+test('E3 accepts a correct external link', () => {
+  const ok = link({ raw: 'https://out.com/x', href: 'https://out.com/x', internal: false, target: '_blank', rel: 'noopener noreferrer' })
+  assert.deepEqual(E3.check(page([ok]), {}), [])
+})
+
+test('E3 accepts a plain internal link', () => {
+  const ok = link({ raw: '/about', href: 'https://ex.com/about', internal: true })
+  assert.deepEqual(E3.check(page([ok]), {}), [])
+})
+
+test('E5 flags a duplicated country code', () => {
+  const f = E5.check(page([link({ raw: 'tel:+1+17189690845', protocol: 'tel:' })]), {})
+  assert.equal(f.length, 1)
+  assert.equal(f[0].rule, 'E5')
+})
+
+test('E5 flags an 11-digit number that repeats the leading 1', () => {
+  const f = E5.check(page([link({ raw: 'tel:+117189690845', protocol: 'tel:' })]), {})
+  assert.equal(f.length, 1)
+})
+
+test('E5 accepts a normal number', () => {
+  assert.deepEqual(E5.check(page([link({ raw: 'tel:+17189690845', protocol: 'tel:' })]), {}), [])
+})
+
+test('E6 flags mailto with target=_blank', () => {
+  const f = E6.check(page([link({ raw: 'mailto:a@b.com', protocol: 'mailto:', target: '_blank' })]), {})
+  assert.ok(f.some(x => x.found.includes('_blank')))
+})
+
+test('E6 flags an email present in text but never linked', () => {
+  const f = E6.check(page([], 'Write to us at hello@opura.com any time'), {})
+  assert.ok(f.some(x => x.found === 'hello@opura.com'))
+})
+
+test('E6 does not flag an email that is linked', () => {
+  const p = page([link({ raw: 'mailto:hello@opura.com', protocol: 'mailto:' })], 'Write to hello@opura.com')
+  assert.deepEqual(E6.check(p, {}).filter(x => x.found === 'hello@opura.com'), [])
+})
