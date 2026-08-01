@@ -61,3 +61,23 @@ test('E6 does not flag an email that is linked', () => {
   const p = page([link({ raw: 'mailto:hello@opura.com', protocol: 'mailto:' })], 'Write to hello@opura.com')
   assert.deepEqual(E6.check(p, {}).filter(x => x.found === 'hello@opura.com'), [])
 })
+
+test('E6 does not flag file extensions matching email pattern (png)', () => {
+  const f = E6.check(page([], 'See logo@2x.png for details'), {})
+  assert.equal(f.filter(x => x.found === 'logo@2x.png').length, 0)
+})
+
+test('E6 does not flag file extensions matching email pattern (jpg)', () => {
+  const f = E6.check(page([], 'Check background@3x.jpg'), {})
+  assert.equal(f.filter(x => x.found === 'background@3x.jpg').length, 0)
+})
+
+test('E6 flags genuine email even when filenames appear on same page', () => {
+  const f = E6.check(page([], 'See logo@2x.png and email support@example.com'), {})
+  assert.ok(f.some(x => x.found === 'support@example.com'))
+})
+
+test('E6 flags addresses with domain keywords (not just extension match)', () => {
+  const f = E6.check(page([], 'Contact press@jsfoundation.org'), {})
+  assert.ok(f.some(x => x.found === 'press@jsfoundation.org'))
+})

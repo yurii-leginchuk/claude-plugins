@@ -1,6 +1,11 @@
 import { finding } from '../index.js'
 
 const EMAIL = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi
+const FILE_EXTENSIONS = new Set([
+  'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'avif', 'ico',
+  'css', 'js', 'mjs', 'json', 'xml', 'pdf', 'zip', 'gz',
+  'mp4', 'webm', 'mp3', 'woff', 'woff2', 'ttf', 'eot',
+])
 
 export default {
   id: 'E6',
@@ -25,9 +30,12 @@ export default {
 
     for (const m of new Set((page.text || '').match(EMAIL) || [])) {
       if (!linked.has(m.toLowerCase())) {
-        out.push(finding(this, page, {
-          selector: 'body', found: m, expected: 'обернуть в mailto:',
-        }))
+        const ext = m.split('.').pop().toLowerCase()
+        if (!FILE_EXTENSIONS.has(ext)) {
+          out.push(finding(this, page, {
+            selector: 'body', found: m, expected: 'обернуть в mailto:',
+          }))
+        }
       }
     }
     return out
