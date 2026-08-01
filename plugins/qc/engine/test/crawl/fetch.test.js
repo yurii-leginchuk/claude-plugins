@@ -150,3 +150,89 @@ test('fetchAll drops concurrency to 2 the moment a 503 is seen, and keeps it the
     throttleServer.close()
   }
 })
+
+// A 429/503 that fetchOne retries away internally must still trigger the
+// site-wide back-off -- fetchAll must not only look at the *final* status of
+// a FetchResult, because fetchOne's own retry logic can turn a 503 into a
+// 200 before fetchAll ever sees it. This is exactly the brief's own /flaky
+// fixture pattern, and it is the most realistic overload case there is:
+// transient pressure that clears on retry is precisely when politeness
+// matters.
+//
+// Server behaviour: /trigger answers 503 on its first hit and 200 on its
+// second (the retry); every other path answers 200 after a delay (D) chosen
+// to be comfortably longer than fetchOne's first-retry backoff (400ms), so
+// that all 5 other batch-1 siblings are *still* in flight when /trigger's
+// retry finally lands. That guarantees no capacity frees up, and therefore
+// no new request can be dispatched, until after /trigger's fetchOne call has
+// fully resolved -- so the arrival index of /trigger's second hit is a
+// reliable, non-racy split point between "before the decision" and "after
+// the decision, decision now in effect".
+test('fetchAll drops concurrency to 2 when a 429/503 is retried away, not just when it is the final status', async () => {
+  const CONCURRENCY = 6
+  const N = 10 // 6 in the initial wave (incl. /trigger), 4 dispatched afterward
+  const NORMAL_DELAY_MS = 550 // > fetchOne's first-retry backoff (400ms)
+  let inFlight = 0
+  let triggerHits = 0
+  const arrivals = [] // { path, peekInFlight }
+
+  const throttleServer = createServer((req, res) => {
+    inFlight++
+    arrivals.push({ path: req.url, peekInFlight: inFlight })
+
+    const finish = (status, delayMs) => {
+      const send = () => {
+        inFlight--
+        res.writeHead(status, { 'content-type': 'text/plain' })
+        res.end('x')
+      }
+      if (delayMs) setTimeout(send, delayMs)
+      else send()
+    }
+
+    if (req.url === '/trigger') {
+      triggerHits++
+      finish(triggerHits === 1 ? 503 : 200, 0) // 503 first, 200 on retry, both instant
+    } else {
+      finish(200, NORMAL_DELAY_MS)
+    }
+  })
+  await new Promise(r => throttleServer.listen(0, r))
+  const tbase = `http://127.0.0.1:${throttleServer.address().port}`
+
+  try {
+    const paths = ['/trigger', ...Array.from({ length: N - 1 }, (_, i) => `/n${i}`)]
+    const urls = paths.map(p => `${tbase}${p}`)
+
+    const results = await fetchAll(urls, { concurrency: CONCURRENCY, retries: 1, timeout: 5000 })
+
+    // Sanity: fetchAll must still resolve every url. /trigger's retry
+    // succeeded, so its final status is 200 -- the whole point is that this
+    // must not hide the throttle signal from fetchAll.
+    assert.equal(results.size, N)
+    assert.equal(results.get(`${tbase}/trigger`).status, 200)
+    for (const p of urls.slice(1)) assert.equal(results.get(p).status, 200)
+
+    // /trigger's SECOND arrival (the retry) is the reliable split point: no
+    // new request can have been dispatched between /trigger's two hits,
+    // because the other 5 batch-1 requests (550ms delay) are still holding
+    // their slots the whole time /trigger is retrying (503 + 400ms sleep +
+    // retry, all well under 550ms).
+    const triggerArrivalIndices = arrivals
+      .map((a, i) => (a.path === '/trigger' ? i : -1))
+      .filter(i => i !== -1)
+    assert.equal(triggerArrivalIndices.length, 2, 'expected exactly one retry to /trigger')
+
+    const splitIndex = triggerArrivalIndices[1]
+    const beforeDecision = arrivals.slice(0, splitIndex + 1)
+    const afterDecision = arrivals.slice(splitIndex + 1)
+
+    assert.equal(beforeDecision.length, CONCURRENCY + 1, 'expected no dispatch during the retry wait')
+    assert.ok(afterDecision.length > 0, 'expected further requests dispatched after the retry resolved')
+
+    const peakAfter = Math.max(...afterDecision.map(a => a.peekInFlight))
+    assert.ok(peakAfter <= 2, `expected concurrency capped at 2 after the retried-away 503 (saw ${peakAfter})`)
+  } finally {
+    throttleServer.close()
+  }
+})

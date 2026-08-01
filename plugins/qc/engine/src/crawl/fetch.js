@@ -12,11 +12,24 @@ const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 '
            '(KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 qc-engine'
 
 const THROTTLE_CONCURRENCY = 2
+// Ceiling on the retry backoff so a caller raising `retries` cannot produce
+// an unbounded sleep between attempts.
+const RETRY_BACKOFF_CAP_MS = 5000
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
+const backoff = (attempt) => Math.min(400 * (attempt + 1), RETRY_BACKOFF_CAP_MS)
+const isThrottleStatus = (status) => status === 429 || status === 503
 
+// FetchResult additionally carries `throttled: boolean` -- true if *any*
+// attempt (not just the final one) observed a 429/503, even if a later
+// retry succeeded. fetchAll keys the site-wide back-off on this field
+// rather than on the final status: fetchOne's own retry logic can turn a
+// 503 into a 200 before fetchAll ever sees the final result, and a
+// politeness signal that gets silently retried away is exactly the kind of
+// transient overload the back-off exists to catch.
 export async function fetchOne(url, { timeout = 20000, retries = 2, method = 'GET' } = {}) {
   let lastError = null
+  let throttled = false
   for (let attempt = 0; attempt <= retries; attempt++) {
     const ac = new AbortController()
     const timer = setTimeout(() => ac.abort(), timeout)
@@ -25,9 +38,12 @@ export async function fetchOne(url, { timeout = 20000, retries = 2, method = 'GE
         method, redirect: 'follow', signal: ac.signal,
         headers: { 'user-agent': UA, accept: 'text/html,*/*' },
       })
+      if (isThrottleStatus(res.status)) throttled = true
       const retryable = res.status >= 500 || res.status === 429
       if (retryable && attempt < retries) {
-        await sleep(400 * (attempt + 1))
+        // Drain the body before retrying so the stream isn't left half-read.
+        if (res.body) { try { await res.body.cancel() } catch { /* ignore */ } }
+        await sleep(backoff(attempt))
         continue
       }
       const headers = Object.fromEntries(res.headers.entries())
@@ -35,10 +51,11 @@ export async function fetchOne(url, { timeout = 20000, retries = 2, method = 'GE
       return {
         url, finalUrl: res.url || url, status: res.status, ok: res.ok,
         headers, body, error: null, redirects: (res.url && res.url !== url) ? 1 : 0,
+        throttled,
       }
     } catch (e) {
       lastError = e
-      if (attempt < retries) await sleep(400 * (attempt + 1))
+      if (attempt < retries) await sleep(backoff(attempt))
     } finally {
       clearTimeout(timer)
     }
@@ -46,6 +63,7 @@ export async function fetchOne(url, { timeout = 20000, retries = 2, method = 'GE
   return {
     url, finalUrl: url, status: 0, ok: false, headers: {}, body: '',
     error: lastError ? lastError.message : 'unknown error', redirects: 0,
+    throttled,
   }
 }
 
@@ -89,9 +107,12 @@ export async function fetchAll(urls, opts = {}) {
         inFlight++
         fetchOne(url, opts).then((res) => {
           // Back off site-wide the moment the server complains about load.
+          // Keyed on `throttled`, not `res.status`: fetchOne may have
+          // retried a 429/503 away into a final 200, and that must still
+          // count -- a signal that clears on retry is still a signal.
           // Never raise the limit back up, and never exceed the configured
           // concurrency even if it was already below the throttle floor.
-          if (res.status === 429 || res.status === 503) {
+          if (res.throttled) {
             limit = Math.min(limit, THROTTLE_CONCURRENCY)
           }
           out.set(url, res)
