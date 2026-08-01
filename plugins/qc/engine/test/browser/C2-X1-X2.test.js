@@ -151,3 +151,19 @@ test('X2 flags a data: placeholder identified only by a lazy-load class', async 
   assert.ok(f.some(x => /lazy-class/.test(x.selector)),
     'a class="lazyload" data: image with no other signal must still be recognised as suspect')
 })
+
+// Second follow-up fix (post-re-review): moving the swap-attribute check
+// from an enumerated list to a src/srcset-suffix pattern silently dropped
+// data-original -- the jQuery Lazy Load plugin's convention, common on
+// older WordPress sites, whose name doesn't end in "src" or "srcset". That
+// was a real regression, not a trade-off: the old enumerated list caught
+// it, the new pattern alone does not. #lazy-original below carries ONLY
+// data-original -- no lazy class, no loading attribute -- so it can only be
+// caught by the explicit KNOWN_SWAP_ATTR_NAMES allow-list kept beside the
+// pattern, not by widening the pattern itself (which would start matching
+// unrelated data-* attributes like data-testid).
+test('X2 flags a data: placeholder using the data-original convention alone', async () => {
+  const f = await findingsFor('broken-images.html', { width: 1440, only: ['X2'] })
+  assert.ok(f.some(x => /lazy-original/.test(x.selector)),
+    'data-original is the jQuery Lazy Load convention and must be recognised even with no other signal')
+})
