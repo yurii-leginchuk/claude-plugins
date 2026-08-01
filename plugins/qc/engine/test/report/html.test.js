@@ -271,3 +271,82 @@ test('env "unknown" renders sensibly', () => {
   assert.match(out, /не удалось определить/)
   assert.doesNotMatch(out, /undefined/)
 })
+
+// ---------------------------------------------------------------------------
+// Follow-up from review: malformed `findings` must fail loud, not render a
+// false "Pass". Coercing bad input to [] would turn a caller bug or a
+// corrupted findings.json into a confident, professional "clean site" report
+// — indistinguishable from a genuine result. renderReport now throws a
+// TypeError before producing any HTML, matching the fail-fast contract
+// rollUp/diffRuns already enforce in json.js. No output is ever returned in
+// these cases, so a rendered "Pass" verdict is categorically impossible —
+// asserted below as well, for belt-and-suspenders coverage.
+// ---------------------------------------------------------------------------
+
+function baseReportArgs(findings) {
+  return {
+    host: 'ex.com', env: 'prod', envReason: '', pages: 1, findings,
+    diff: { fixed: [], remaining: [], added: [] }, snapshotAgeDays: 1, source: 'sitemap',
+  }
+}
+
+test('findings undefined throws instead of silently rendering a false Pass', () => {
+  assert.throws(() => renderReport(baseReportArgs(undefined)), TypeError)
+})
+
+test('findings null throws instead of silently rendering a false Pass', () => {
+  assert.throws(() => renderReport(baseReportArgs(null)), TypeError)
+})
+
+test('findings as a string throws instead of silently rendering a false Pass', () => {
+  assert.throws(() => renderReport(baseReportArgs('not an array')), TypeError)
+})
+
+test('findings as a plain object throws instead of silently rendering a false Pass', () => {
+  assert.throws(() => renderReport(baseReportArgs({ rule: 'E4' })), TypeError)
+})
+
+test('none of the malformed-findings cases ever produce the word Pass as rendered output', () => {
+  for (const bad of [undefined, null, 'not an array', {}, 42]) {
+    let out
+    try {
+      out = renderReport(baseReportArgs(bad))
+    } catch {
+      out = undefined // expected: renderReport throws and returns nothing
+    }
+    assert.equal(out, undefined, `renderReport(findings=${String(bad)}) should not return HTML`)
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Follow-up from review: the brief's own verdict test only proves the word
+// "Fail" appears somewhere (satisfied trivially by the always-present CSS
+// class ".v-Fail{"). Close the gap for Fail and "Needs fixes" the same way
+// the Pass case was already scoped — match the rendered verdict element.
+// ---------------------------------------------------------------------------
+
+test('renders a precisely-scoped Fail verdict, not just the CSS class name', () => {
+  const out = renderReport({
+    host: 'ex.com', env: 'prod', envReason: '', pages: 1,
+    findings: [{ rule: 'I1', title: 'Количество H1', severity: 'critical', engine: 'static',
+      confidence: 'high', page: 'https://ex.com/a', selector: 'body', found: 'f', expected: 'e',
+      breakpoint: null }],
+    diff: { fixed: [], remaining: [], added: [] }, snapshotAgeDays: 1, source: 'sitemap',
+  })
+  assert.match(out, /class="verdict v-Fail">Fail<\/span>/)
+  assert.doesNotMatch(out, /class="verdict v-Pass">Pass<\/span>/)
+  assert.doesNotMatch(out, /class="verdict v-Needs">Needs fixes<\/span>/)
+})
+
+test('renders a precisely-scoped Needs fixes verdict, not just the CSS class name', () => {
+  const out = renderReport({
+    host: 'ex.com', env: 'prod', envReason: '', pages: 1,
+    findings: [{ rule: 'E4', title: 'Формат tel:', severity: 'major', engine: 'static',
+      confidence: 'high', page: 'https://ex.com/a', selector: 'a.phone', found: 'f', expected: 'e',
+      breakpoint: null }],
+    diff: { fixed: [], remaining: [], added: [] }, snapshotAgeDays: 1, source: 'sitemap',
+  })
+  assert.match(out, /class="verdict v-Needs">Needs fixes<\/span>/)
+  assert.doesNotMatch(out, /class="verdict v-Fail">Fail<\/span>/)
+  assert.doesNotMatch(out, /class="verdict v-Pass">Pass<\/span>/)
+})

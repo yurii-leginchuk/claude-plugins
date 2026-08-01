@@ -75,7 +75,18 @@ function renderGroup(g) {
 }
 
 export function renderReport({ host, env, envReason, pages, findings, diff, snapshotAgeDays, source }) {
-  const list = Array.isArray(findings) ? findings : []
+  // Fail fast on malformed findings, matching the array contract rollUp/diffRuns
+  // already enforce (src/report/json.js). Coercing bad input to [] here would
+  // turn a caller bug or corrupted findings.json into a confident, professional
+  // "Pass" report — the worst possible failure mode for a QC tool, because it
+  // is indistinguishable from a genuinely clean site. A thrown TypeError is
+  // impossible to miss; a false all-clear is not. No HTML is produced below
+  // this check when findings is unusable.
+  if (!Array.isArray(findings)) {
+    const received = findings === null ? 'null' : findings === undefined ? 'undefined' : typeof findings
+    throw new TypeError(`renderReport requires findings to be an array, got ${received}`)
+  }
+  const list = findings
   const solid = list.filter(f => f.confidence !== 'heuristic')
   const groups = rollUp(solid)
   const heur = rollUp(list.filter(f => f.confidence === 'heuristic'))
