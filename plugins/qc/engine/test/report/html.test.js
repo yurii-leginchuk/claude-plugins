@@ -165,10 +165,6 @@ test('truncates a rule group page list at 200 and says so visibly', () => {
       rule: 'E4', title: 'Формат tel:', severity: 'major', engine: 'static', confidence: 'high',
       page: `https://ex.com/page-${i}`, selector: 'a.phone', found: 'tel:855-607-8758',
       expected: 'tel:+18556078758', breakpoint: null,
-      // A "call us" link is real header/footer content, present on every
-      // page -- region-tagged (Task 6) so all 250 occurrences collapse into
-      // one identity/page-list, which is what this test is exercising.
-      region: 'header',
     })
   }
   const out = renderReport({
@@ -427,12 +423,10 @@ test('two different found values under one rule+severity both reach the HTML', (
 
 test('every distinct defect gets its own page list, not one merged list', () => {
   const findings = [
-    // region-tagged (Task 6): alpha is a proved-shared nav link, which is
-    // what makes pages 1 and 2 collapse into the same distinct defect below.
     ...['https://ex.com/1', 'https://ex.com/2'].map(page => ({
       rule: 'E3', title: 'target=_blank', severity: 'major', engine: 'static', confidence: 'high',
       page, selector: 'a.alpha', found: 'внутренняя ссылка с target=_blank: /alpha',
-      expected: 'без target', breakpoint: null, region: 'nav',
+      expected: 'без target', breakpoint: null,
     })),
     { rule: 'E3', title: 'target=_blank', severity: 'major', engine: 'static', confidence: 'high',
       page: 'https://ex.com/3', selector: 'a.beta', found: 'внутренняя ссылка с target=_blank: /beta',
@@ -488,14 +482,12 @@ test('a group holding more distinct defects than the cap truncates visibly', () 
 
 function repeatedDefectReport(extra = {}) {
   // One template-level defect repeated on 6 pages plus two one-off defects:
-  // 3 distinct defects, 8 occurrences. The repeated one is region-tagged
-  // (Task 6) as the real footer link it represents -- that proved sharing
-  // is what collapses it to one defect, not the coincidence of matching text.
+  // 3 distinct defects, 8 occurrences.
   const findings = [
     ...Array.from({ length: 6 }, (_, i) => ({
       rule: 'E3', title: 'target=_blank', severity: 'major', engine: 'static', confidence: 'high',
       page: `https://ex.com/p${i}`, selector: 'a.footer', found: 'внутренняя ссылка с target=_blank: /contact',
-      expected: 'без target', breakpoint: null, region: 'footer',
+      expected: 'без target', breakpoint: null,
     })),
     { rule: 'E3', title: 'target=_blank', severity: 'major', engine: 'static', confidence: 'high',
       page: 'https://ex.com/p0', selector: 'a.hero', found: 'внутренняя ссылка с target=_blank: /about',

@@ -66,10 +66,55 @@ test('two findings in the same region on different pages share an identity', () 
   assert.equal(defectIdentity(a), defectIdentity(b))
 })
 
-test('two findings with no region on different pages do not share an identity', () => {
+// The brief's own literal text for this test asserted `notEqual` here. That
+// was wrong, and shipping it was this task's most consequential mistake:
+// the pre-existing defectIdentity key never had `page` in it at all (a
+// footer link repeated across 31 pages was already one defect before
+// regions existed), and region was only ever meant to be an extra label/
+// discriminator, not a replacement for page. Re-running the cached
+// cleaningny.com audit after building region into the key as a page
+// replacement showed the damage directly: distinct.major went from 15 to
+// 54 and distinct.minor from 8 to 122, nearly back to the raw occurrence
+// count -- undoing the entire point of `distinct`. Corrected to `equal`
+// here; see the pinned tests directly below for the full property.
+test('two findings with no region on different pages share an identity (page was never part of the key)', () => {
   const a = { rule: 'C2', page: 'https://ex.com/a', selector: 'div.x', found: 'x' }
   const b = { rule: 'C2', page: 'https://ex.com/b', selector: 'div.x', found: 'x' }
-  assert.notEqual(defectIdentity(a), defectIdentity(b))
+  assert.equal(defectIdentity(a), defectIdentity(b))
+})
+
+// --- Pinned property: region only ever splits an identity, never merges one -
+//
+// defectIdentity is `rule + selector + normalizeFound(found)`, with `region`
+// appended only when present. So: (a) two findings that differ only by page
+// and carry no region must share an identity -- this was already true
+// before regions existed and must stay true; (b) the same two findings,
+// tagged with two different regions, must NOT share an identity -- region
+// can discriminate further but can never fold two things together that a
+// bare (rule, selector, found) triple didn't already fold together on its
+// own. Both directions are pinned explicitly so a future change to this key
+// cannot silently regress either one.
+test('pinned: two findings identical but for page, with no region, share an identity', () => {
+  const a = { rule: 'C2', page: 'https://ex.com/a', selector: 'div.x', found: 'x' }
+  const b = { rule: 'C2', page: 'https://ex.com/b', selector: 'div.x', found: 'x' }
+  assert.equal(
+    defectIdentity(a), defectIdentity(b),
+    'page was never part of the key; two pages sharing rule+selector+found are one defect'
+  )
+})
+
+test('pinned: the same two findings, given different regions, do not share an identity', () => {
+  const a = { rule: 'C2', page: 'https://ex.com/a', selector: 'div.x', found: 'x', region: 'header' }
+  const b = { rule: 'C2', page: 'https://ex.com/b', selector: 'div.x', found: 'x', region: 'footer' }
+  assert.notEqual(
+    defectIdentity(a), defectIdentity(b),
+    'region can only split an identity further, never merge two'
+  )
+})
+
+test('pinned: defectIdentity with no region is byte-identical to the pre-region key (rule|selector|found)', () => {
+  const finding = { rule: 'C2', page: 'https://ex.com/a', selector: 'div.x', found: 'x' }
+  assert.equal(defectIdentity(finding), 'C2|div.x|x')
 })
 
 // --- Judgement call 1: naming when a page carries several location classes -
