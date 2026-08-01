@@ -11,9 +11,56 @@ export async function launchBrowser({ headed = false } = {}) {
   return { browser, newPage }
 }
 
+// Judgement call (X1): real sites load third-party scripts (analytics, chat
+// widgets, ad blockers) whose console errors are not the client's defect.
+// We do NOT drop them -- a swallowed finding is exactly the silent-failure
+// mode the QC engine must avoid. Instead every collected line is tagged
+// 'same-origin: ' or 'third-party: ' by comparing the offending resource's
+// host against the page's own host; X1 (running in-page, with no access to
+// this Node-side comparison) reads the tag back out and downgrades
+// third-party noise to 'minor' while still reporting it in full.
+function hostOf(candidate) {
+  try {
+    return new URL(candidate).host
+  } catch {
+    return null
+  }
+}
+
 // Bring the page to a state where measuring is meaningful and repeatable.
 export async function preparePage(page, { width, url, timeout = PAGE_TIMEOUT_MS }) {
   await page.setViewportSize({ width, height: 900 })
+
+  const pageHost = hostOf(url)
+  const originTag = (candidate) => {
+    const h = hostOf(candidate)
+    return h && pageHost && h !== pageHost ? 'third-party' : 'same-origin'
+  }
+  const push = (text) => {
+    page.evaluate((t) => window.__qcConsole && window.__qcConsole.push(t), text).catch(() => {})
+  }
+
+  // X1 needs errors that happen during load, so the sink must exist first.
+  await page.addInitScript(() => { window.__qcConsole = [] })
+  page.on('console', (msg) => {
+    if (msg.type() !== 'error') return
+    const loc = msg.location() && msg.location().url
+    push(`${originTag(loc)}: console: ${msg.text()}`)
+  })
+  page.on('pageerror', (err) => {
+    // Error objects don't carry a URL directly; the offending script's URL
+    // is the first http(s) reference in the stack trace.
+    const m = /https?:\/\/[^\s)]+/.exec(String(err.stack || ''))
+    push(`${originTag(m && m[0])}: error: ${err.message}`)
+  })
+  page.on('requestfailed', (req) => {
+    push(`${originTag(req.url())}: failed: ${req.url()} — ${req.failure() && req.failure().errorText}`)
+  })
+  page.on('response', (res) => {
+    if (res.status() < 400) return
+    push(`${originTag(res.url())}: failed: HTTP ${res.status()} ${res.url()}`)
+  })
+
   await page.goto(url, { waitUntil: 'load', timeout })
   try {
     await page.waitForLoadState('networkidle', { timeout: 8000 })
