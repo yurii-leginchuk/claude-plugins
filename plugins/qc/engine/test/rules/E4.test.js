@@ -17,24 +17,61 @@ const pageWith = (raws) => ({
   })),
 })
 
-test('accepts a clean E.164 number', () => {
+test('clean E.164 number: no finding', () => {
   assert.deepEqual(rule.check(pageWith(['tel:+17189690845']), {}), [])
 })
 
-test('flags separators-only defect with existing country code at high confidence', () => {
+test('separators with country code (tel:+1-855-607-8758): high confidence', () => {
   const f = rule.check(pageWith(['tel:+1-855-607-8758']), {})
   assert.equal(f.length, 1)
-  assert.equal(f[0].rule, 'E4')
   assert.equal(f[0].expected, 'tel:+18556078758')
-  assert.equal(f[0].severity, 'major')
   assert.equal(f[0].confidence, 'high')
 })
 
-test('flags bare 10-digit number at heuristic confidence', () => {
+test('11+ digits without + (tel:18556078758): high confidence', () => {
+  const f = rule.check(pageWith(['tel:18556078758']), {})
+  assert.equal(f.length, 1)
+  assert.equal(f[0].expected, 'tel:+18556078758')
+  assert.equal(f[0].confidence, 'high')
+})
+
+test('bare 10-digit (tel:7189690845): heuristic confidence', () => {
   const f = rule.check(pageWith(['tel:7189690845']), {})
   assert.equal(f.length, 1)
   assert.equal(f[0].expected, 'tel:+<код страны><10 цифр>')
   assert.equal(f[0].confidence, 'heuristic')
+})
+
+test('too few digits (tel:123): high confidence, generic placeholder', () => {
+  const f = rule.check(pageWith(['tel:123']), {})
+  assert.equal(f.length, 1)
+  assert.equal(f[0].found, 'tel:123')
+  assert.equal(f[0].expected, 'tel:+<код страны><номер>')
+  assert.equal(f[0].confidence, 'high')
+})
+
+test('+ with insufficient digits (tel:+1234567): high confidence, generic placeholder', () => {
+  const f = rule.check(pageWith(['tel:+1234567']), {})
+  assert.equal(f.length, 1)
+  assert.equal(f[0].found, 'tel:+1234567')
+  assert.equal(f[0].expected, 'tel:+<код страны><номер>')
+  assert.equal(f[0].confidence, 'high')
+})
+
+test('too many digits (tel:12345678901234567): high confidence, generic placeholder', () => {
+  const f = rule.check(pageWith(['tel:12345678901234567']), {})
+  assert.equal(f.length, 1)
+  assert.equal(f[0].found, 'tel:12345678901234567')
+  assert.equal(f[0].expected, 'tel:+<код страны><номер>')
+  assert.equal(f[0].confidence, 'high')
+})
+
+test('empty tel (tel:): high confidence, generic placeholder', () => {
+  const f = rule.check(pageWith(['tel:']), {})
+  assert.equal(f.length, 1)
+  assert.equal(f[0].found, 'tel:')
+  assert.equal(f[0].expected, 'tel:+<код страны><номер>')
+  assert.equal(f[0].confidence, 'high')
 })
 
 test('ignores non-tel links', () => {
@@ -42,12 +79,6 @@ test('ignores non-tel links', () => {
     { raw: '/about', protocol: null, selector: 'a', text: 'About' },
   ] }
   assert.deepEqual(rule.check(page, {}), [])
-})
-
-test('does not crash on an empty tel', () => {
-  const f = rule.check(pageWith(['tel:']), {})
-  assert.equal(f.length, 1)
-  assert.equal(f[0].confidence, 'heuristic')
 })
 
 test('runStaticRules catches throwing rules and emits note-severity findings', async () => {

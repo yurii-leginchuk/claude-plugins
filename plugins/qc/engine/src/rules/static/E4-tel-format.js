@@ -13,45 +13,44 @@ export default {
     for (const link of page.links || []) {
       if (link.protocol !== 'tel:') continue
       const raw = link.raw || ''
+
+      // Only early exit: if the value is already clean
       if (CLEAN.test(raw)) continue
 
+      // Otherwise, ALWAYS emit a finding
       const digits = digitsOnly(raw)
-      if (!digits) {
-        out.push(finding(this, page, {
-          selector: link.selector,
-          found: raw,
-          expected: 'tel:+<код страны><цифры>',
-          confidence: 'heuristic',
-        }))
-        continue
+
+      // Determine expected value and confidence based on what we can infer
+      let expected, confidence
+
+      // Country code is present if:
+      // - has + and 8-15 digits (valid E.164 range), OR
+      // - has 11-15 digits without + (country code likely present)
+      const hasPlus = raw.includes('+')
+      const inE164Range = digits.length >= 8 && digits.length <= 15
+      const hasCountryCode = (hasPlus && inE164Range) || (digits.length >= 11 && digits.length <= 15)
+
+      if (hasCountryCode) {
+        // Country code is present: just strip separators
+        expected = `tel:+${digits}`
+        confidence = 'high'
+      } else if (digits.length === 10 && !hasPlus) {
+        // Exactly 10 digits, no country code: must infer it
+        expected = 'tel:+<код страны><10 цифр>'
+        confidence = 'heuristic'
+      } else {
+        // Too few, too many, empty, or + with wrong digit count: defect is certain
+        // but we cannot propose a specific number
+        expected = 'tel:+<код страны><номер>'
+        confidence = 'high'
       }
 
-      // If raw already contains a country code (starts with +), it has 11+ digits
-      const hasCountryCode = raw.includes('+') && digits.length >= 11
-      if (hasCountryCode) {
-        // Only formatting defect: strip separators, confidence is high
-        out.push(finding(this, page, {
-          selector: link.selector,
-          found: raw,
-          expected: `tel:+${digits}`,
-        }))
-      } else if (digits.length === 10) {
-        // Bare 10-digit number: must infer country code, confidence is heuristic
-        out.push(finding(this, page, {
-          selector: link.selector,
-          found: raw,
-          expected: 'tel:+<код страны><10 цифр>',
-          confidence: 'heuristic',
-        }))
-      } else if (digits.length >= 8 && digits.length <= 15 && !raw.includes('+')) {
-        // Other lengths without country code: formatting and possibly country issue
-        out.push(finding(this, page, {
-          selector: link.selector,
-          found: raw,
-          expected: 'tel:+<код страны><цифры>',
-          confidence: 'heuristic',
-        }))
-      }
+      out.push(finding(this, page, {
+        selector: link.selector,
+        found: raw,
+        expected,
+        confidence,
+      }))
     }
     return out
   },
