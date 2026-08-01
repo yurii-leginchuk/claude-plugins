@@ -11,15 +11,27 @@ const link = (o) => ({
 })
 const page = (links, text = '') => ({ url: 'https://ex.com/a', links, text })
 
-test('E3 flags an internal link opening in a new tab', () => {
+test('E3 flags an internal link opening in a new tab at major/high -- the agency house rule, a real defect', () => {
   const f = E3.check(page([link({ raw: '/about', href: 'https://ex.com/about', internal: true, target: '_blank' })]), {})
   assert.equal(f.length, 1)
   assert.equal(f[0].rule, 'E3')
+  assert.equal(f[0].severity, 'major')
+  assert.equal(f[0].confidence, 'high')
 })
 
-test('E3 flags an external link without target and without noopener', () => {
+test('E3 flags an external link without target=_blank at minor/heuristic -- new-tab-or-not is a style preference', () => {
   const f = E3.check(page([link({ raw: 'https://out.com/x', href: 'https://out.com/x', internal: false })]), {})
   assert.equal(f.length, 1)
+  assert.equal(f[0].severity, 'minor')
+  assert.equal(f[0].confidence, 'heuristic')
+})
+
+test('E3 flags an external target=_blank link missing rel=noopener at minor/high -- hygiene, not a live vuln since browsers imply noopener', () => {
+  const f = E3.check(page([link({ raw: 'https://out.com/x', href: 'https://out.com/x', internal: false, target: '_blank' })]), {})
+  assert.equal(f.length, 1)
+  assert.equal(f[0].severity, 'minor')
+  assert.equal(f[0].confidence, 'high')
+  assert.match(f[0].found, /без rel=noopener/)
 })
 
 test('E3 accepts a correct external link', () => {

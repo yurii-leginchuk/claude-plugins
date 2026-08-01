@@ -74,7 +74,18 @@ test('E1 flags a genuine external 404 at major severity, not critical', () => {
   const f = E1.check(p, site)
   assert.equal(f.length, 1)
   assert.equal(f[0].severity, 'major')
+  assert.equal(f[0].confidence, 'high')
   assert.match(f[0].found, /404/)
+})
+
+test('E1 flags a genuine external 410 at major/high -- Gone is as genuine as 404, not bot protection', () => {
+  const p = page({ links: [{ raw: 'https://other.com/retired', href: 'https://other.com/retired', internal: false, selector: 'a' }] })
+  const site = { linkStatus: new Map([['https://other.com/retired', { status: 410, ok: false }]]) }
+  const f = E1.check(p, site)
+  assert.equal(f.length, 1)
+  assert.equal(f[0].severity, 'major')
+  assert.equal(f[0].confidence, 'high')
+  assert.match(f[0].found, /410/)
 })
 
 test('E1 stays silent on an external timeout/DNS failure (status 0) -- not our bug to report', () => {
@@ -89,7 +100,37 @@ test('E1 flags an external 500 at major severity -- it survived fetchOne\'s retr
   const f = E1.check(p, site)
   assert.equal(f.length, 1)
   assert.equal(f[0].severity, 'major')
+  assert.equal(f[0].confidence, 'high')
   assert.match(f[0].found, /500/)
+})
+
+// --- Judgement call 5: bot-protection statuses (400/401/403/405/429) on an
+// external host are reported as a heuristic needing manual confirmation,
+// not as confirmed breakage. Facebook and similar third parties routinely
+// reject a headless/non-browser fetch with one of these codes while the
+// link works fine for a real visitor.
+
+for (const status of [400, 401, 403, 405, 429]) {
+  test(`E1 downgrades an external ${status} to note/heuristic -- likely bot protection, not a dead link`, () => {
+    const p = page({ links: [{ raw: 'https://social.example/profile', href: 'https://social.example/profile', internal: false, selector: 'a.social' }] })
+    const site = { linkStatus: new Map([['https://social.example/profile', { status, ok: false }]]) }
+    const f = E1.check(p, site)
+    assert.equal(f.length, 1)
+    assert.equal(f[0].severity, 'note')
+    assert.equal(f[0].confidence, 'heuristic')
+    assert.match(f[0].found, new RegExp(String(status)))
+    assert.match(f[0].found, /ручная проверка|вручную/, 'wording should signal this needs manual confirmation, not read as a confirmed defect')
+  })
+}
+
+test('E1 still flags an internal 400/403/429 at critical -- bot-protection downgrade only applies to external hosts', () => {
+  for (const status of [400, 403, 429]) {
+    const p = page({ links: [{ raw: '/blocked', href: 'https://ex.com/blocked', internal: true, selector: 'a' }] })
+    const site = { linkStatus: new Map([['https://ex.com/blocked', { status, ok: false }]]) }
+    const f = E1.check(p, site)
+    assert.equal(f.length, 1)
+    assert.equal(f[0].severity, 'critical')
+  }
 })
 
 test('E1 still stays silent on an external status 0 -- ambiguous between "their site is down" and "our checker got blocked"', () => {
