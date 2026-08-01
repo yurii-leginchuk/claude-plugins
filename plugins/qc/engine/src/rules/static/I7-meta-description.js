@@ -2,12 +2,12 @@ import { finding } from '../index.js'
 
 export default {
   id: 'I7',
-  title: 'Meta description',
+  title: 'Meta description страницы',
   severity: 'minor',
   engine: 'static',
   check(page, site) {
-    // Treat whitespace-only as empty
-    const description = page.metaDescription?.trim() ? page.metaDescription : null
+    // Normalize: trim and use trimmed value for all operations
+    const description = (page.metaDescription || '').trim()
 
     if (!description) {
       return [finding(this, page, {

@@ -7,8 +7,8 @@ export default {
   engine: 'static',
   check(page, site) {
     const out = []
-    // Treat whitespace-only as empty
-    const title = page.title?.trim() ? page.title : null
+    // Normalize: trim and use trimmed value for all operations
+    const title = (page.title || '').trim()
 
     if (!title) {
       out.push(finding(this, page, { selector: 'title', found: 'title пустой', expected: 'уникальный title' }))

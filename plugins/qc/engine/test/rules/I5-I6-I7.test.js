@@ -68,11 +68,12 @@ test('I7 flags a duplicate description', () => {
   assert.equal(I7.check(pages[0], site).length, 1)
 })
 
-test('I5 flags canonical differing only by trailing slash', () => {
+test('I5 flags canonical differing only by trailing slash with explicit message', () => {
   const f = I5.check(mk({ url: 'https://ex.com/about', canonical: 'https://ex.com/about/' }), {})
   assert.equal(f.length, 1)
   assert.equal(f[0].expected, 'https://ex.com/about')
-  assert.equal(f[0].found, 'https://ex.com/about/')
+  assert.match(f[0].found, /canonical с лишним слешем/)
+  assert.match(f[0].found, /https:\/\/ex\.com\/about\//)
 })
 
 test('I5 tolerates a missing site index', () => {
@@ -89,4 +90,25 @@ test('I7 treats whitespace-only description as empty', () => {
 
 test('I7 tolerates a missing site index', () => {
   assert.deepEqual(I7.check(mk({}), {}), [])
+})
+
+test('I6 detects duplicates when one has padded whitespace', () => {
+  const pages = [
+    mk({ url: 'https://ex.com/a', title: 'Same Title' }),
+    mk({ url: 'https://ex.com/b', title: '  Same Title  ' })
+  ]
+  const site = { index: buildIndex(pages) }
+  const f = I6.check(pages[1], site)
+  assert.equal(f.length, 1)
+  assert.match(f[0].found, /дубль/)
+})
+
+test('I7 detects duplicates when one has padded whitespace', () => {
+  const pages = [
+    mk({ url: 'https://ex.com/a', metaDescription: 'Same Desc' }),
+    mk({ url: 'https://ex.com/b', metaDescription: '  Same Desc  ' })
+  ]
+  const site = { index: buildIndex(pages) }
+  const f = I7.check(pages[1], site)
+  assert.equal(f.length, 1)
 })

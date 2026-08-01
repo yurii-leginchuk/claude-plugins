@@ -2,7 +2,7 @@ import { finding } from '../index.js'
 
 export default {
   id: 'I5',
-  title: 'Canonical',
+  title: 'Canonical страницы',
   severity: 'critical',
   engine: 'static',
   check(page, _site) {
@@ -18,11 +18,12 @@ export default {
       const canonicalWithoutSlash = withoutTrailingSlash(page.canonical)
 
       if (urlWithoutSlash === canonicalWithoutSlash) {
-        // They differ only by trailing slash - still a finding but make it visible
+        // They differ only by trailing slash - make it explicit
+        const slashMsg = page.canonical.endsWith('/') ? 'canonical с лишним слешем' : 'canonical без слеша'
         return [finding(this, page, {
           selector: 'link[rel=canonical]',
-          found: `${page.canonical}`,
-          expected: `${page.url}`,
+          found: `${slashMsg}: ${page.canonical}`,
+          expected: page.url,
         })]
       }
 
