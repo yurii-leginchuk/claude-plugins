@@ -291,14 +291,21 @@ test('diffRuns requires current to be an array', () => {
 // an order of magnitude; `distinct` is meant to say "8 things to fix," not
 // "56 findings."
 
+// Task 6 (region proof): collapsing the same rule+selector+found across
+// pages is no longer automatic just because the text happens to match --
+// it requires the finding to carry a `region` proved shared by
+// proveRegions() (see src/browser/regions.js). This fixture's icon is a
+// real footer social link, so it is tagged `region: 'footer'` here exactly
+// as the browser run loop would tag it via regionOf() -- that is what makes
+// it one defect across 5 pages, not the coincidence of matching text.
 test('countDistinct collapses a defect repeated verbatim across many pages into one, while raw counts stay at the full occurrence total', () => {
   const template = Array.from({ length: 5 }, (_, i) => f({
     rule: 'E3', severity: 'major', selector: 'a.elementor-icon.elementor-social-icon',
     found: 'внешняя ссылка без rel=noopener: https://www.facebook.com/people/Opura',
-    page: `https://cleaningny.com/p${i}/`,
+    page: `https://cleaningny.com/p${i}/`, region: 'footer',
   }))
   assert.equal(template.length, 5, 'sanity: 5 raw occurrences, one per page')
-  assert.equal(countDistinct(template).major, 1, 'same rule+selector+found across 5 pages is one distinct defect')
+  assert.equal(countDistinct(template).major, 1, 'same rule+region+selector+found across 5 pages is one distinct defect')
 })
 
 test('countDistinct keeps two genuinely different defects behind the same selector distinct, because found differs', () => {
@@ -311,9 +318,11 @@ test('countDistinct keeps two genuinely different defects behind the same select
 
 test('countDistinct vs counts on a fixture with one repeated template defect and one genuinely-repeated-but-distinct defect', () => {
   // One template-level defect (same footer link) repeated across 4 pages.
+  // Tagged `region: 'footer'` -- per Task 6, this is what makes it collapse
+  // to one defect, not the mere coincidence of matching selector/found text.
   const templateRepeated = Array.from({ length: 4 }, (_, i) => f({
     rule: 'E3', severity: 'major', selector: 'a.social', found: 'facebook link missing noopener',
-    page: `https://ex.com/p${i}`,
+    page: `https://ex.com/p${i}`, region: 'footer',
   }))
   // Two genuinely different defects that happen to share a selector (two
   // different wrong phone numbers behind the same "call us" link markup).
@@ -353,8 +362,10 @@ test('countDistinct always returns all four severity keys, even for an empty fin
 
 test('rollUp splits a group into one entry per defectIdentity, keeping each found/expected/selector', () => {
   const findings = [
-    f({ rule: 'E3', selector: 'a.one', found: 'ссылка A', expected: 'без target', page: 'https://ex.com/1' }),
-    f({ rule: 'E3', selector: 'a.one', found: 'ссылка A', expected: 'без target', page: 'https://ex.com/2' }),
+    // 'a.one' is region-tagged (Task 6): a proved-shared region is what
+    // collapses it across pages 1 and 2 into a single identity below.
+    f({ rule: 'E3', selector: 'a.one', found: 'ссылка A', expected: 'без target', page: 'https://ex.com/1', region: 'header' }),
+    f({ rule: 'E3', selector: 'a.one', found: 'ссылка A', expected: 'без target', page: 'https://ex.com/2', region: 'header' }),
     f({ rule: 'E3', selector: 'a.two', found: 'ссылка B', expected: 'без target', page: 'https://ex.com/1' }),
   ]
   const [g] = rollUp(findings)
@@ -379,11 +390,35 @@ test('rollUp identity count matches countDistinct for the same findings', () => 
   assert.equal(identityTotal, countDistinct(findings).critical)
 })
 
-test('rollUp normalizes fluctuating counts inside a group the same way countDistinct does', () => {
+// Task 6 changed this expectation from 1 to 2. Before region proof existed,
+// defectIdentity ignored `page` entirely, so I1's digit normalization
+// ("H1 на странице: N") alone made this collapse across any two pages that
+// both had the wrong H1 count -- including two pages that are not part of
+// the same template region and coincidentally both have a bad H1 count for
+// unrelated reasons. I1 fires on `body`, not on an Elementor container, so
+// it can never carry a proved region (regionOf has nothing to look up) --
+// per Task 6's model, a defect that cannot be tied to a shared region stays
+// page-scoped. Two different pages are now correctly two distinct defects;
+// the digit normalization still collapses fluctuating counts *within* the
+// same page (see the I1 diffRuns test above, which is unaffected: it uses a
+// single page throughout).
+test('rollUp does not normalize away distinct pages: fluctuating H1 counts on different pages remain two identities', () => {
   const findings = [
     f({ rule: 'I1', severity: 'critical', selector: 'body', found: 'H1 на странице: 2', page: 'https://ex.com/1' }),
     f({ rule: 'I1', severity: 'critical', selector: 'body', found: 'H1 на странице: 3', page: 'https://ex.com/2' }),
   ]
   const [g] = rollUp(findings)
-  assert.equal(g.identities.length, 1, 'I1 counts fluctuate; the defect is the same one')
+  assert.equal(g.identities.length, 2, 'no proved region ties these two pages together; they stay distinct')
+})
+
+test('rollUp still normalizes fluctuating counts for the same page (region-independent)', () => {
+  // Same page, count reported twice (e.g. two different crawl passes) --
+  // normalization collapses these regardless of region, because `page` is
+  // identical either way.
+  const findings = [
+    f({ rule: 'I1', severity: 'critical', selector: 'body', found: 'H1 на странице: 2', page: 'https://ex.com/1' }),
+    f({ rule: 'I1', severity: 'critical', selector: 'body', found: 'H1 на странице: 3', page: 'https://ex.com/1' }),
+  ]
+  const [g] = rollUp(findings)
+  assert.equal(g.identities.length, 1, 'same page: normalized counts still collapse to one identity')
 })

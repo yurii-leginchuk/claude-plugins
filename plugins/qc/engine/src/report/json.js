@@ -44,16 +44,27 @@ function normalizeFound(found, rule) {
   return found.replace(pattern, 'N')
 }
 
-// The core identity of a *defect*, independent of which page it happens to
-// show up on: the same rule flagging the same selector with the same
-// (normalized) `found` text is one underlying problem, whether it appears
-// once or on every page of the site (e.g. a footer link repeated across 31
-// pages is one defect, not 31). `countDistinct()` in cli.js keys off exactly
-// this function, and `key()` below builds on it (adding page) for diffRuns'
-// per-page-occurrence tracking -- so "how many distinct defects" and "what
-// changed since last run" can never define sameness differently by accident.
+// The core identity of a *defect*. The same rule flagging the same selector
+// with the same (normalized) `found` text is one underlying problem *only*
+// when it happens inside a region proved shared across pages (see
+// src/browser/regions.js) -- a footer link repeated across 31 pages is one
+// defect, not 31, because the footer container is proved to be the same
+// container on every page. Outside a proved region, `page` stays part of
+// the identity: two pages that happen to share a selector and found text by
+// coincidence are two different defects in two different pieces of content,
+// not one. `f.region` is expected to be a name (e.g. 'footer'), attached by
+// the browser run loop via `regionOf()` before a finding is recorded --
+// never assumed from the selector or rule alone.
+//
+// `countDistinct()` in cli.js keys off exactly this function, and `key()`
+// below builds on it (adding page unconditionally, even for regioned
+// findings) for diffRuns' per-page-occurrence tracking -- so "how many
+// distinct defects" and "what changed since last run" can never define
+// sameness differently by accident, and a defect fixed on one page but
+// still present on another still shows as one fixed and one remaining.
 export function defectIdentity(f) {
-  return [f.rule, f.selector, normalizeFound(f.found, f.rule)].join('|')
+  const where = f.region ? 'region:' + f.region : f.page
+  return [f.rule, where, f.selector, normalizeFound(f.found, f.rule)].join('|')
 }
 
 const key = (f) => `${defectIdentity(f)}|${f.page}`
@@ -142,10 +153,10 @@ export function verdict(findings) {
 // in order not to overstate the remaining work by an order of magnitude
 // when one template-level bug is repeated across every page.
 //
-// Keyed on defectIdentity() (rule + selector + normalized found, no page),
-// the same identity diffRuns' own key() builds on -- so "how many distinct
-// defects" and "what changed since last run" can never disagree about what
-// counts as "the same defect". Only non-heuristic findings are counted,
+// Keyed on defectIdentity() (rule + region-or-page + selector + normalized
+// found), the same identity diffRuns' own key() builds on -- so "how many
+// distinct defects" and "what changed since last run" can never disagree
+// about what counts as "the same defect". Only non-heuristic findings are counted,
 // mirroring `counts` so the two blocks describe the same population and
 // remain directly comparable (raw vs. distinct of the same solid findings).
 export function countDistinct(findings) {
