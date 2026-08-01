@@ -4,6 +4,6 @@
   "private": true,
   "type": "module",
   "bin": { "qc": "./src/cli.js" },
-  "scripts": { "test": "node --test test/**/*.test.js" },
+  "scripts": { "test": "node --test" },
   "dependencies": { "node-html-parser": "^7.0.1" }
 }

@@ -76,7 +76,14 @@ export function pickPageList(workbook) {
   return { sheet: best.sheet.name, header: best.header, columns: best.map, rows }
 }
 
-export async function loadStrategySheet(sheetUrl, { timeout = DEFAULT_TIMEOUT_MS } = {}) {
+// `fetchImpl` mirrors the injection point discover.js's discoverPages already
+// takes: tests (and any future caller) can stand in a local server instead
+// of hitting the real docs.google.com export endpoint. It defaults to the
+// global `fetch`, so normal callers are unaffected. The timeout/AbortController
+// race below is unchanged either way -- fetchImpl is only substituted for
+// *which* function performs the network call, never for whether the call is
+// bounded by `timeout`.
+export async function loadStrategySheet(sheetUrl, { timeout = DEFAULT_TIMEOUT_MS, fetchImpl = fetch } = {}) {
   const id = /\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/.exec(sheetUrl)?.[1]
   if (!id) throw new Error(`не похоже на ссылку Google Sheets: ${sheetUrl}`)
   const exportUrl = `https://docs.google.com/spreadsheets/d/${id}/export?format=xlsx`
@@ -101,7 +108,7 @@ export async function loadStrategySheet(sheetUrl, { timeout = DEFAULT_TIMEOUT_MS
   let res
   try {
     res = await Promise.race([
-      fetch(exportUrl, { signal: ac.signal }),
+      fetchImpl(exportUrl, { signal: ac.signal }),
       new Promise((_, reject) => {
         ac.signal.addEventListener('abort', () =>
           reject(new Error(`превышено время ожидания (${timeout} мс) при скачивании таблицы: ${sheetUrl}`)))

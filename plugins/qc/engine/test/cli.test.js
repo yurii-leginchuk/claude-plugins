@@ -7,6 +7,17 @@ import { promisify } from 'node:util'
 import { mkdtempSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+// Direct (in-process) imports, used only by the pairedAsDev-precedence test
+// below. `audit` is safe to import directly: src/cli.js guards its own
+// main()/process.exit side effects behind an "am I the entry script?"
+// check, so importing it here (where process.argv[1] is this test file, not
+// cli.js) never runs the CLI -- it only makes `audit` callable in-process,
+// which is what lets that test seed a snapshot via saveSnapshot() and then
+// call audit() directly against the very same QC_CACHE_DIR, without the
+// awkwardness of passing a fetchImpl through a subprocess's argv.
+import { audit } from '../src/cli.js'
+import { parsePage } from '../src/parse/page.js'
+import { saveSnapshot } from '../src/crawl/store.js'
 
 const run = promisify(execFile)
 const cwd = new URL('..', import.meta.url).pathname
@@ -247,5 +258,109 @@ test('--only with an unknown rule id fails loudly instead of silently auditing n
   } finally {
     s.close()
     rmSync(cache5, { recursive: true, force: true })
+  }
+})
+
+// --- Review follow-up 1: pairedAsDev must come from THIS invocation, not
+// from whatever a stale-but-not-yet-expired cached snapshot remembers -----
+//
+// A snapshot saved by an earlier run with pairedAsDev: false must not
+// silently override a dev/prod-pairing signal (sheet Dev Link column, or
+// --prod) that the CURRENT invocation supplies, even on a cache hit. Getting
+// this backwards means a genuinely-dev site gets audited as production,
+// which flips I4 (noindex-vs-env) from silent to a false Critical on every
+// page. --prod exercises the exact same `invocationPairedAsDev` precedence
+// code path a sheet's Dev Link column does (see src/cli.js), and isolates
+// it from any hostname-based dev detection: 'shop.example.com' does not
+// match the dev-host pattern in lib/env.js, so 'dev' here can only come from
+// the pairing signal, never from the hostname.
+//
+// This test calls audit() directly (imported above) instead of going
+// through the CLI subprocess, so it can seed the snapshot with
+// crawl/store.js's saveSnapshot() and then run audit() against that exact
+// QC_CACHE_DIR in-process -- no subprocess argv can carry a seeded snapshot
+// or a fetchImpl, which is also why sheet.js gained a fetchImpl injection
+// point in this same follow-up (see test/crawl/sheet.test.js).
+test('a --prod (or sheet Dev Link) signal on THIS run overrides a stale pairedAsDev:false in the cache', async () => {
+  const originalCacheDir = process.env.QC_CACHE_DIR
+  const cache6 = mkdtempSync(join(tmpdir(), 'qc-cli-paired-'))
+  process.env.QC_CACHE_DIR = cache6
+  try {
+    const host = 'shop.example.com'
+    const url = `https://${host}/`
+    const html = `<!doctype html><html lang="en"><head><title>Shop</title>
+<link rel="canonical" href="${url}"></head>
+<body><header>h</header><main><h1>Shop</h1></main></body></html>`
+    const page = parsePage({ url, html, status: 200, headers: { 'content-type': 'text/html' } })
+
+    // Seed a snapshot for this host that remembers pairedAsDev: false (as a
+    // prior plain-URL audit of this same host would have saved).
+    saveSnapshot(host, {
+      meta: {
+        host, env: 'prod', envReason: 'боевой хост, страницы индексируются',
+        source: 'crawl', sitemapStatus: null, pairedAsDev: false, pairedAsDevReason: null,
+        pageCount: 1, pagesRequested: 1, pagesFailed: 0, failedUrls: [],
+      },
+      pages: [page],
+      links: [],
+    })
+
+    // This run supplies its own pairedAsDev signal via --prod. It must win,
+    // and it must be reported as a cache hit (proving the signal really was
+    // read from a reused snapshot, not from a fresh crawl that would have
+    // recomputed everything anyway).
+    const out = await audit(`https://${host}`, { prod: 'https://shop-prod.example.com' })
+    assert.equal(out.fromCache, true, 'expected the young snapshot to actually be reused')
+    assert.equal(out.env, 'dev', 'the --prod signal on this run must override the cached pairedAsDev:false')
+    assert.match(out.envReason, /--prod/, 'the reason should name --prod as the signal source (minor fix)')
+  } finally {
+    if (originalCacheDir === undefined) delete process.env.QC_CACHE_DIR
+    else process.env.QC_CACHE_DIR = originalCacheDir
+    rmSync(cache6, { recursive: true, force: true })
+  }
+})
+
+// --- Review follow-up 2: heuristic-only findings must not vanish from the
+// JSON summary --------------------------------------------------------------
+//
+// counts.* deliberately excludes heuristic-confidence findings (matching
+// verdict()/rollUp()/renderReport() elsewhere), so a heuristic-only page
+// reports verdict: 'Pass' and every counts.* at 0. Without a separate
+// `heuristics` field, that is indistinguishable in the JSON summary from a
+// genuinely clean site -- and stdout is the only contract a caller that
+// never opens the HTML report actually sees.
+test('a heuristic-only page reports verdict Pass with a non-zero heuristics count', async () => {
+  const cache7 = mkdtempSync(join(tmpdir(), 'qc-cli-heuristic-'))
+  // A bare 10-digit tel: (no country code, no +) is E4's heuristic case --
+  // confidence: 'heuristic' -- not a confirmed defect. Everything else on
+  // the page is clean (single h1, self-referencing canonical, no forms/
+  // images/other links), so nothing else contributes a solid major/critical
+  // finding.
+  const s = createServer((req, res) => {
+    if (req.url === '/robots.txt') { res.writeHead(404); return res.end() }
+    if (req.url === '/') {
+      res.writeHead(200, { 'content-type': 'text/html' })
+      return res.end(`<!doctype html><html lang="en"><head>
+<title>Clean-ish page</title><link rel="canonical" href="${b}/">
+</head><body><header>h</header><main><h1>Hello</h1>
+<a href="tel:7189690845">call</a></main></body></html>`)
+    }
+    res.writeHead(404); res.end('nope')
+  })
+  let b
+  try {
+    await new Promise(r => s.listen(0, r))
+    b = `http://127.0.0.1:${s.address().port}`
+    const { stdout } = await run('node', ['src/cli.js', 'audit', b, '--env', 'prod'], {
+      cwd, env: { ...process.env, QC_CACHE_DIR: cache7 },
+    })
+    const out = JSON.parse(stdout)
+    assert.equal(out.verdict, 'Pass')
+    assert.equal(out.counts.critical, 0)
+    assert.equal(out.counts.major, 0)
+    assert.ok(out.heuristics >= 1, `expected at least one heuristic finding, got ${out.heuristics}`)
+  } finally {
+    s.close()
+    rmSync(cache7, { recursive: true, force: true })
   }
 })

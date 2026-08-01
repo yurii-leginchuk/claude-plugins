@@ -4,12 +4,16 @@ export function isDevHost(host) {
   return host && DEV_HOST.test(host)
 }
 
-export function detectEnv({ host, pages = [], pairedAsDev = false, override = null }) {
+export function detectEnv({ host, pages = [], pairedAsDev = false, pairedAsDevReason = null, override = null }) {
   if (override === 'dev' || override === 'prod') {
     return { env: override, reason: 'задано флагом --env' }
   }
   if (pairedAsDev) {
-    return { env: 'dev', reason: 'хост стоит в колонке Dev Link' }
+    // Callers that know exactly where the dev/prod pairing signal came from
+    // (a strategy sheet's Dev Link column vs. a manual --prod flag) can pass
+    // a specific reason; this generic wording is only a fallback for callers
+    // that don't distinguish the source.
+    return { env: 'dev', reason: pairedAsDevReason || 'хост стоит в колонке Dev Link' }
   }
   if (isDevHost(host)) {
     return { env: 'dev', reason: `имя хоста указывает на дев: ${host}` }

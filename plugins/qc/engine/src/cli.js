@@ -21,6 +21,7 @@ import {
   loadSnapshot, listSnapshots, clearSnapshot, clearAll, saveSnapshot, saveRun, previousRun,
 } from './crawl/store.js'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 // How long a saved snapshot is trusted as a stand-in for a live crawl when
 // --fresh is not given. See the `--fresh` section of audit() below for the
@@ -61,8 +62,12 @@ function requireStringFlag(flags, name, label) {
   return flags[name]
 }
 
-async function loadSheetTarget(sheetUrl) {
-  const sheet = await loadStrategySheet(sheetUrl)
+// `fetchImpl` is forwarded to loadStrategySheet unchanged -- see sheet.js for
+// the injection point itself. It exists so tests (and audit()'s own caller,
+// below) can stand a local server in for the real docs.google.com export
+// endpoint.
+async function loadSheetTarget(sheetUrl, fetchImpl) {
+  const sheet = await loadStrategySheet(sheetUrl, fetchImpl ? { fetchImpl } : undefined)
   const urls = [...new Set(sheet.rows.map(r => r.devUrl || r.url).filter(Boolean))]
   // pairedAsDev mirrors env.js's own contract: it is true only when the page
   // list actually came from a sheet's Dev Link column for at least one row --
@@ -91,7 +96,11 @@ function loadFreshSnapshot(host) {
   return { snap, ageDays: ageMs / 86400000 }
 }
 
-async function audit(input, flags) {
+// `fetchImpl`, when given, is threaded through to loadStrategySheet for a
+// sheet-based target -- it has no effect on plain-site targets. This exists
+// purely for test injection (a local server standing in for a sheet
+// endpoint); normal CLI invocations from main() never pass it.
+export async function audit(input, flags, { fetchImpl } = {}) {
   if (!input) throw new Error('укажите URL сайта или ссылку на таблицу')
 
   let concurrency = 6
@@ -150,13 +159,24 @@ async function audit(input, flags) {
   let host
   let sheetTarget = null
   if (isSheet) {
-    sheetTarget = await loadSheetTarget(input)
+    sheetTarget = await loadSheetTarget(input, fetchImpl)
     if (!sheetTarget.urls.length) throw new Error(`в таблице не найдено ни одной страницы: ${input}`)
     host = hostOf(sheetTarget.urls[0])
   } else {
     host = hostOf(input)
   }
   if (!host) throw new Error(`не удалось разобрать URL: ${input}`)
+
+  // The dev/prod pairing signal THIS invocation supplies, independent of
+  // caching: either the sheet's Dev Link column (only known once the sheet
+  // above has actually been parsed, which happens on every invocation
+  // regardless of cache use) or the operator manually asserting it via
+  // --prod. --prod is treated as the more explicit, more recent signal when
+  // both are present, so it wins the reason text too.
+  const invocationPairedAsDev = Boolean(prodUrl) || Boolean(isSheet && sheetTarget.pairedAsDev)
+  const invocationPairedAsDevReason = prodUrl
+    ? `dev/prod-пара задана флагом --prod (${prodUrl})`
+    : (isSheet && sheetTarget.pairedAsDev ? 'хост стоит в колонке Dev Link' : null)
 
   // --fresh vs default:
   //
@@ -181,7 +201,7 @@ async function audit(input, flags) {
   // what keeps that true.
   const cached = flags.fresh ? null : loadFreshSnapshot(host)
 
-  let pages, linkStatus, source, sitemapStatus, pairedAsDev
+  let pages, linkStatus, source, sitemapStatus, pairedAsDev, pairedAsDevReason
   let fromCache, cacheAgeDays, pagesRequested, pagesFailed, failedUrls
 
   if (cached) {
@@ -190,7 +210,18 @@ async function audit(input, flags) {
     linkStatus = new Map(snap.links.map(l => [l.url, { status: l.status, ok: l.ok, error: l.error }]))
     source = snap.meta.source
     sitemapStatus = snap.meta.sitemapStatus ?? null
-    pairedAsDev = snap.meta.pairedAsDev ?? false
+    // The signal THIS invocation supplies must win over whatever the
+    // snapshot remembers -- a snapshot saved by an earlier plain-URL run
+    // (pairedAsDev: false) must not silently override a sheet's Dev Link
+    // column or an explicit --prod on the run happening right now, or a
+    // genuinely-dev site gets audited as if it were production (I4 flips
+    // from silent to a false Critical on every page). The snapshot's own
+    // value is only a fallback for when this invocation supplies no signal
+    // of its own at all.
+    pairedAsDev = invocationPairedAsDev || (snap.meta.pairedAsDev ?? false)
+    pairedAsDevReason = invocationPairedAsDev
+      ? invocationPairedAsDevReason
+      : (snap.meta.pairedAsDevReason ?? null)
     fromCache = true
     cacheAgeDays = ageDays
     pagesRequested = snap.meta.pagesRequested ?? pages.length
@@ -202,14 +233,14 @@ async function audit(input, flags) {
       urls = sheetTarget.urls
       source = sheetTarget.source
       sitemapStatus = null
-      pairedAsDev = sheetTarget.pairedAsDev
     } else {
       const found = await discoverPages(input)
       urls = found.urls
       source = found.source
       sitemapStatus = found.sitemapStatus
-      pairedAsDev = false
     }
+    pairedAsDev = invocationPairedAsDev
+    pairedAsDevReason = invocationPairedAsDevReason
     if (!urls.length) throw new Error('не найдено ни одной страницы для аудита')
 
     const fetched = await fetchAll(urls, { concurrency })
@@ -240,9 +271,7 @@ async function audit(input, flags) {
     pagesFailed = failedUrls.length
   }
 
-  if (prodUrl) pairedAsDev = true
-
-  const { env, reason } = detectEnv({ host, pages, pairedAsDev, override: envOverride })
+  const { env, reason } = detectEnv({ host, pages, pairedAsDev, pairedAsDevReason, override: envOverride })
 
   const site = { host, env, pages, index: buildIndex(pages), linkStatus }
   const findings = await runStaticRules(pages, site, { only: onlyIds, skip: skipIds })
@@ -253,7 +282,7 @@ async function audit(input, flags) {
   if (!cached) {
     saveSnapshot(host, {
       meta: {
-        host, env, envReason: reason, source, sitemapStatus, pairedAsDev,
+        host, env, envReason: reason, source, sitemapStatus, pairedAsDev, pairedAsDevReason,
         pageCount: pages.length, pagesRequested, pagesFailed,
         failedUrls: failedUrls.slice(0, 50),
       },
@@ -268,15 +297,31 @@ async function audit(input, flags) {
   })
   const runDir = saveRun(host, findings, html)
 
+  // `counts` deliberately excludes heuristic-confidence findings, matching
+  // verdict()/rollUp()/renderReport() elsewhere in this engine: they are set
+  // aside for human review rather than treated as confirmed defects, so they
+  // must never move the verdict or inflate a severity tile.
+  //
+  // But stdout is the machine-readable contract a caller (e.g. a Claude
+  // skill) parses, and that caller may never open the HTML report where
+  // heuristic findings ARE listed separately. Without a count here, a
+  // heuristic-only run reports verdict: 'Pass' with every counts.* at 0 --
+  // indistinguishable from a genuinely clean site, even though
+  // findings.json holds real, unconfirmed findings that need a human look.
+  // `heuristics` closes that gap without folding into `counts` or `verdict`.
   const counts = { critical: 0, major: 0, minor: 0, note: 0 }
-  for (const f of findings) if (f.confidence !== 'heuristic') counts[f.severity]++
+  let heuristics = 0
+  for (const f of findings) {
+    if (f.confidence === 'heuristic') heuristics++
+    else counts[f.severity]++
+  }
 
   return {
     host, env, envReason: reason, pages: pages.length, source, sitemapStatus,
     fromCache, cacheAgeDays: Number(cacheAgeDays.toFixed(4)),
     pagesRequested, pagesFailed, failedUrls: failedUrls.slice(0, 20),
     prodUrl,
-    verdict: verdict(findings), counts,
+    verdict: verdict(findings), counts, heuristics,
     diff: { added: diff.added.length, fixed: diff.fixed.length, remaining: diff.remaining.length },
     runDir, reportPath: join(runDir, 'report.html'),
   }
@@ -323,8 +368,18 @@ async function main() {
   }
 }
 
-// Safety net: main() already catches everything it awaits, but this guards
-// against a stray synchronous throw (e.g. in parseArgs) never reaching that
-// try block, so this CLI can never exit 0 while silently swallowing an
-// error.
-main().catch((e) => { console.error(e?.stack || e?.message || String(e)); process.exitCode = 1 })
+// Only run as a CLI when this file is the actual entry point (`node
+// src/cli.js ...`), not when it's imported as a module (e.g. by
+// test/cli.test.js importing `audit` directly for in-process tests that
+// need to inject a fetchImpl or manipulate QC_CACHE_DIR without spawning a
+// subprocess). This is the standard ESM "run as script" guard: process.argv[1]
+// is the entry script's path regardless of who imports what, so it only
+// matches import.meta.url when this file itself was invoked directly.
+const isMain = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url
+if (isMain) {
+  // Safety net: main() already catches everything it awaits, but this
+  // guards against a stray synchronous throw (e.g. in parseArgs) never
+  // reaching that try block, so this CLI can never exit 0 while silently
+  // swallowing an error.
+  main().catch((e) => { console.error(e?.stack || e?.message || String(e)); process.exitCode = 1 })
+}
