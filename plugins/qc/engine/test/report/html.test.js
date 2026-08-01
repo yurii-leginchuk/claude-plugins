@@ -389,3 +389,84 @@ test('renders a precisely-scoped Needs fixes verdict, not just the CSS class nam
   assert.doesNotMatch(out, /class="verdict v-Fail">Fail<\/span>/)
   assert.doesNotMatch(out, /class="verdict v-Pass">Pass<\/span>/)
 })
+
+// ---------------------------------------------------------------------------
+// Review follow-up (Critical 1): renderGroup rendered one found/expected/
+// selector per rule+severity group, taken from g.example. Against the real
+// cached cleaningny.com run that described 10 of the 25 distinct solid
+// defects while the tiles counted all 25 -- the eight distinct E3 majors are
+// eight different links, and one of the two Criticals (a malformed
+// `janitorial-cleaning/https://…` link) appeared nowhere in the document.
+// ---------------------------------------------------------------------------
+
+test('two different found values under one rule+severity both reach the HTML', () => {
+  const findings = [
+    { rule: 'E1', title: 'Битые ссылки', severity: 'critical', engine: 'static', confidence: 'high',
+      page: 'https://ex.com/a', selector: 'a.first', found: 'HTTP 404: https://ex.com/gone',
+      expected: 'рабочая ссылка', breakpoint: null },
+    { rule: 'E1', title: 'Битые ссылки', severity: 'critical', engine: 'static', confidence: 'high',
+      page: 'https://ex.com/b', selector: 'a.second',
+      found: 'битый URL: https://ex.com/janitorial-cleaning/https://ex.com/x',
+      expected: 'корректный URL', breakpoint: null },
+  ]
+  const out = renderReport({
+    host: 'ex.com', env: 'prod', envReason: '', pages: 2, findings,
+    diff: { fixed: [], remaining: [], added: findings }, snapshotAgeDays: 0, source: 'sitemap',
+  })
+  assert.match(out, /HTTP 404: https:\/\/ex\.com\/gone/)
+  assert.match(out, /janitorial-cleaning/)
+  assert.match(out, /a\.first/)
+  assert.match(out, /a\.second/)
+  assert.match(out, /рабочая ссылка/)
+  assert.match(out, /корректный URL/)
+})
+
+test('every distinct defect gets its own page list, not one merged list', () => {
+  const findings = [
+    ...['https://ex.com/1', 'https://ex.com/2'].map(page => ({
+      rule: 'E3', title: 'target=_blank', severity: 'major', engine: 'static', confidence: 'high',
+      page, selector: 'a.alpha', found: 'внутренняя ссылка с target=_blank: /alpha',
+      expected: 'без target', breakpoint: null,
+    })),
+    { rule: 'E3', title: 'target=_blank', severity: 'major', engine: 'static', confidence: 'high',
+      page: 'https://ex.com/3', selector: 'a.beta', found: 'внутренняя ссылка с target=_blank: /beta',
+      expected: 'без target', breakpoint: null },
+  ]
+  const out = renderReport({
+    host: 'ex.com', env: 'prod', envReason: '', pages: 3, findings,
+    diff: { fixed: [], remaining: [], added: findings }, snapshotAgeDays: 0, source: 'sitemap',
+  })
+  const group = out.match(/<details class="rule">[\s\S]*?<\/details>/)[0]
+  const defects = [...group.matchAll(/<div class="defect">/g)]
+  assert.equal(defects.length, 2, 'expected one block per distinct defect')
+  const alpha = group.split('a.beta')[0]
+  assert.match(alpha, /https:\/\/ex\.com\/1/)
+  assert.match(alpha, /https:\/\/ex\.com\/2/)
+  assert.doesNotMatch(alpha, /https:\/\/ex\.com\/3/, '/3 belongs to the beta defect only')
+})
+
+test('the group summary states how many distinct defects it holds', () => {
+  const findings = Array.from({ length: 4 }, (_, i) => ({
+    rule: 'E4', title: 'Формат tel:', severity: 'major', engine: 'static', confidence: 'high',
+    page: `https://ex.com/p${i}`, selector: 'a.phone', found: `tel:855-607-875${i}`,
+    expected: 'tel:+1855607875X', breakpoint: null,
+  }))
+  const out = renderReport({
+    host: 'ex.com', env: 'prod', envReason: '', pages: 4, findings,
+    diff: { fixed: [], remaining: [], added: findings }, snapshotAgeDays: 0, source: 'sitemap',
+  })
+  assert.match(out, /4 дефектов · 4 страниц · 4 находок/)
+})
+
+test('a group holding more distinct defects than the cap truncates visibly', () => {
+  const findings = Array.from({ length: 130 }, (_, i) => ({
+    rule: 'E1', title: 'Битые ссылки', severity: 'critical', engine: 'static', confidence: 'high',
+    page: 'https://ex.com/a', selector: `a.n${i}`, found: `HTTP 404: https://ex.com/gone-${i}`,
+    expected: 'рабочая ссылка', breakpoint: null,
+  }))
+  const out = renderReport({
+    host: 'ex.com', env: 'prod', envReason: '', pages: 1, findings,
+    diff: { fixed: [], remaining: [], added: findings }, snapshotAgeDays: 0, source: 'sitemap',
+  })
+  assert.match(out, /ещё 30 дефектов не показано/)
+})

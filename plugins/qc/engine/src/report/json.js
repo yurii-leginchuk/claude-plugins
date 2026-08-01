@@ -63,21 +63,53 @@ export function rollUp(findings) {
   // would show one "Major" chip covering both, exactly the flood this
   // calibration was meant to fix. Each (rule, severity, confidence)
   // combination gets its own row/chip instead.
+  //
+  // Within a group, findings are further split by defectIdentity() -- the
+  // same definition of "one defect" countDistinct() and diffRuns() use.
+  // Without that split the report rendered a single found/expected/selector
+  // per group and silently dropped every other distinct defect underneath it:
+  // on the real cleaningny.com run, 25 distinct solid defects but only 10
+  // described in the HTML. The eight distinct E3 majors are eight different
+  // links; the report showed one, and one of the two Criticals appeared
+  // nowhere while the tile still said "Critical 2". A rendered report that
+  // silently omits 60% of the defects it counted is worse than no report,
+  // because it looks complete -- so `identities` is not optional detail, it
+  // is the group's actual content.
   const groups = new Map()
   for (const f of findings) {
     const groupKey = `${f.rule}|${f.severity}|${f.confidence}`
     if (!groups.has(groupKey)) {
       groups.set(groupKey, {
         rule: f.rule, title: f.title, severity: f.severity,
-        confidence: f.confidence, count: 0, pages: [], example: f,
+        confidence: f.confidence, count: 0, pages: new Set(), example: f,
+        identities: new Map(),
       })
     }
     const g = groups.get(groupKey)
     g.count++
-    if (!g.pages.includes(f.page)) g.pages.push(f.page)
+    g.pages.add(f.page)
+
+    const identity = defectIdentity(f)
+    if (!g.identities.has(identity)) {
+      g.identities.set(identity, {
+        identity, found: f.found, expected: f.expected, selector: f.selector,
+        count: 0, pages: new Set(), example: f,
+      })
+    }
+    const d = g.identities.get(identity)
+    d.count++
+    d.pages.add(f.page)
   }
 
-  return [...groups.values()].sort((a, b) => {
+  return [...groups.values()].map(g => ({
+    ...g,
+    pages: [...g.pages],
+    // Most-repeated defect first, then a stable tiebreak on `found` so the
+    // same run always renders in the same order.
+    identities: [...g.identities.values()]
+      .map(d => ({ ...d, pages: [...d.pages] }))
+      .sort((a, b) => (b.count - a.count) || String(a.found).localeCompare(String(b.found))),
+  })).sort((a, b) => {
     const aOrder = ORDER[a.severity] ?? 999
     const bOrder = ORDER[b.severity] ?? 999
     return (aOrder - bOrder) || (b.count - a.count)

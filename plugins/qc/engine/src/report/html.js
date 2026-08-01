@@ -14,6 +14,11 @@ const LABEL = { critical: 'Critical', major: 'Major', minor: 'Minor', note: 'Not
 
 const PAGE_LIST_CAP = 200
 const PAGE_INDEX_CAP = 500
+// Distinct defects rendered inside one rule+severity group. A rule like E1
+// can legitimately produce hundreds of distinct broken links; past this many
+// the group stops being readable, so the rest is truncated -- visibly, with
+// the exact number withheld, never silently.
+const DEFECT_CAP = 100
 
 const CSS = `
 :root{--bg:#fff;--fg:#12151a;--mut:#5d6672;--line:#e4e7ec;--card:#f7f8fa;
@@ -42,6 +47,8 @@ padding:2px 8px;border-radius:6px;border:1px solid currentColor}
 .chip.crit{color:var(--crit)}.chip.maj{color:var(--maj)}.chip.min{color:var(--min)}.chip.note{color:var(--note)}
 .cnt{margin-left:auto;color:var(--mut);font-size:13px}
 .body{padding:0 14px 14px;font-size:14px}
+.defect{padding:10px 0;border-top:1px solid var(--line)}
+.defect:first-child{border-top:0;padding-top:0}
 .kv{margin:8px 0}.kv code{background:var(--bg);border:1px solid var(--line);
 border-radius:5px;padding:1px 6px;font-size:13px;word-break:break-all}
 ul.pages{margin:8px 0 0;padding-left:18px;color:var(--mut);font-size:13px}
@@ -54,22 +61,43 @@ table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--line)}
 `
 
+// One distinct defect (rule + selector + normalized `found`, per
+// defectIdentity) with its own found/expected/selector and its own collapsed
+// list of the pages it occurs on.
+function renderDefect(d) {
+  const shownPages = d.pages.slice(0, PAGE_LIST_CAP)
+  const hiddenCount = d.pages.length - shownPages.length
+  return `
+      <div class="defect">
+        <div class="kv">найдено: <code>${esc(d.found)}</code></div>
+        ${d.expected ? `<div class="kv">ожидается: <code>${esc(d.expected)}</code></div>` : ''}
+        <div class="kv">селектор: <code>${esc(d.selector)}</code></div>
+        <ul class="pages">${shownPages.map(p => `<li>${esc(p)}</li>`).join('')}</ul>
+        ${hiddenCount > 0 ? `<p class="kv">…и ещё ${hiddenCount} страниц не показано (ограничение списка)</p>` : ''}
+      </div>`
+}
+
+// A rule+severity+confidence group renders EVERY distinct defect it holds,
+// not just one example. Rendering `g.example` alone was how the report came
+// to describe 10 of the run's 25 distinct defects while its tiles counted all
+// 25 -- eight different broken links collapsed into whichever one happened to
+// be seen first.
 function renderGroup(g) {
-  const shownPages = g.pages.slice(0, PAGE_LIST_CAP)
-  const hiddenCount = g.pages.length - shownPages.length
+  const defects = g.identities?.length
+    ? g.identities
+    : [{ found: g.example.found, expected: g.example.expected, selector: g.example.selector, pages: g.pages }]
+  const shown = defects.slice(0, DEFECT_CAP)
+  const hiddenDefects = defects.length - shown.length
   return `
   <details class="rule">
     <summary>
       <span class="chip ${CHIP[g.severity] ?? 'note'}">${esc(LABEL[g.severity] ?? g.severity)}</span>
       <b>${esc(g.rule)}</b> · ${esc(g.title)}
-      <span class="cnt">${g.pages.length} страниц · ${g.count} находок</span>
+      <span class="cnt">${defects.length} дефектов · ${g.pages.length} страниц · ${g.count} находок</span>
     </summary>
     <div class="body">
-      <div class="kv">найдено: <code>${esc(g.example.found)}</code></div>
-      ${g.example.expected ? `<div class="kv">ожидается: <code>${esc(g.example.expected)}</code></div>` : ''}
-      <div class="kv">селектор: <code>${esc(g.example.selector)}</code></div>
-      <ul class="pages">${shownPages.map(p => `<li>${esc(p)}</li>`).join('')}</ul>
-      ${hiddenCount > 0 ? `<p class="kv">…и ещё ${hiddenCount} страниц не показано (ограничение списка)</p>` : ''}
+      ${shown.map(renderDefect).join('')}
+      ${hiddenDefects > 0 ? `<p class="kv">…и ещё ${hiddenDefects} дефектов не показано (ограничение списка)</p>` : ''}
     </div>
   </details>`
 }

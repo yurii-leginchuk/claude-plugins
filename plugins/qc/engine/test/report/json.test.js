@@ -341,3 +341,49 @@ test('countDistinct excludes heuristic-confidence findings, matching the populat
 test('countDistinct always returns all four severity keys, even for an empty findings list', () => {
   assert.deepEqual(countDistinct([]), { critical: 0, major: 0, minor: 0, note: 0 })
 })
+
+// ---------------------------------------------------------------------------
+// Review follow-up (Critical 1): rollUp grouped by rule|severity|confidence
+// and html.js rendered a single found/expected/selector from g.example, so
+// every other distinct defect in the group was silently dropped from the
+// report -- on the real cleaningny.com run, 25 distinct solid defects with
+// only 10 described. defectIdentity() is the shared definition of "one
+// defect" that countDistinct and diffRuns already use; rollUp must use it too.
+// ---------------------------------------------------------------------------
+
+test('rollUp splits a group into one entry per defectIdentity, keeping each found/expected/selector', () => {
+  const findings = [
+    f({ rule: 'E3', selector: 'a.one', found: 'ссылка A', expected: 'без target', page: 'https://ex.com/1' }),
+    f({ rule: 'E3', selector: 'a.one', found: 'ссылка A', expected: 'без target', page: 'https://ex.com/2' }),
+    f({ rule: 'E3', selector: 'a.two', found: 'ссылка B', expected: 'без target', page: 'https://ex.com/1' }),
+  ]
+  const [g] = rollUp(findings)
+  assert.equal(g.count, 3, 'raw occurrences unchanged')
+  assert.equal(g.identities.length, 2, 'two distinct defects under one rule+severity')
+  const [first, second] = g.identities
+  assert.equal(first.found, 'ссылка A')
+  assert.equal(first.count, 2)
+  assert.deepEqual(first.pages, ['https://ex.com/1', 'https://ex.com/2'])
+  assert.equal(second.found, 'ссылка B')
+  assert.deepEqual(second.pages, ['https://ex.com/1'])
+})
+
+test('rollUp identity count matches countDistinct for the same findings', () => {
+  const findings = [
+    f({ rule: 'E1', severity: 'critical', selector: 'a.a', found: 'HTTP 404: /x', page: 'https://ex.com/1' }),
+    f({ rule: 'E1', severity: 'critical', selector: 'a.b', found: 'HTTP 404: /y', page: 'https://ex.com/1' }),
+    f({ rule: 'E1', severity: 'critical', selector: 'a.a', found: 'HTTP 404: /x', page: 'https://ex.com/2' }),
+  ]
+  const groups = rollUp(findings)
+  const identityTotal = groups.reduce((n, g) => n + g.identities.length, 0)
+  assert.equal(identityTotal, countDistinct(findings).critical)
+})
+
+test('rollUp normalizes fluctuating counts inside a group the same way countDistinct does', () => {
+  const findings = [
+    f({ rule: 'I1', severity: 'critical', selector: 'body', found: 'H1 на странице: 2', page: 'https://ex.com/1' }),
+    f({ rule: 'I1', severity: 'critical', selector: 'body', found: 'H1 на странице: 3', page: 'https://ex.com/2' }),
+  ]
+  const [g] = rollUp(findings)
+  assert.equal(g.identities.length, 1, 'I1 counts fluctuate; the defect is the same one')
+})
