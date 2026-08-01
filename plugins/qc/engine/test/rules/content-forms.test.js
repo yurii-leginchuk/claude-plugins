@@ -139,3 +139,51 @@ test('S1 flags unparsable JSON-LD', () => {
 test('S1 accepts valid JSON-LD', () => {
   assert.deepEqual(S1.check(p({ jsonLd: [{ ok: true, error: null, types: ['LocalBusiness'] }] }), {}), [])
 })
+
+// ---------------------------------------------------------------------------
+// Review follow-up (Critical 3): H1 scans `page.text` as if it were copy. When
+// `page.text` still carried <script> source, a theme's demo payload -- a very
+// common thing to ship inside an inline JS config -- produced a Critical on a
+// page whose visible copy is clean. Drive this through parsePage, not a
+// hand-built literal: the literal is exactly what hid the bug.
+// ---------------------------------------------------------------------------
+
+test('H1 does not fire on Lorem ipsum that lives only inside inline script/style/template source', () => {
+  const page = parsePage({
+    url: 'https://ex.com/a',
+    html: `<html><body><h1>Уборка офисов</h1><p>Профессиональная уборка офисов в Нью-Йорке.</p>
+      <script>window.themeDemo = {"placeholder":"Lorem ipsum dolor sit amet, consectetur adipiscing elit"};</script>
+      <style>.demo::after{content:"Lorem ipsum"}</style>
+      <template><p>Lorem ipsum dolor sit amet</p></template>
+      </body></html>`,
+  })
+  assert.deepEqual(H1.check(page, {}), [], 'Lorem ipsum in machine payload is not remaining placeholder copy')
+})
+
+test('H1 still fires on Lorem ipsum in real body copy', () => {
+  const page = parsePage({
+    url: 'https://ex.com/a',
+    html: '<html><body><h1>Услуги</h1><p>Lorem ipsum dolor sit amet, consectetur adipiscing elit.</p></body></html>',
+  })
+  const f = H1.check(page, {})
+  assert.equal(f.length, 1)
+  assert.equal(f[0].severity, 'critical')
+})
+
+test('H1 never emits script or style source in its `found` window', () => {
+  const page = parsePage({
+    url: 'https://ex.com/a',
+    html: `<html><body><script>var admin = {"email":"admin@secret.example"};</script>
+      <p>Lorem ipsum dolor sit amet.</p></body></html>`,
+  })
+  const f = H1.check(page, {})
+  assert.equal(f.length, 1)
+  assert.doesNotMatch(f[0].found, /admin@secret\.example/, 'findings must never carry page internals')
+  assert.doesNotMatch(f[0].found, /var admin/)
+})
+
+test('H1 reports nothing on the committed real fixture (its copy is clean)', () => {
+  const html = readFileSync(new URL('../fixtures/opura-office-cleaning.html', import.meta.url), 'utf8')
+  const doc = parsePage({ url: 'https://cleaningny.com/services/office-cleaning/', html })
+  assert.deepEqual(H1.check(doc, {}), [])
+})

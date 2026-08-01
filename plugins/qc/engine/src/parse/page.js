@@ -93,8 +93,30 @@ function parseElementor(root) {
   }
 }
 
+// The main parse keeps <script>/<style> bodies as raw text so S1 can read
+// JSON-LD out of them (and so a `<` inside inline JS is never mis-parsed as
+// markup). That is the right shape for structured extraction and the wrong
+// shape for `page.text`, which content rules (H1's Lorem ipsum scan, E6's
+// bare-email scan) read as if it were human copy: a theme's demo payload in a
+// JS config yields a Critical on clean copy, and an address in Yoast/RankMath
+// Organization JSON-LD yields an E6 major on every page of the site.
+const PARSE_OPTIONS = { blockTextElements: { script: true, style: true } }
+
+// Elements whose text is machine payload, never page copy.
+const NON_COPY_ELEMENTS = 'script,style,noscript,template'
+
+// `page.text` is built from a *separate* parse of the same HTML with those
+// elements removed, so the raw parse above stays intact for jsonLd. Removing
+// them from `root` in place would be cheaper, but would leave every later
+// reader of `root` silently dependent on running before the removal.
+function copyText(html) {
+  const copy = parse(html, PARSE_OPTIONS)
+  for (const el of copy.querySelectorAll(NON_COPY_ELEMENTS)) el.remove()
+  return squash(copy.querySelector('body')?.text || '')
+}
+
 export function parsePage({ url, html, status = 200, headers = {} }) {
-  const root = parse(html, { blockTextElements: { script: true, style: true } })
+  const root = parse(html, PARSE_OPTIONS)
 
   const canonicalEl = root.querySelector('link[rel="canonical" i]')
   const descEl = root.querySelector('meta[name="description" i]')
@@ -169,7 +191,7 @@ export function parsePage({ url, html, status = 200, headers = {} }) {
       main: root.querySelectorAll('main').length,
       nav: root.querySelectorAll('nav').length,
     },
-    text: squash(root.querySelector('body')?.text || ''),
+    text: copyText(html),
     contentType: headers['content-type'] || null,
   }
 }

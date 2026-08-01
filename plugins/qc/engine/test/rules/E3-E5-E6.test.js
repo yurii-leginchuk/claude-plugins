@@ -4,6 +4,8 @@ import assert from 'node:assert/strict'
 import E3 from '../../src/rules/static/E3-target-blank.js'
 import E5 from '../../src/rules/static/E5-duplicate-plus-one.js'
 import E6 from '../../src/rules/static/E6-mailto-and-bare-contacts.js'
+import { readFileSync } from 'node:fs'
+import { parsePage } from '../../src/parse/page.js'
 
 const link = (o) => ({
   raw: '', href: null, protocol: null, rel: null, target: null,
@@ -92,4 +94,42 @@ test('E6 flags genuine email even when filenames appear on same page', () => {
 test('E6 flags addresses with domain keywords (not just extension match)', () => {
   const f = E6.check(page([], 'Contact press@jsfoundation.org'), {})
   assert.ok(f.some(x => x.found === 'press@jsfoundation.org'))
+})
+
+// ---------------------------------------------------------------------------
+// Review follow-up (Critical 3): E6's bare-contact scan reads `page.text`. When
+// that still carried <script> source, an email inside Yoast/RankMath's
+// Organization JSON-LD or a Gravity Forms config produced an E6 major on every
+// page of the site -- a defect that does not exist, because nothing in the
+// visible copy shows an unlinked address. Drive it through parsePage: a
+// hand-built `text` literal is exactly what let this through.
+// ---------------------------------------------------------------------------
+
+test('E6 does not flag an email that appears only inside JSON-LD or a form config script', () => {
+  const doc = parsePage({
+    url: 'https://ex.com/a',
+    html: `<html><head>
+      <script type="application/ld+json">{"@type":"Organization","email":"info@ex.com"}</script>
+      </head><body>
+      <p>Свяжитесь с нами по телефону.</p>
+      <script>var gf_global = {"notification_email":"admin@ex.com"};</script>
+      </body></html>`,
+  })
+  assert.deepEqual(E6.check(doc, {}), [], 'machine payload is not visible page copy')
+})
+
+test('E6 still flags a bare email in real body copy', () => {
+  const doc = parsePage({
+    url: 'https://ex.com/a',
+    html: '<html><body><p>Пишите на info@ex.com</p></body></html>',
+  })
+  const f = E6.check(doc, {})
+  assert.equal(f.length, 1)
+  assert.equal(f[0].found, 'info@ex.com')
+})
+
+test('E6 reports no bare contacts on the committed real fixture', () => {
+  const html = readFileSync(new URL('../fixtures/opura-office-cleaning.html', import.meta.url), 'utf8')
+  const doc = parsePage({ url: 'https://cleaningny.com/services/office-cleaning/', html })
+  assert.deepEqual(E6.check(doc, {}), [])
 })

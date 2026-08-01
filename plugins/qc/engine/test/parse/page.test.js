@@ -143,3 +143,50 @@ test('treats role="none" as decorative, same as role="presentation"', () => {
   assert.equal(a.decorative, true)
   assert.equal(b.decorative, true)
 })
+
+// ---------------------------------------------------------------------------
+// Review follow-up (Critical 3): `page.text` used to be `body.text` off a
+// parse that deliberately keeps <script>/<style> bodies as raw text (so S1 can
+// read JSON-LD). That put inline JS and CSS source into what content rules
+// read as page copy. On the committed real fixture it made `page.text` 39,576
+// chars of mostly JavaScript, matching /jQuery|function\s*\(/.
+// ---------------------------------------------------------------------------
+
+test('page.text excludes script, style, noscript and template source', () => {
+  const doc = parsePage({
+    url: 'https://example.com/',
+    html: `<html><body>
+      <p>Настоящий текст страницы.</p>
+      <script>var config = {"email":"admin@secret.example","copy":"Lorem ipsum dolor sit amet"};
+        jQuery(function ($) { if (a < b) {} });</script>
+      <style>.x{content:"Lorem ipsum"}</style>
+      <noscript>Включите JavaScript, lorem ipsum</noscript>
+      <template><p>Lorem ipsum dolor sit amet</p></template>
+    </body></html>`,
+  })
+  assert.match(doc.text, /Настоящий текст страницы/)
+  assert.doesNotMatch(doc.text, /jQuery/)
+  assert.doesNotMatch(doc.text, /admin@secret\.example/)
+  assert.doesNotMatch(doc.text, /lorem ipsum/i)
+  assert.doesNotMatch(doc.text, /content:/)
+})
+
+test('excluding script from page.text leaves jsonLd intact', () => {
+  const doc = parsePage({
+    url: 'https://example.com/',
+    html: `<html><head>
+      <script type="application/ld+json">{"@type":"Organization","email":"info@example.com"}</script>
+      </head><body><p>копия</p></body></html>`,
+  })
+  assert.equal(doc.jsonLd.length, 1)
+  assert.equal(doc.jsonLd[0].ok, true)
+  assert.deepEqual(doc.jsonLd[0].types, ['Organization'])
+  assert.doesNotMatch(doc.text, /info@example\.com/)
+})
+
+test('the committed real fixture yields copy-only text, not script source', () => {
+  const html = readFileSync(new URL('../fixtures/opura-office-cleaning.html', import.meta.url), 'utf8')
+  const doc = parsePage({ url: 'https://opura.example/office-cleaning/', html })
+  assert.doesNotMatch(doc.text, /jQuery|function\s*\(/)
+  assert.ok(doc.text.length < html.length / 4, 'copy text should be a small fraction of the raw HTML')
+})
