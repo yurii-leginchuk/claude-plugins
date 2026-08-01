@@ -124,3 +124,73 @@ test('dev-host regex does not match test-kitchen.com', () => {
 test('dev-host regex does not match stage-lighting.com', () => {
   assert.equal(detectEnv({ host: 'stage-lighting.com', pages: [{ url: 'https://h/1', robots: { index: true } }] }).env, 'prod')
 })
+
+// ---------------------------------------------------------------------------
+// Review follow-up (Important 10): the spec's dev-side clause was never
+// implemented. On dev, links and src pointing at the *production* domain are
+// unreplaced absolute paths -- the dev site quietly serves and links
+// production content, so what is under test is not what was built. Dev is the
+// primary target environment for this engine, so this is the direction most
+// likely to matter daily. It only fires when the run actually knows which host
+// is production (a --prod flag or a sheet's Dev Link pairing).
+// ---------------------------------------------------------------------------
+
+const devSite = (extra = {}) => ({ env: 'dev', prodHost: 'cleaningny.com', ...extra })
+
+test('I14 flags a link to the production domain when auditing dev', () => {
+  const p = page({ links: [{ raw: 'https://cleaningny.com/services/', href: 'https://cleaningny.com/services/', selector: 'a.nav' }] })
+  const f = I14.check(p, devSite())
+  assert.equal(f.length, 1)
+  assert.equal(f[0].severity, 'critical')
+  assert.match(f[0].found, /ссылка на прод/)
+  assert.equal(f[0].selector, 'a.nav')
+})
+
+test('I14 flags an image served from the production domain when auditing dev', () => {
+  const p = page({ images: [{ src: 'https://cleaningny.com/wp-content/uploads/hero.jpg', selector: 'img.hero' }] })
+  const f = I14.check(p, devSite())
+  assert.equal(f.length, 1)
+  assert.match(f[0].found, /картинка с прода/)
+})
+
+test('I14 treats www and bare production hosts as the same host', () => {
+  const p = page({ links: [{ raw: 'https://www.cleaningny.com/about/', href: 'https://www.cleaningny.com/about/', selector: 'a' }] })
+  assert.equal(I14.check(p, devSite()).length, 1)
+})
+
+test('I14 emits nothing on dev when no production host is known, rather than guessing', () => {
+  const p = page({
+    links: [{ raw: 'https://cleaningny.com/services/', href: 'https://cleaningny.com/services/', selector: 'a' }],
+    images: [{ src: 'https://cleaningny.com/i.jpg', selector: 'img' }],
+  })
+  assert.deepEqual(I14.check(p, { env: 'dev' }), [])
+  assert.deepEqual(I14.check(p, { env: 'dev', prodHost: null }), [])
+})
+
+test('I14 on dev leaves ordinary dev-host and third-party links alone', () => {
+  const p = page({
+    links: [
+      { raw: '/services/', href: 'https://acme-staging.com/services/', selector: 'a.internal' },
+      { raw: 'https://facebook.com/x', href: 'https://facebook.com/x', selector: 'a.social' },
+    ],
+    images: [{ src: 'https://acme-staging.com/i.jpg', selector: 'img' }],
+  })
+  assert.deepEqual(I14.check(p, devSite()), [])
+})
+
+test('I14 on dev does not flag a production host that only appears in a query string', () => {
+  const p = page({ links: [{ raw: '/go?next=https://cleaningny.com/x', href: 'https://acme-staging.com/go?next=https://cleaningny.com/x', selector: 'a' }] })
+  assert.deepEqual(I14.check(p, devSite()), [])
+})
+
+test('I14 still stays silent when the environment is unknown, even with a prodHost', () => {
+  const p = page({ links: [{ raw: 'https://cleaningny.com/', href: 'https://cleaningny.com/', selector: 'a' }] })
+  assert.deepEqual(I14.check(p, { env: 'unknown', prodHost: 'cleaningny.com' }), [])
+})
+
+test('I14 on prod is unaffected by prodHost being present', () => {
+  const p = page({ links: [{ raw: 'https://x.patest.website/a', href: 'https://x.patest.website/a', selector: 'a' }] })
+  const f = I14.check(p, { env: 'prod', prodHost: 'cleaningny.com' })
+  assert.equal(f.length, 1)
+  assert.match(f[0].found, /ссылка на дев/)
+})

@@ -1,5 +1,6 @@
 import { finding } from '../index.js'
 import { digitsOnly } from '../../lib/text.js'
+import { doubledCountryCode } from '../../lib/phone.js'
 
 const CLEAN = /^tel:\+\d{8,15}$/
 
@@ -16,6 +17,15 @@ export default {
 
       // Only early exit: if the value is already clean
       if (CLEAN.test(raw)) continue
+
+      // A value carrying its country code twice belongs to E5, which proposes
+      // the concrete correction. E4's hasCountryCode branch used to treat
+      // "12 digits with a +" as "just strip separators", producing
+      // `tel:+117189690845` for `tel:+1+17189690845` -- still doubled, and
+      // flatly contradicting the `tel:+17189690845` E5 proposes for the same
+      // href, both at major. E4 emits nothing here rather than emitting a
+      // second, differently-worded finding about the same defect.
+      if (doubledCountryCode(raw)) continue
 
       // Otherwise, ALWAYS emit a finding
       const digits = digitsOnly(raw)

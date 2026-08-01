@@ -73,7 +73,19 @@ async function loadSheetTarget(sheetUrl, fetchImpl) {
   // list actually came from a sheet's Dev Link column for at least one row --
   // the strongest signal detectEnv accepts, per Task 16's brief notes.
   const pairedAsDev = sheet.rows.some(r => r.devUrl)
-  return { urls, source: `sheet:${sheet.sheet}`, pairedAsDev }
+
+  // The production side of that pairing, for I14's dev-side check (a dev page
+  // still linking at production = an unreplaced absolute path). Only rows that
+  // actually carry BOTH columns describe a pairing. If those rows disagree
+  // about which host is production, no host is reported: I14 emits nothing
+  // when production is unknown, which is the right outcome -- guessing wrong
+  // there would flag every outbound link on the site.
+  const prodHosts = [...new Set(
+    sheet.rows.filter(r => r.devUrl && r.url).map(r => hostOf(r.url)).filter(Boolean)
+  )]
+  const prodHost = prodHosts.length === 1 ? prodHosts[0] : null
+
+  return { urls, source: `sheet:${sheet.sheet}`, pairedAsDev, prodHost }
 }
 
 // Reads a cached snapshot for `host` and returns it only if it is still
@@ -178,6 +190,11 @@ export async function audit(input, flags, { fetchImpl } = {}) {
     ? `dev/prod-пара задана флагом --prod (${prodUrl})`
     : (isSheet && sheetTarget.pairedAsDev ? 'хост стоит в колонке Dev Link' : null)
 
+  // The production host that pairing names, threaded into `site` for I14's
+  // dev-side check. --prod is the more explicit signal and wins, same as it
+  // does for the pairing itself.
+  const invocationProdHost = (prodUrl ? hostOf(prodUrl) : null) || (isSheet ? sheetTarget.prodHost : null)
+
   // --fresh vs default:
   //
   // The engine keeps a per-host snapshot (crawl/store.js) purely as a cache
@@ -201,7 +218,7 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   // what keeps that true.
   const cached = flags.fresh ? null : loadFreshSnapshot(host)
 
-  let pages, linkStatus, source, sitemapStatus, pairedAsDev, pairedAsDevReason
+  let pages, linkStatus, source, sitemapStatus, pairedAsDev, pairedAsDevReason, prodHost
   let fromCache, cacheAgeDays, pagesRequested, pagesFailed, failedUrls
 
   if (cached) {
@@ -222,6 +239,7 @@ export async function audit(input, flags, { fetchImpl } = {}) {
     pairedAsDevReason = invocationPairedAsDev
       ? invocationPairedAsDevReason
       : (snap.meta.pairedAsDevReason ?? null)
+    prodHost = invocationProdHost || (snap.meta.prodHost ?? null)
     fromCache = true
     cacheAgeDays = ageDays
     pagesRequested = snap.meta.pagesRequested ?? pages.length
@@ -241,6 +259,7 @@ export async function audit(input, flags, { fetchImpl } = {}) {
     }
     pairedAsDev = invocationPairedAsDev
     pairedAsDevReason = invocationPairedAsDevReason
+    prodHost = invocationProdHost
     if (!urls.length) throw new Error('не найдено ни одной страницы для аудита')
 
     const fetched = await fetchAll(urls, { concurrency })
@@ -288,7 +307,7 @@ export async function audit(input, flags, { fetchImpl } = {}) {
 
   const { env, reason } = detectEnv({ host, pages, pairedAsDev, pairedAsDevReason, override: envOverride })
 
-  const site = { host, env, pages, index: buildIndex(pages), linkStatus }
+  const site = { host, env, prodHost, pages, index: buildIndex(pages), linkStatus }
   const findings = await runStaticRules(pages, site, { only: onlyIds, skip: skipIds })
 
   const prev = previousRun(host)
@@ -298,6 +317,7 @@ export async function audit(input, flags, { fetchImpl } = {}) {
     saveSnapshot(host, {
       meta: {
         host, env, envReason: reason, source, sitemapStatus, pairedAsDev, pairedAsDevReason,
+        prodHost,
         pageCount: pages.length, pagesRequested, pagesFailed,
         failedUrls: failedUrls.slice(0, 50),
       },

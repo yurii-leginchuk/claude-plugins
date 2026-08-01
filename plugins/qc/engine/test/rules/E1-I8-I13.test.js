@@ -35,10 +35,15 @@ test('E1 tolerates a missing link status map', () => {
   assert.deepEqual(E1.check(p, {}), [])
 })
 
-test('I8 flags a paged URL whose canonical points at page one', () => {
+// Review follow-up (Important 4): I8 used to flag `canonical !== page.url` on
+// paginated URLs -- a strict subset of what I5 flags unconditionally on every
+// page. Every I8 finding was therefore a second report of an I5 defect under a
+// different rule id, inflating both `counts` and `distinct` in two severity
+// buckets. Canonical belongs to I5; I8 now covers only what is specific to
+// pagination.
+test('I8 says nothing about canonical on a paged URL -- that is I5 clause, not a second report', () => {
   const p = page({ url: 'https://ex.com/blog/page/2/', canonical: 'https://ex.com/blog/' })
-  const f = I8.check(p, {})
-  assert.equal(f.length, 1)
+  assert.deepEqual(I8.check(p, {}), [])
 })
 
 test('I8 accepts a self-canonical paged URL', () => {
@@ -48,6 +53,62 @@ test('I8 accepts a self-canonical paged URL', () => {
 
 test('I8 ignores non-paged URLs', () => {
   assert.deepEqual(I8.check(page(), {}), [])
+})
+
+test('I8 flags a noindex paginated page (pages 2+ must stay indexable)', () => {
+  const p = page({
+    url: 'https://ex.com/blog/page/2/', canonical: 'https://ex.com/blog/page/2/',
+    robots: { index: false, follow: true, raw: 'noindex, follow' },
+  })
+  const f = I8.check(p, {})
+  assert.equal(f.length, 1)
+  assert.equal(f[0].rule, 'I8')
+  assert.equal(f[0].severity, 'major')
+  assert.equal(f[0].selector, 'meta[name=robots]')
+  assert.match(f[0].found, /закрыта от индексации/)
+})
+
+test('I8 flags a nofollow paginated page (the crawl path to the listed items is cut)', () => {
+  const p = page({
+    url: 'https://ex.com/blog/page/3/', canonical: 'https://ex.com/blog/page/3/',
+    robots: { index: true, follow: false, raw: 'index, nofollow' },
+  })
+  const f = I8.check(p, {})
+  assert.equal(f.length, 1)
+  assert.match(f[0].found, /закрыта от обхода ссылок/)
+})
+
+test('I8 reports both robots clauses when a paginated page is noindex,nofollow', () => {
+  const p = page({
+    url: 'https://ex.com/blog/page/2/', canonical: 'https://ex.com/blog/page/2/',
+    robots: { index: false, follow: false, raw: 'none' },
+  })
+  assert.equal(I8.check(p, {}).length, 2)
+})
+
+test('I8 does not apply the robots clause to page 1 of a series', () => {
+  const p = page({
+    url: 'https://ex.com/blog/page/1/', canonical: 'https://ex.com/blog/page/1/',
+    robots: { index: false, follow: true, raw: 'noindex' },
+  })
+  assert.deepEqual(I8.check(p, {}), [], 'page 1 is an ordinary page; I4 owns its noindex')
+})
+
+test('I8 emits nothing at all when it has nothing to say about a paginated page', () => {
+  const p = page({
+    url: 'https://ex.com/blog/page/2/', canonical: 'https://ex.com/blog/page/2/',
+    robots: { index: true, follow: true, raw: null },
+  })
+  assert.deepEqual(I8.check(p, {}), [])
+})
+
+test('I8 flags a page number carried in a query parameter instead of the URL path', () => {
+  const p = page({ url: 'https://ex.com/blog/?paged=2', canonical: 'https://ex.com/blog/?paged=2' })
+  const f = I8.check(p, {})
+  assert.equal(f.length, 1)
+  assert.equal(f[0].severity, 'minor')
+  assert.equal(f[0].confidence, 'high')
+  assert.match(f[0].found, /query-параметре/)
 })
 
 test('I13 flags a missing favicon', () => {
@@ -197,9 +258,14 @@ test('I8 does not flag a paged URL that has no canonical at all', () => {
 })
 
 test('I8 recognizes query-string pagination (?paged=N), not just /page/N/', () => {
-  const p = page({ url: 'https://ex.com/blog/?paged=3', canonical: 'https://ex.com/blog/' })
+  const p = page({
+    url: 'https://ex.com/blog/?paged=3', canonical: 'https://ex.com/blog/?paged=3',
+    robots: { index: false, follow: true, raw: 'noindex' },
+  })
   const f = I8.check(p, {})
-  assert.equal(f.length, 1)
+  assert.equal(f.length, 2, 'the query-parameter clause plus the noindex clause')
+  assert.ok(f.some(x => /query-параметре/.test(x.found)))
+  assert.ok(f.some(x => /закрыта от индексации/.test(x.found)))
 })
 
 // --- Judgement call 4: at most one favicon finding per page ---

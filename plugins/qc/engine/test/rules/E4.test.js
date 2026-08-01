@@ -4,6 +4,8 @@ import { readdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import rule from '../../src/rules/static/E4-tel-format.js'
+import E4 from '../../src/rules/static/E4-tel-format.js'
+import E5 from '../../src/rules/static/E5-duplicate-plus-one.js'
 import { runStaticRules, allRules } from '../../src/rules/index.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -16,6 +18,8 @@ const pageWith = (raws) => ({
     text: raw, internal: false, selector: `a.phone-${i}`,
   })),
 })
+
+const telPage = (raw) => pageWith([raw])
 
 test('clean E.164 number: no finding', () => {
   assert.deepEqual(rule.check(pageWith(['tel:+17189690845']), {}), [])
@@ -117,4 +121,51 @@ test('production registry has no test artifacts and valid rule contracts', async
       `Rule ${r.id} has invalid engine: ${r.engine}`)
     assert(typeof r.check === 'function', `Rule ${r.id} has invalid check: not a function`)
   }
+})
+
+// ---------------------------------------------------------------------------
+// Review follow-up (Important 5): E4 and E5 look at the same hrefs and used to
+// contradict each other. For `tel:+1+17189690845` E4's hasCountryCode branch
+// ("12 digits with a + -- just strip separators") proposed
+// `tel:+117189690845`, still doubled, while E5 proposed the correct
+// `tel:+17189690845` -- both at major. Two different `expected` values for one
+// href is worse than saying nothing, so E5 owns the doubled shape and E4 stays
+// out of it. Assert that as a property over every doubled input, not just one.
+// ---------------------------------------------------------------------------
+
+const DOUBLED = [
+  'tel:+1+17189690845',
+  'tel:+117189690845',
+  'tel:+1 +1 718 969 0845',
+  'tel:+1-1-718-969-0845',
+  'tel:++17189690845',
+]
+
+test('E4 and E5 never emit contradictory expected values for the same tel: input', () => {
+  for (const raw of [...DOUBLED, 'tel:+17189690845', 'tel:1-855-607-8758', 'tel:7189690845', 'tel:123', 'tel:']) {
+    const p = telPage(raw)
+    const e4 = E4.check(p, {})
+    const e5 = E5.check(p, {})
+    const expectations = new Set([...e4, ...e5].map(f => f.expected))
+    assert.ok(
+      expectations.size <= 1,
+      `both rules fired on ${raw} with different expectations: ${[...expectations].join(' vs ')}`
+    )
+  }
+})
+
+test('E4 stays silent on a doubled country code; E5 owns it and proposes the correction', () => {
+  for (const raw of DOUBLED) {
+    assert.deepEqual(E4.check(telPage(raw), {}), [], `E4 should not fire on ${raw}`)
+    const e5 = E5.check(telPage(raw), {})
+    assert.equal(e5.length, 1, `E5 should own ${raw}`)
+    assert.equal(e5[0].expected, 'tel:+17189690845', `E5 must strip the doubled code in ${raw}`)
+  }
+})
+
+test('E5 marks the inferred doubled-leading-1 branch heuristic and the observed two-plus branch high', () => {
+  const inferred = E5.check(telPage('tel:+117189690845'), {})
+  assert.equal(inferred[0].confidence, 'heuristic', '12 digits starting "11" is inferred, not observed')
+  const observed = E5.check(telPage('tel:+1+17189690845'), {})
+  assert.equal(observed[0].confidence, 'high', 'two literal "+" characters are directly observed')
 })
