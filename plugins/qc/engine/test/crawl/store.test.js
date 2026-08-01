@@ -1,6 +1,6 @@
 import { test, before, after, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -269,4 +269,215 @@ test('clearAll returns the correct count of cleared snapshots', () => {
     const list = store.listSnapshots()
     assert.equal(list.length, 0, 'after clearAll, no snapshots should remain')
   })
+})
+
+// Critical security tests: degenerate hostname attacks
+test('clearSnapshot rejects ".." hostname with clear error', () => {
+  withTempCache((testDir) => {
+    // Save a legitimate snapshot
+    store.saveSnapshot('good.com', { meta: { host: 'good.com' }, pages: [] })
+
+    // Attempt clearSnapshot with degenerate hostname
+    let error = null
+    try {
+      store.clearSnapshot('..')
+    } catch (e) {
+      error = e
+    }
+
+    assert(error, 'clearSnapshot should throw error for degenerate hostname ".."')
+    assert(error.message.includes('Invalid') || error.message.includes('host'), 'error should explain it\'s an invalid hostname')
+
+    // Verify the legitimate snapshot still exists
+    const list = store.listSnapshots()
+    assert.equal(list.length, 1, 'legitimate snapshot should still exist after failed clearSnapshot')
+    assert.equal(list[0].host, 'good.com', 'the existing snapshot should be good.com')
+  })
+})
+
+test('clearSnapshot rejects single "." hostname with clear error', () => {
+  withTempCache((testDir) => {
+    store.saveSnapshot('valid.com', { meta: { host: 'valid.com' }, pages: [] })
+
+    let error = null
+    try {
+      store.clearSnapshot('.')
+    } catch (e) {
+      error = e
+    }
+
+    assert(error, 'clearSnapshot should throw error for "."')
+
+    const list = store.listSnapshots()
+    assert.equal(list.length, 1, 'legitimate snapshot should still exist')
+  })
+})
+
+test('clearSnapshot rejects "./" hostname with clear error', () => {
+  withTempCache((testDir) => {
+    store.saveSnapshot('keep.com', { meta: { host: 'keep.com' }, pages: [] })
+
+    let error = null
+    try {
+      store.clearSnapshot('./')
+    } catch (e) {
+      error = e
+    }
+
+    assert(error, 'clearSnapshot should throw error for "./"')
+
+    const list = store.listSnapshots()
+    assert.equal(list.length, 1, 'legitimate snapshot should still exist')
+  })
+})
+
+test('clearSnapshot rejects "////" hostname with clear error', () => {
+  withTempCache((testDir) => {
+    store.saveSnapshot('safe.com', { meta: { host: 'safe.com' }, pages: [] })
+
+    let error = null
+    try {
+      store.clearSnapshot('////')
+    } catch (e) {
+      error = e
+    }
+
+    assert(error, 'clearSnapshot should throw error for "////"')
+
+    const list = store.listSnapshots()
+    assert.equal(list.length, 1, 'legitimate snapshot should still exist')
+  })
+})
+
+test('clearSnapshot rejects empty string hostname with clear error', () => {
+  withTempCache((testDir) => {
+    store.saveSnapshot('exists.com', { meta: { host: 'exists.com' }, pages: [] })
+
+    let error = null
+    try {
+      store.clearSnapshot('')
+    } catch (e) {
+      error = e
+    }
+
+    assert(error, 'clearSnapshot should throw error for empty string')
+
+    const list = store.listSnapshots()
+    assert.equal(list.length, 1, 'legitimate snapshot should still exist')
+  })
+})
+
+// Critical security tests: clearAll marker protection
+test('clearAll refuses when cache marker is missing (arbitrary directory)', () => {
+  withTempCache((testDir) => {
+    // Create an unrelated directory with some files (do not call saveSnapshot)
+    writeFileSync(join(testDir, 'resume.docx'), 'confidential data')
+    mkdirSync(join(testDir, 'Photos'), { recursive: true })
+    writeFileSync(join(testDir, 'Photos', 'vacation.jpg'), 'photo data')
+
+    // Try to clearAll without the marker
+    let error = null
+    try {
+      store.clearAll()
+    } catch (e) {
+      error = e
+    }
+
+    assert(error, 'clearAll should throw error when marker is missing')
+    assert(error.message.includes('marker') || error.message.includes('QC cache'), 'error should mention the marker')
+
+    // Verify files are still there
+    assert(existsSync(join(testDir, 'resume.docx')), 'resume.docx should still exist')
+    assert(existsSync(join(testDir, 'Photos')), 'Photos directory should still exist')
+  })
+})
+
+test('clearAll works correctly when marker is present (proper QC cache)', () => {
+  withTempCache((testDir) => {
+    // Save a snapshot, which creates the marker
+    store.saveSnapshot('domain.com', { meta: { host: 'domain.com' }, pages: [] })
+
+    // Verify marker exists
+    const markerPath = join(testDir, '.qc-cache-marker')
+    assert(existsSync(markerPath), 'marker file should exist after saveSnapshot')
+
+    // clearAll should work
+    const count = store.clearAll()
+    assert.equal(count, 1, 'clearAll should return 1')
+
+    // Verify cache is cleared
+    const list = store.listSnapshots()
+    assert.equal(list.length, 0, 'cache should be empty after clearAll')
+
+    // Marker should be gone too
+    assert(!existsSync(markerPath), 'marker should be deleted by clearAll')
+  })
+})
+
+test('clearAll refuses with relative QC_CACHE_DIR without marker', async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), 'relative-'))
+  const savedCwd = process.cwd()
+  const savedCacheDir = process.env.QC_CACHE_DIR
+
+  try {
+    process.chdir(tempDir)
+    process.env.QC_CACHE_DIR = 'notacache'
+
+    const { mkdirSync: mkdir, writeFileSync: write } = await import('node:fs')
+    mkdir('notacache', { recursive: true })
+    write(join('notacache', 'important.txt'), 'important data')
+
+    let error = null
+    try {
+      store.clearAll()
+    } catch (e) {
+      error = e
+    }
+
+    assert(error, 'clearAll should throw error for relative path without marker')
+    assert(error.message.includes('marker'), 'error should mention marker')
+
+    // Verify the file still exists
+    assert(existsSync(join('notacache', 'important.txt')), 'important.txt should still exist')
+  } finally {
+    process.chdir(savedCwd)
+    process.env.QC_CACHE_DIR = savedCacheDir
+    rmSync(tempDir, { recursive: true, force: true })
+  }
+})
+
+test('clearAll works with trailing slash in QC_CACHE_DIR', () => {
+  withTempCache((testDir) => {
+    // Save snapshot with normal path
+    store.saveSnapshot('test.com', { meta: { host: 'test.com' }, pages: [] })
+
+    // Verify we can clear with trailing slash
+    const savedCacheDir = process.env.QC_CACHE_DIR
+    try {
+      process.env.QC_CACHE_DIR = testDir.endsWith('/') ? testDir : testDir + '/'
+
+      const count = store.clearAll()
+      assert.equal(count, 1, 'clearAll should work with trailing slash')
+    } finally {
+      process.env.QC_CACHE_DIR = savedCacheDir
+    }
+  })
+})
+
+test('clearAll rejects QC_CACHE_DIR containing .. segments', () => {
+  const savedCacheDir = process.env.QC_CACHE_DIR
+  try {
+    process.env.QC_CACHE_DIR = '/tmp/../../etc/passwd'
+
+    let error = null
+    try {
+      store.clearAll()
+    } catch (e) {
+      error = e
+    }
+
+    assert(error, 'clearAll should reject paths with .. segments')
+  } finally {
+    process.env.QC_CACHE_DIR = savedCacheDir
+  }
 })

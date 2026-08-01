@@ -1,7 +1,8 @@
 import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync, statSync } from 'node:fs'
-import { join, resolve, basename, normalize } from 'node:path'
+import { join, resolve, basename, normalize, relative } from 'node:path'
 import { homedir } from 'node:os'
 
+const CACHE_MARKER = '.qc-cache-marker'
 const root = () => process.env.QC_CACHE_DIR || join(homedir(), '.qc-cache')
 
 // Sanitize host to prevent path traversal attacks
@@ -21,7 +22,19 @@ function sanitizeHost(host) {
   return sanitized
 }
 
-export const snapshotDir = (host) => join(root(), sanitizeHost(host))
+// Validate that host sanitizes to a non-empty, reasonable string
+function validateHost(host) {
+  const sanitized = sanitizeHost(host)
+  if (!sanitized || sanitized.length === 0) {
+    throw new Error(`Invalid host name: "${host}" is not a valid hostname`)
+  }
+  return sanitized
+}
+
+export const snapshotDir = (host) => {
+  validateHost(host)
+  return join(root(), sanitizeHost(host))
+}
 
 const jsonl = (rows) => rows.map(r => JSON.stringify(r)).join('\n') + '\n'
 
@@ -46,7 +59,16 @@ function readJsonl(p) {
 }
 
 export function saveSnapshot(host, { meta, pages, links = [] }) {
+  const cacheRoot = root()
   const dir = snapshotDir(host)
+
+  // Ensure cache root exists and create marker file if it doesn't
+  mkdirSync(cacheRoot, { recursive: true })
+  const markerPath = join(cacheRoot, CACHE_MARKER)
+  if (!existsSync(markerPath)) {
+    writeFileSync(markerPath, 'QC cache directory marker - do not delete\n')
+  }
+
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'meta.json'), JSON.stringify({ ...meta, savedAt: Date.now() }, null, 2))
   writeFileSync(join(dir, 'pages.jsonl'), jsonl(pages))
@@ -129,8 +151,29 @@ export function listSnapshots() {
   return result
 }
 
+// Validate that a resolved path is strictly inside the cache root (path containment check)
+function assertPathInsideCacheRoot(target) {
+  const cacheRoot = resolve(root())
+  const targetResolved = resolve(target)
+
+  // Check that target is not the cache root itself
+  if (targetResolved === cacheRoot) {
+    throw new Error(`Refusing to delete cache root itself: ${target}`)
+  }
+
+  // Check that target is strictly inside cache root using relative path
+  const rel = relative(cacheRoot, targetResolved)
+  if (rel === '' || rel.startsWith('..') || rel.startsWith('/')) {
+    throw new Error(`Refusing to delete path outside cache root: ${target}`)
+  }
+}
+
 export function clearSnapshot(host) {
   const dir = snapshotDir(host)
+
+  // Belt-and-braces: verify the path is strictly inside cache root
+  assertPathInsideCacheRoot(dir)
+
   if (!existsSync(dir)) return false
   rmSync(dir, { recursive: true, force: true })
   return true
@@ -162,6 +205,12 @@ function validateCacheDirForClearAll() {
   const stat = statSync(cacheRoot)
   if (!stat.isDirectory()) {
     throw new Error(`Refusing to clearAll: cache root is not a directory: ${cacheRoot}`)
+  }
+
+  // Positive check: marker file must exist to prove this is a QC cache directory
+  const markerPath = join(cacheRoot, CACHE_MARKER)
+  if (!existsSync(markerPath)) {
+    throw new Error(`Refusing to clearAll: no QC cache marker found at ${cacheRoot} - this directory does not appear to be a QC cache`)
   }
 }
 
