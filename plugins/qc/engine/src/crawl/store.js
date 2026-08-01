@@ -216,9 +216,55 @@ function validateCacheDirForClearAll() {
 
 export function clearAll() {
   validateCacheDirForClearAll()
-  const n = listSnapshots().length
-  rmSync(root(), { recursive: true, force: true })
-  return n
+  const cacheRoot = root()
+
+  // Enumerate host directories the same way listSnapshots does
+  // Only delete what we own: host directories (those with meta.json) and the marker
+  const hostsToDelete = []
+  try {
+    for (const h of readdirSync(cacheRoot)) {
+      const metaPath = join(cacheRoot, h, 'meta.json')
+      if (existsSync(metaPath)) {
+        hostsToDelete.push(h)
+      }
+    }
+  } catch {
+    // Tolerate read errors, delete what we can identify
+  }
+
+  // Delete each identified host directory
+  for (const host of hostsToDelete) {
+    const hostDir = join(cacheRoot, host)
+    try {
+      rmSync(hostDir, { recursive: true, force: true })
+    } catch {
+      // Continue deleting others even if one fails
+    }
+  }
+
+  // Delete the marker file
+  const markerPath = join(cacheRoot, CACHE_MARKER)
+  try {
+    if (existsSync(markerPath)) {
+      rmSync(markerPath, { force: true })
+    }
+  } catch {
+    // Continue even if marker deletion fails
+  }
+
+  // Try to remove the root directory
+  // This succeeds only if the directory is now empty
+  // If there are unrelated files/dirs, the root stays in place
+  try {
+    const remaining = readdirSync(cacheRoot)
+    if (remaining.length === 0) {
+      rmSync(cacheRoot, { recursive: true, force: true })
+    }
+  } catch {
+    // If we can't read the directory or delete it, leave it in place
+  }
+
+  return hostsToDelete.length
 }
 
 export function saveRun(host, findings, reportHtml) {

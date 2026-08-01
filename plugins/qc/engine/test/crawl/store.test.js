@@ -481,3 +481,108 @@ test('clearAll rejects QC_CACHE_DIR containing .. segments', () => {
     process.env.QC_CACHE_DIR = savedCacheDir
   }
 })
+
+// Important: marker proves directory *was* a cache, not that contents are disposable
+test('clearAll with hand-planted marker + unrelated files leaves unrelated content untouched', () => {
+  withTempCache((testDir) => {
+    // Hand-plant marker without any real cache
+    writeFileSync(join(testDir, '.qc-cache-marker'), 'marker\n')
+    writeFileSync(join(testDir, 'resume.docx'), 'confidential data')
+    mkdirSync(join(testDir, 'Photos'), { recursive: true })
+    writeFileSync(join(testDir, 'Photos', 'vacation.jpg'), 'photo data')
+
+    // clearAll deletes marker and empties hosts, but since there are no hosts (no meta.json),
+    // it should delete the marker and leave unrelated files
+    const count = store.clearAll()
+    assert.equal(count, 0, 'clearAll should find 0 hosts to delete')
+
+    // Verify unrelated files still exist
+    assert(existsSync(join(testDir, 'resume.docx')), 'resume.docx should survive')
+    assert(existsSync(join(testDir, 'Photos')), 'Photos dir should survive')
+    // Marker is deleted because it's what we manage
+    assert(!existsSync(join(testDir, '.qc-cache-marker')), 'marker should be deleted')
+    // Root survives because it has unrelated content
+    assert(existsSync(testDir), 'cache root should survive because it contains unrelated files')
+  })
+})
+
+test('clearAll on legitimate cache with 2 hosts removes hosts, marker, and empty root', () => {
+  withTempCache((testDir) => {
+    // Create legitimate cache with 2 hosts
+    store.saveSnapshot('example.com', { meta: { host: 'example.com' }, pages: [{ url: 'http://example.com' }] })
+    store.saveSnapshot('test.org', { meta: { host: 'test.org' }, pages: [{ url: 'http://test.org' }] })
+
+    // Verify both exist
+    let list = store.listSnapshots()
+    assert.equal(list.length, 2, 'should have 2 snapshots before clearAll')
+
+    // Verify marker exists
+    assert(existsSync(join(testDir, '.qc-cache-marker')), 'marker should exist')
+
+    // Clear all
+    const count = store.clearAll()
+    assert.equal(count, 2, 'clearAll should return 2')
+
+    // Verify snapshots are gone
+    list = store.listSnapshots()
+    assert.equal(list.length, 0, 'no snapshots should remain')
+
+    // Verify marker is gone
+    assert(!existsSync(join(testDir, '.qc-cache-marker')), 'marker should be deleted')
+
+    // Verify root directory is gone (was empty after deleting hosts + marker)
+    assert(!existsSync(testDir), 'empty cache root should be deleted')
+  })
+})
+
+test('clearAll on legitimate cache + 1 unrelated file removes only cache contents', () => {
+  withTempCache((testDir) => {
+    // Create legitimate cache
+    store.saveSnapshot('domain.com', { meta: { host: 'domain.com' }, pages: [] })
+
+    // Add unrelated file
+    writeFileSync(join(testDir, 'readme.txt'), 'unrelated content')
+
+    // Clear all
+    const count = store.clearAll()
+    assert.equal(count, 1, 'clearAll should return 1')
+
+    // Verify host is gone
+    let list = store.listSnapshots()
+    assert.equal(list.length, 0, 'cache should be empty')
+
+    // Verify marker is gone
+    assert(!existsSync(join(testDir, '.qc-cache-marker')), 'marker should be deleted')
+
+    // Verify unrelated file survives
+    assert(existsSync(join(testDir, 'readme.txt')), 'unrelated file should survive')
+
+    // Verify root directory still exists (contains unrelated file)
+    assert(existsSync(testDir), 'cache root should survive because it contains unrelated file')
+  })
+})
+
+test('clearAll ignores junk subdirectories without meta.json', () => {
+  withTempCache((testDir) => {
+    // Create legitimate cache
+    store.saveSnapshot('valid.com', { meta: { host: 'valid.com' }, pages: [] })
+
+    // Create junk subdirectory (no meta.json)
+    mkdirSync(join(testDir, 'junk-dir'), { recursive: true })
+    writeFileSync(join(testDir, 'junk-dir', 'somefile.txt'), 'junk data')
+
+    // Clear all
+    const count = store.clearAll()
+    assert.equal(count, 1, 'clearAll should return 1 (only valid host)')
+
+    // Verify host is gone
+    assert(!existsSync(join(testDir, 'valid.com')), 'cache host should be deleted')
+
+    // Verify junk dir still exists
+    assert(existsSync(join(testDir, 'junk-dir')), 'junk directory should survive')
+    assert(existsSync(join(testDir, 'junk-dir', 'somefile.txt')), 'junk file should survive')
+
+    // Verify root survives (has junk dir)
+    assert(existsSync(testDir), 'cache root should survive')
+  })
+})
