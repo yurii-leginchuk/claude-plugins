@@ -171,7 +171,12 @@ test('fetchAll drops concurrency to 2 the moment a 503 is seen, and keeps it the
 test('fetchAll drops concurrency to 2 when a 429/503 is retried away, not just when it is the final status', async () => {
   const CONCURRENCY = 6
   const N = 10 // 6 in the initial wave (incl. /trigger), 4 dispatched afterward
-  const NORMAL_DELAY_MS = 550 // > fetchOne's first-retry backoff (400ms)
+  // Must exceed fetchOne's first-retry backoff (400ms) by enough that the
+  // margin survives a loaded/shared CI machine: at 550ms the cushion was
+  // ~150ms, thin enough that one scheduling hiccup would free a slot early,
+  // let a new request dispatch mid-retry, and fail the split-point assertion
+  // below with a timing flake that looks like a real concurrency bug.
+  const NORMAL_DELAY_MS = 1400 // ~1s of cushion over the 400ms backoff
   let inFlight = 0
   let triggerHits = 0
   const arrivals = [] // { path, peekInFlight }

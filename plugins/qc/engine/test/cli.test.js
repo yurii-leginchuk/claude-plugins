@@ -146,7 +146,8 @@ test('audit exits zero even when the verdict is Fail', async () => {
 
 // --- Judgement call 2: --fresh vs the snapshot cache -----------------------
 //
-// Without --fresh, a snapshot younger than 24h is reused and no network
+// Without --fresh, a snapshot younger than SNAPSHOT_TTL_MS (7 days, matching
+// the report banner) is reused and no network
 // request is made at all. --fresh always forces a live re-crawl. Either way
 // the summary says which happened via `fromCache`/`cacheAgeDays`.
 

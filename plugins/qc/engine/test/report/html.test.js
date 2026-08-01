@@ -470,3 +470,83 @@ test('a group holding more distinct defects than the cap truncates visibly', () 
   })
   assert.match(out, /ещё 30 дефектов не показано/)
 })
+
+// ---------------------------------------------------------------------------
+// Review follow-up (Important 8): the tiles led with raw occurrence counts --
+// "Major 56", the exact number the distinct/occurrence split exists to stop
+// anyone quoting -- and the word "distinct" (or any Russian equivalent) never
+// appeared in the rendered HTML at all, even though cli.js computed it. A run
+// built from a partial or broken sitemap looked identical to a clean one, and
+// diff.remaining was computed and dropped.
+// ---------------------------------------------------------------------------
+
+function repeatedDefectReport(extra = {}) {
+  // One template-level defect repeated on 6 pages plus two one-off defects:
+  // 3 distinct defects, 8 occurrences.
+  const findings = [
+    ...Array.from({ length: 6 }, (_, i) => ({
+      rule: 'E3', title: 'target=_blank', severity: 'major', engine: 'static', confidence: 'high',
+      page: `https://ex.com/p${i}`, selector: 'a.footer', found: 'внутренняя ссылка с target=_blank: /contact',
+      expected: 'без target', breakpoint: null,
+    })),
+    { rule: 'E3', title: 'target=_blank', severity: 'major', engine: 'static', confidence: 'high',
+      page: 'https://ex.com/p0', selector: 'a.hero', found: 'внутренняя ссылка с target=_blank: /about',
+      expected: 'без target', breakpoint: null },
+    { rule: 'I1', title: 'Количество H1', severity: 'critical', engine: 'static', confidence: 'high',
+      page: 'https://ex.com/p1', selector: 'body', found: 'H1 не найден', expected: 'ровно один H1',
+      breakpoint: null },
+  ]
+  return renderReport({
+    host: 'ex.com', env: 'prod', envReason: '', pages: 6, findings,
+    diff: { fixed: [], remaining: [], added: findings }, snapshotAgeDays: 0, source: 'sitemap',
+    ...extra,
+  })
+}
+
+test('the report leads with distinct defects, with occurrences beside them', () => {
+  const out = repeatedDefectReport()
+  assert.match(out, /<b>3 дефектов<\/b>/, 'three distinct defects')
+  assert.match(out, /8 вхождений/, 'eight raw occurrences')
+})
+
+test('the distinct breakdown per severity is rendered, not just the totals', () => {
+  const out = repeatedDefectReport()
+  assert.match(out, /1 critical · 2 major · 0 minor · 0 note/)
+})
+
+test('the diff row renders осталось alongside новых and починено', () => {
+  const out = renderReport({
+    host: 'ex.com', env: 'prod', envReason: '', pages: 3, findings: [],
+    diff: { fixed: [1, 2], remaining: [1, 2, 3, 4], added: [1] },
+    snapshotAgeDays: 0, source: 'sitemap',
+  })
+  assert.match(out, /<b>1<\/b><span>новых<\/span>/)
+  assert.match(out, /<b>2<\/b><span>починено<\/span>/)
+  assert.match(out, /<b>4<\/b><span>осталось<\/span>/)
+})
+
+test('a missing diff object still renders осталось as zero', () => {
+  const out = renderReport({
+    host: 'ex.com', env: 'prod', envReason: '', pages: 1, findings: [],
+    snapshotAgeDays: 0, source: 'sitemap',
+  })
+  assert.match(out, /<b>0<\/b><span>осталось<\/span>/)
+})
+
+test('a non-ok sitemapStatus is stated in the header as a possibly incomplete page list', () => {
+  const out = repeatedDefectReport({ sitemapStatus: 'partial' })
+  assert.match(out, /partial/)
+  assert.match(out, /неполным/i)
+})
+
+test('an ok or absent sitemapStatus renders no such warning', () => {
+  assert.doesNotMatch(repeatedDefectReport({ sitemapStatus: 'ok' }), /неполным/i)
+  assert.doesNotMatch(repeatedDefectReport({ sitemapStatus: null }), /неполным/i)
+  assert.doesNotMatch(repeatedDefectReport(), /неполным/i)
+})
+
+test('the sitemap status value is escaped like every other interpolated field', () => {
+  const out = repeatedDefectReport({ sitemapStatus: '<script>alert(1)</script>' })
+  assert.doesNotMatch(out, /<script>alert\(1\)<\/script>/)
+  assert.match(out, /&lt;script&gt;/)
+})

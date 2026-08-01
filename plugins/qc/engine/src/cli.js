@@ -26,7 +26,17 @@ import { pathToFileURL } from 'node:url'
 // How long a saved snapshot is trusted as a stand-in for a live crawl when
 // --fresh is not given. See the `--fresh` section of audit() below for the
 // full rationale; this constant is the one number that decision hinges on.
-const SNAPSHOT_TTL_MS = 24 * 60 * 60 * 1000 // 24h
+//
+// 7 days, deliberately, resolving a contradiction between two halves of this
+// engine: the spec and report/html.js's staleness banner both say 7 days,
+// while this constant said 24h -- which meant a snapshot was refused before it
+// could ever reach 7 days old, `cacheAgeDays` was always < 1, and the banner
+// was unreachable dead code. Of the two definitions, 7 days is the one to keep:
+// the banner exists precisely so a reused-but-aging snapshot announces itself,
+// and --fresh is the override for anyone who wants a live crawl regardless.
+// A 24h TTL with a 7-day banner is the worst of both -- it re-crawls sites
+// needlessly AND never warns.
+const SNAPSHOT_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7d, matching the report's banner
 
 const USAGE = `qc audit <site-url|sheet-url> [--fresh] [--env dev|prod] [--prod <url>] [--only IDs] [--skip IDs] [--concurrency n]
 qc cache list
@@ -328,7 +338,7 @@ export async function audit(input, flags, { fetchImpl } = {}) {
 
   const html = renderReport({
     host, env, envReason: reason, pages: pages.length, findings, diff,
-    snapshotAgeDays: cacheAgeDays, source,
+    snapshotAgeDays: cacheAgeDays, source, sitemapStatus,
   })
   const runDir = saveRun(host, findings, html)
 

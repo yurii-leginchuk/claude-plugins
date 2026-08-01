@@ -46,7 +46,8 @@ adjust a number, or invent a finding the engine didn't report.
    - `distinct` collapses repeats of the same `rule + selector + found` into one entry. This is the
      number that reflects actual remaining work — **lead the summary with `distinct`, not
      `counts`**. Mention `counts` only as a secondary "blast radius" figure (how many pages a fix
-     touches), never as the headline number.
+     touches), never as the headline number. The HTML report leads with the same split — its first
+     tile reads «N дефектов / M вхождений на K страницах» — so your summary and the artifact agree.
    - `heuristics` (also split by severity) are findings the engine could not confirm with enough
      certainty to count toward the verdict — e.g. an external link that returned 400/403 (could be
      the site blocking automated requests, not a dead link) or a new-tab/no-new-tab style call.
@@ -69,8 +70,15 @@ adjust a number, or invent a finding the engine didn't report.
      because it determines whether `noindex` findings were suppressed (a `dev` classification
      silences `I4`-style findings that would otherwise fire on every page).
    - `diff` (added/fixed/remaining vs the previous run for this host), if `runDir` shows this
-     wasn't the first run.
-   - The top rule groups by affected distinct-defect count (from the report, not invented).
+     wasn't the first run. The report renders all three as tiles: «новых», «починено», «осталось».
+   - The top rule groups by distinct-defect count. Read this off the report, do not invent or
+     recompute it: each rule row's summary line reads `<N> дефектов · <M> страниц · <K> находок`,
+     where `N` is that row's distinct-defect count — the number to rank by and to quote. Inside the
+     row, each distinct defect is rendered as its own block with its own `найдено` / `ожидается` /
+     `селектор` and its own page list, so "8 дефектов" means eight separately described problems,
+     not one example repeated.
+   - If the report's header carries a `Sitemap: <status>` warning box, say so: the page list may be
+     incomplete, so the audit may not have covered the whole site.
    - The run directory (`runDir`) and the Artifact link.
 
 ## Rules

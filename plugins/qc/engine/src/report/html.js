@@ -1,4 +1,4 @@
-import { rollUp, verdict } from './json.js'
+import { rollUp, verdict, countDistinct } from './json.js'
 
 // Escaping is the security boundary of this module: every interpolated value
 // originates from a crawled third-party page (found/expected/page/selector)
@@ -40,6 +40,7 @@ border:1px solid var(--line)}
 .tiles{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0 8px}
 .tile{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;min-width:96px}
 .tile b{display:block;font-size:20px}.tile span{color:var(--mut);font-size:12px}
+.tile.wide{min-width:200px}.tile.wide b{font-size:18px}
 .rule{border:1px solid var(--line);border-radius:10px;margin:10px 0;background:var(--card)}
 .rule>summary{cursor:pointer;padding:12px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .chip{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;
@@ -102,7 +103,9 @@ function renderGroup(g) {
   </details>`
 }
 
-export function renderReport({ host, env, envReason, pages, findings, diff, snapshotAgeDays, source }) {
+export function renderReport({
+  host, env, envReason, pages, findings, diff, snapshotAgeDays, source, sitemapStatus,
+}) {
   // Fail fast on malformed findings, matching the array contract rollUp/diffRuns
   // already enforce (src/report/json.js). Coercing bad input to [] here would
   // turn a caller bug or corrupted findings.json into a confident, professional
@@ -130,6 +133,21 @@ export function renderReport({ host, env, envReason, pages, findings, diff, snap
     ? 'свежий'
     : `${Number(snapshotAgeDays).toFixed(0)} дн.`
 
+  // The severity tiles count raw occurrences, which is what made the report
+  // lead with "Major 56" -- the exact number this engine's distinct/occurrence
+  // split exists to stop anyone quoting. `distinct` was computed in cli.js and
+  // never rendered, so the word never appeared in the HTML at all. It leads the
+  // tile row now, with occurrences kept beside it as blast radius.
+  const distinct = countDistinct(solid)
+  const distinctTotal = distinct.critical + distinct.major + distinct.minor + distinct.note
+  const occurrenceTotal = solid.length
+
+  // A run built from a partial or broken sitemap used to look identical to a
+  // clean one: same header, same page count, nothing saying the page list
+  // itself may be short. `ok` (and a null status, meaning the page list did
+  // not come from a sitemap at all) says nothing; anything else does.
+  const sitemapWarning = sitemapStatus && sitemapStatus !== 'ok'
+
   return `<!doctype html>
 <html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -140,13 +158,18 @@ export function renderReport({ host, env, envReason, pages, findings, diff, snap
 снапшот: ${ageLabel}</p>
 <p><span class="verdict ${vClass}">${esc(v)}</span></p>
 ${snapshotAgeDays > 7 ? `<div class="note-box">Снапшот старше 7 дней — данные могли устареть. Перезапустите с <code>--fresh</code>.</div>` : ''}
+${sitemapWarning ? `<div class="note-box">Sitemap: <b>${esc(sitemapStatus)}</b> — список страниц мог оказаться неполным, часть страниц сайта в отчёт не попала.</div>` : ''}
 <div class="tiles">
+  <div class="tile wide"><b>${distinctTotal} дефектов</b><span>${occurrenceTotal} вхождений на ${uniquePages.length} страницах</span></div>
   <div class="tile"><b>${by('critical')}</b><span>Critical</span></div>
   <div class="tile"><b>${by('major')}</b><span>Major</span></div>
   <div class="tile"><b>${by('minor')}</b><span>Minor</span></div>
   <div class="tile"><b>${diff?.added?.length ?? 0}</b><span>новых</span></div>
   <div class="tile"><b>${diff?.fixed?.length ?? 0}</b><span>починено</span></div>
+  <div class="tile"><b>${diff?.remaining?.length ?? 0}</b><span>осталось</span></div>
 </div>
+<p class="sub">Дефектов по серьёзности: ${distinct.critical} critical · ${distinct.major} major · ${distinct.minor} minor · ${distinct.note} note — это число реальных задач на исправление.
+Плитки Critical/Major/Minor выше считают вхождения (одна правка может закрыть сразу несколько).</p>
 <h2>Находки по правилам</h2>
 ${groups.length ? groups.map(renderGroup).join('') : '<p class="sub">Нарушений не найдено — сайт прошёл проверку без замечаний.</p>'}
 ${heur.length ? `<h2>Требует взгляда (неподтверждённые эвристики)</h2>
