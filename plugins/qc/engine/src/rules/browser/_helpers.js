@@ -28,6 +28,29 @@ export const helpers = {
     const s = getComputedStyle(el)
     return s.visibility !== 'hidden' && s.display !== 'none' && Number(s.opacity) > 0.05
   },
+  // The nearest ancestor (inclusive of `el` itself) carrying an
+  // `elementor-<id>` class, or null. This exists so a rule can capture which
+  // Elementor container a finding lives in WHILE IT STILL HOLDS THE ELEMENT
+  // -- re-deriving the same answer later from `selector` alone (a display
+  // string built by `selector()` above, which truncates class lists and
+  // ancestry) is not reliable: two elements in different containers can
+  // legitimately produce the identical selector string (e.g. a header nav
+  // link and a footer nav link both rendering as "div > a.soc"), and
+  // re-querying the DOM with that string only ever finds the FIRST match,
+  // silently mis-attributing every later occurrence to the wrong container.
+  // See src/browser/regions.js and the Task 7 review that caught this.
+  containerId: function (el) {
+    var cur = el
+    while (cur && cur.nodeType === 1) {
+      var classes = cur.classList ? Array.prototype.slice.call(cur.classList) : []
+      for (var i = 0; i < classes.length; i++) {
+        var m = /^elementor-(\d+)$/.exec(classes[i])
+        if (m) return m[1]
+      }
+      cur = cur.parentElement
+    }
+    return null
+  },
   interactive: function (el) {
     const tag = el.tagName.toLowerCase()
     if (tag === 'a') return el.hasAttribute('href')

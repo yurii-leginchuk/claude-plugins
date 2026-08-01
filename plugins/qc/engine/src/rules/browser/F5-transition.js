@@ -101,7 +101,8 @@ export function check(ctx) {
       out.push({
         rule: 'F5', title: 'Изменение на hover без transition', severity: 'minor',
         confidence: 'high', engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint,
-        selector: sel, found: 'правило ' + base + ':hover меняет стиль без transition',
+        selector: sel, containerId: ctx.helpers.containerId(el),
+        found: 'правило ' + base + ':hover меняет стиль без transition',
         expected: 'добавить transition',
       })
     }

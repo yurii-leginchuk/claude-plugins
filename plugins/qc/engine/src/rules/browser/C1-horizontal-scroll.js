@@ -19,6 +19,9 @@ export function check(ctx) {
     page: ctx.url,
     breakpoint: ctx.breakpoint,
     selector: 'html',
+    // Page-level finding, not tied to any one element -- explicitly null
+    // rather than omitted, so it can't be mistaken for "not yet computed".
+    containerId: null,
     found: 'ширина документа ' + doc.scrollWidth + 'px при вьюпорте ' + doc.clientWidth + 'px',
     expected: 'документ не шире вьюпорта',
   }]

@@ -64,6 +64,7 @@ export function check(ctx) {
       rule: 'X2', title: 'Картинка не загрузилась', severity: 'major', confidence: 'high',
       engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint,
       selector: ctx.helpers.selector(img),
+      containerId: ctx.helpers.containerId(img),
       found: broken
         ? 'не загрузилась: ' + src.slice(0, 120)
         : 'осталась data:-заглушкой (' + reason + '): ' + src.slice(0, 60),

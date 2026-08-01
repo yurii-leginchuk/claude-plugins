@@ -30,6 +30,9 @@ export function check(ctx) {
       severity: thirdParty ? 'minor' : 'major',
       confidence: 'high', engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint,
       selector: null,
+      // A console/network entry isn't tied to any one element -- explicitly
+      // null rather than omitted, same reasoning as C1.
+      containerId: null,
       found: (thirdParty ? '[стороннее] ' : '') + line,
       expected: 'консоль без ошибок',
     })

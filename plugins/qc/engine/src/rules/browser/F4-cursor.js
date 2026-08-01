@@ -49,7 +49,8 @@ export function check(ctx) {
       out.push({
         rule: 'F4', title: 'Курсор не соответствует интерактивности', severity: 'minor',
         confidence: 'high', engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint,
-        selector: sel, found: 'cursor:pointer на неинтерактивном элементе',
+        selector: sel, containerId: ctx.helpers.containerId(el),
+        found: 'cursor:pointer на неинтерактивном элементе',
         expected: 'cursor:default',
       })
       continue
@@ -59,7 +60,8 @@ export function check(ctx) {
       out.push({
         rule: 'F4', title: 'Курсор не соответствует интерактивности', severity: 'minor',
         confidence: 'high', engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint,
-        selector: sel, found: 'cursor:' + cursor + ' на интерактивном элементе',
+        selector: sel, containerId: ctx.helpers.containerId(el),
+        found: 'cursor:' + cursor + ' на интерактивном элементе',
         expected: 'cursor:pointer',
       })
     }

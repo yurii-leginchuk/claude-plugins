@@ -29,6 +29,7 @@ export function check(ctx) {
     out.push({
       rule: 'C2', title: 'Элемент шире вьюпорта', severity: 'major', confidence: 'high',
       engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint, selector: sel,
+      containerId: ctx.helpers.containerId(el),
       found: 'ширина ' + Math.round(r.width) + 'px при вьюпорте ' + vw + 'px',
       expected: 'не шире вьюпорта',
     })

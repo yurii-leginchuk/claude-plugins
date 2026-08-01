@@ -225,14 +225,15 @@ test('onProgress reports once per page with enough to judge liveness and health'
 
 // --- Judgement call: region tagging ------------------------------------------
 //
-// Decision: proveRegions() proves shared container IDS from the site's
-// static-crawl snapshot; a finding's CSS selector is resolved back to a
-// container id INSIDE THE PAGE, by walking up from the matched element to
-// the nearest `elementor-<id>` ancestor, right after the rule bundle runs
-// (attachContainerIds in run.js). This end-to-end test proves a finding
-// produced by a rule (via extraRules, so no stub rule pollutes the real
-// registry) inside a proven-shared Elementor container comes back tagged
-// with that container's region name.
+// Decision (revised after review -- see task-7-report.md's appended fix
+// section for the full account): proveRegions() proves shared container ids
+// from the site's static-crawl snapshot; a finding gets its containerId set
+// BY THE RULE ITSELF, in-page, via `ctx.helpers.containerId(el)`, while the
+// rule still holds the real element -- not re-derived afterwards from
+// `selector` (a lossy display string). run.js only does the final lookup
+// (regionOf). Every extraRules probe below therefore calls
+// `ctx.helpers.containerId(el)` itself, mirroring exactly what all nine
+// production rules (src/rules/browser/*) now do.
 test('a finding inside a proven-shared Elementor container is tagged with its region', async () => {
   const html = `<!doctype html><html><head><title>region</title></head><body>
     <div class="elementor elementor-777 elementor-location-footer">
@@ -250,7 +251,8 @@ test('a finding inside a proven-shared Elementor container is tagged with its re
         out.push({
           rule: 'ZZ_PROBE', title: 'probe', severity: 'note', confidence: 'high',
           engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint,
-          selector: ctx.helpers.selector(els[i]), found: 'probe', expected: null,
+          selector: ctx.helpers.selector(els[i]), containerId: ctx.helpers.containerId(els[i]),
+          found: 'probe', expected: null,
         })
       }
       return out
@@ -282,7 +284,7 @@ test('a finding inside a proven-shared Elementor container is tagged with its re
     assert.equal(s.pagesDone, 1)
     const probe = s.findings.find(f => f.rule === 'ZZ_PROBE')
     assert.ok(probe, 'the injected rule produced a finding')
-    assert.equal(probe.containerId, '777', 'the DOM walk found the enclosing elementor container')
+    assert.equal(probe.containerId, '777', 'the rule found its own enclosing elementor container')
     assert.equal(probe.region, 'footer', 'the container was proven shared, so it resolves to its region name')
   } finally {
     close()
@@ -301,7 +303,8 @@ test('a finding outside any Elementor container carries no region', async () => 
       return el ? [{
         rule: 'ZZ_PROBE2', title: 'probe', severity: 'note', confidence: 'high',
         engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint,
-        selector: ctx.helpers.selector(el), found: 'probe', expected: null,
+        selector: ctx.helpers.selector(el), containerId: ctx.helpers.containerId(el),
+        found: 'probe', expected: null,
       }] : []
     },
   }
@@ -312,8 +315,84 @@ test('a finding outside any Elementor container carries no region', async () => 
     })
     const probe = s.findings.find(f => f.rule === 'ZZ_PROBE2')
     assert.ok(probe)
-    assert.equal(probe.containerId, undefined)
+    assert.equal(probe.containerId, null)
     assert.equal(probe.region, undefined)
+  } finally {
+    close()
+  }
+})
+
+// --- Regression: the selector-collision bug the Task 7 review caught -------
+//
+// helpers.selector()'s parent portion uses only the tag name, never the
+// class -- so two structurally-identical elements sitting in DIFFERENT
+// Elementor containers (a header link and a footer link both rendering as
+// "div > a.probe") produce the IDENTICAL selector string. The fixed
+// implementation is immune to this by construction: containerId comes from
+// the element the rule actually matched, never from re-querying the DOM
+// with that (possibly ambiguous) string. This is pinned directly: two
+// `.probe` elements with identical markup, one inside a proven "header"
+// container and one inside a proven "footer" container; the finding is
+// provoked on the LATER (footer) element, and must be tagged with ITS OWN
+// container, not the first DOM match for the shared selector string.
+//
+// Confirmed this fails against the pre-fix implementation (querySelector
+// re-derivation in run.js's old attachContainerIds): querySelector(
+// "div > a.probe") always returns the FIRST match (the header instance)
+// regardless of which element actually produced the finding, so the old
+// code reported containerId: '100' / region: 'header' here -- silently
+// mis-attributing a footer defect to the header, with nothing in the
+// output to reveal it happened. See task-7-report.md for the exact
+// reproduction output.
+test('a finding on the SECOND of two selector-identical elements is tagged with its own container, not the first match\'s', async () => {
+  const html = `<!doctype html><html><head><title>collision</title></head><body>
+    <div class="elementor elementor-100 elementor-location-header">
+      <div><a class="probe" href="#">x</a></div>
+    </div>
+    <div class="elementor elementor-200 elementor-location-footer">
+      <div><a class="probe" href="#">x</a></div>
+    </div>
+  </body></html>`
+  const { base: contentBase, close } = await serveContent(html)
+
+  const probeRule = {
+    id: 'ZZ_COLLISION',
+    check: function (ctx) {
+      var els = document.querySelectorAll('.probe')
+      var el = els[els.length - 1] // the footer instance -- the finding is provoked HERE
+      if (!el) return []
+      return [{
+        rule: 'ZZ_COLLISION', title: 'collision probe', severity: 'note', confidence: 'high',
+        engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint,
+        selector: ctx.helpers.selector(el), containerId: ctx.helpers.containerId(el),
+        found: 'probe', expected: null,
+      }]
+    },
+  }
+
+  const elementorPage = (url) => ({
+    url,
+    elementor: {
+      containerIds: ['100', '200'], locations: ['header', 'footer'],
+      locationsById: { 100: 'header', 200: 'footer' }, postCssIds: [], skeleton: '',
+    },
+  })
+  saveSnapshot('run-collision', {
+    meta: { host: 'run-collision' },
+    pages: [elementorPage('https://run-collision.example/a'), elementorPage('https://run-collision.example/b')],
+    links: [],
+  })
+
+  try {
+    const s = await runBrowserPass({
+      host: 'run-collision', pages: [`${contentBase}/`], widths: [1440],
+      opts: { extraRules: [probeRule] },
+    })
+    const probe = s.findings.find(f => f.rule === 'ZZ_COLLISION')
+    assert.ok(probe, 'the injected rule produced a finding')
+    assert.equal(probe.selector, 'div > a.probe', 'sanity check: the collision is real -- both instances share this selector')
+    assert.equal(probe.containerId, '200', 'must be tagged with the FOOTER container, where the finding actually occurred')
+    assert.equal(probe.region, 'footer', 'must resolve to footer, not header')
   } finally {
     close()
   }

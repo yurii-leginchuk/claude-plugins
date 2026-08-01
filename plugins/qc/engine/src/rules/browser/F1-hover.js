@@ -91,6 +91,7 @@ export function check(ctx) {
     out.push({
       rule: 'F1', title: 'Нет реакции на hover', severity: 'major', confidence: 'heuristic',
       engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint, selector: sel,
+      containerId: ctx.helpers.containerId(el),
       found: 'ни одно правило :hover не покрывает этот элемент',
       expected: 'видимая реакция на наведение',
     })

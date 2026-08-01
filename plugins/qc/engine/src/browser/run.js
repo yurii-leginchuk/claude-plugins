@@ -36,57 +36,38 @@ const errorText = (e) => {
   return m.slice(0, 200)
 }
 
-// Judgement call (region tagging): proveRegions() (src/browser/regions.js)
-// proves which Elementor container *ids* are shared across the site; a
-// browser finding carries a CSS-ish `selector` string built by
-// helpers.selector() inside the page, not a container id -- there is no DOM
-// to walk from one to the other outside a live page. Task 6 left this exact
-// boundary as "Task 7's job": walk up from the matched element to the
-// nearest ancestor carrying an `elementor-<id>` class and attach it as
-// `finding.containerId` before calling regionOf().
+// Region tagging (revised after review -- see below): proveRegions()
+// (src/browser/regions.js) proves which Elementor container *ids* are
+// shared across the site; regionOf() looks up a finding's already-set
+// `containerId` against that proof. This module no longer discovers
+// containerId itself.
 //
-// That walk happens here, in-page, as a SEPARATE page.evaluate() call after
-// a rule bundle has already produced its findings -- not by changing the
-// rule contract or buildBundle()'s serialisation. Nothing is spliced into
-// the bundle string and no rule file changes, so Task 1's execution-based
-// contract test (which runs the bundle and would fail loudly on any rule
-// that can't survive serialisation) is untouched and still passes.
+// An earlier version of this file re-derived containerId AFTER the fact, by
+// re-querying `document.querySelector(finding.selector)` and walking up
+// from whatever that returned. That is unsound: `selector` (built by
+// helpers.selector() in _helpers.js) is a short DISPLAY string -- it
+// truncates class lists and only climbs one ancestor level -- so two
+// elements in different containers routinely produce the identical string
+// (e.g. a header nav link and a footer nav link both rendering as
+// "div > a.soc"). querySelector() always returns the FIRST match, so a
+// finding provoked on the SECOND (or any later) occurrence was silently
+// re-attributed to the FIRST occurrence's container -- a footer defect
+// filed under "header" with no error, no warning, nothing in the output to
+// suggest it happened. Caught by the Task 7 review via exactly that
+// collision fixture; pinned by the "collision" test in run.test.js.
 //
-// This is necessarily a best-effort re-query: helpers.selector() truncates
-// class lists and ancestry to keep the string short and readable for a
-// report, so it is not guaranteed to be unique. document.querySelector()
-// takes the first match, which is the same tolerance the report already
-// has elsewhere for `selector` being a display string, not a precise
-// locator. A selector that fails to parse or match is left untagged
-// (containerId absent) rather than throwing.
-async function attachContainerIds(page, findings) {
-  if (!findings.length) return findings
-  return page.evaluate((items) => {
-    function containerIdOf(selector) {
-      if (!selector) return null
-      let el
-      try {
-        el = document.querySelector(selector)
-      } catch {
-        return null
-      }
-      let cur = el
-      while (cur && cur.nodeType === 1) {
-        const classes = cur.classList ? Array.from(cur.classList) : []
-        for (const c of classes) {
-          const m = /^elementor-(\d+)$/.exec(c)
-          if (m) return m[1]
-        }
-        cur = cur.parentElement
-      }
-      return null
-    }
-    return items.map((f) => {
-      const id = containerIdOf(f.selector)
-      return id ? { ...f, containerId: id } : f
-    })
-  }, findings)
-}
+// Fixed at the source instead: every rule (src/rules/browser/*) now calls
+// `ctx.helpers.containerId(el)` -- the SAME climb-to-nearest-`elementor-<id>`
+// walk, but run WHILE THE RULE STILL HOLDS THE ACTUAL ELEMENT, not a lossy
+// string reconstruction of it -- and sets `containerId` on the finding
+// directly, alongside `selector`. This module's only remaining job is the
+// lookup: read the containerId each finding already carries and resolve it
+// against the proved-shared set.
+//
+// Adding a helper to _helpers.js does not touch buildBundle()'s
+// serialisation contract or the rule files' `check()` bodies' overall
+// shape -- Task 1's execution-based contract test (which runs the bundle
+// end-to-end) confirms this; it stayed green through this change.
 
 // Attempts one full pass over `widths` for a single url on a fresh page.
 //
@@ -124,8 +105,10 @@ async function attemptPage({ newPage, url, widths, timeout, bundle, regions }) {
         const got = await page.evaluate(
           (ctx) => window.__qc.run(ctx), { url, breakpoint: width }
         )
-        const tagged = await attachContainerIds(page, got)
-        for (const f of tagged) {
+        // Each finding already carries its own containerId (set by the rule
+        // itself, in-page, while it still held the element -- see the
+        // module comment above). This is a pure lookup, nothing more.
+        for (const f of got) {
           f.region = regionOf(f, regions)
           findings.push(f)
         }

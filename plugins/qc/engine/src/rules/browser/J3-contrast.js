@@ -117,6 +117,7 @@ export function check(ctx) {
       rule: 'J3', title: 'Недостаточный контраст текста', severity: 'major',
       confidence: 'heuristic', engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint,
       selector: sel,
+      containerId: ctx.helpers.containerId(el),
       found: 'контраст ' + ratio.toFixed(2) + ':1 при ' + Math.round(px) + 'px',
       expected: 'не ниже ' + need + ':1',
     })

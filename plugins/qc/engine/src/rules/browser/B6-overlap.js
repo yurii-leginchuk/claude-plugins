@@ -83,6 +83,7 @@ export function check(ctx) {
       out.push({
         rule: 'B6', title: 'Перекрытие элементов', severity: 'major', confidence: 'heuristic',
         engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint, selector: sa,
+        containerId: ctx.helpers.containerId(a.el),
         found: 'перекрывается с ' + sb + ' на ' + Math.round(area) + 'px²',
         expected: 'элементы не должны накладываться',
       })
