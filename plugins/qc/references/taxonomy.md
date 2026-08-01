@@ -177,3 +177,92 @@
 
 6. **Требует прогона в браузере на нескольких брейкпоинтах:** C (весь), F1/F3/F5/F9, D1/D7, K4/K5/K7.
    Набор брейкпоинтов из реальных правок: **360, 767, 768, 1024, 1100–1300, 1189, 1230, 1333, 1347**.
+
+---
+
+## Calibration log
+
+Recorded after the first real-site run of the engine (31-page WordPress/Elementor site,
+`cleaningny.com`, Task 16/16b). Kept here so the next tuning pass has the actual evidence instead
+of re-deriving it. Full detail: `.superpowers/sdd/2026-08-01-qc-static-engine/task-16b-report.md`.
+
+### The first run was 95% noise from two rules
+
+The uncalibrated engine produced 372 findings on 31 pages, of which **353 (95%) came from E1
+(broken links) and E3 (`target=_blank`/`rel=noopener`)**, all at `major`, drowning out the 5
+genuine defects the same run also found (a malformed URL, a malformed `tel:`, a heading-hierarchy
+skip, a duplicate title, and a JSON-LD parse error). That ratio — not a hypothetical — is what
+drove the E1/E3 recalibration below.
+
+### E3 (`target=_blank`) — split by certainty, not treated as one rule
+
+| finding | before | after | why |
+|---|---|---|---|
+| internal link with `target="_blank"` | major/high | **unchanged** — major/high | genuinely wrong: internal links should never force a new tab; this is the agency's house rule |
+| external `target="_blank"` missing `rel="noopener"` | major/high | **minor/high** | browsers have shipped implicit `noopener` for `target="_blank"` since 2021 (Chrome 88, Firefox 79, Safari 12.1) — no longer a live security hole, just hygiene |
+| external link *without* `target="_blank"` | major/high | **minor/heuristic** | new-tab-or-not for external links is a per-client style call, not a defect — `heuristic` keeps a subjective preference out of the verdict |
+
+### E1 (broken links) — bot-blocking split out of "broken"
+
+Restructured into buckets by what the HTTP status actually proves:
+
+- **internal, any failing status (including 0)** — unchanged, `critical`. Internal breakage is
+  always ours to fix.
+- **external, status 0** (no response) — unchanged, silent. Ambiguous: could be our checker being
+  blocked, not the target site being down.
+- **external, 400/401/403/405/429** (new `BOT_BLOCKED_STATUSES` set) — **new**: `note`/`heuristic`,
+  worded explicitly as needing manual confirmation. These statuses are what a site returns to a
+  non-browser client defending against scrapers, not evidence the link is actually dead. (429 is a
+  slightly different case — it can mean *our own crawler* went too fast rather than the target
+  blanket-blocking bots; still not evidence of a dead link, so it stays in the same bucket, flagged
+  here in case a future pass wants to word it more precisely.)
+- **external, everything else received** (404, 410, 5xx, other 4xx) — unchanged, `major`/`high`.
+  404/410 are genuinely gone; 5xx survived `fetchOne`'s retries, so it's durable breakage.
+  409/malformed-URL detection (doubled `https://` embedded in a path) is unchanged at
+  `critical` — this is the check that caught the real bug on `cleaningny.com` and was deliberately
+  left alone.
+
+On the real run: E3 was 256 findings (44 internal-blank, 180 external-missing-noopener, 32
+external-no-target) and E1 was 99 (62 external 400, 35 external 403, 1 internal 404 on the
+malformed link itself, 1 malformed-URL). After recalibration, 129 of those 372 findings (35%) moved
+to `heuristic` — set aside for a human to confirm, never silently dropped — instead of inflating
+`major`.
+
+### Raw occurrences vs. distinct defects — `counts` alone overstates the work ~4x
+
+A second gap surfaced only once someone tried to *use* the summary block: `counts.major: 56` reads
+as "56 major issues," but on `cleaningny.com` those 56 raw occurrences are **15 distinct defects**
+(same selector + same rule + same `found` text, repeated verbatim across every page a template
+appears on). The most extreme case: one `/privacy-policy/` footer link, missing `rel="noopener"`,
+accounted for 32 of the 44 `E3` `major` occurrences by itself — one fix, 32 raw findings.
+
+A caller reading only `counts` overstates remaining work by roughly an order of magnitude, which
+directly contradicts the engine's own value proposition ("one template bug found once, not
+re-litigated per page"). Fix: `src/report/json.js` now exports `countDistinct(findings)`, keyed on
+`defectIdentity(f) = rule + selector + normalizeFound(found, rule)` — page is deliberately excluded
+from that identity, since a template-level defect repeated verbatim across every page *is* one
+defect. `src/cli.js`'s JSON summary carries this as `distinct`, alongside the raw `counts`:
+
+| rule | severity | raw (`counts`) | distinct |
+|---|---|---|---|
+| E1 | critical | 2 | 2 |
+| E3 | major | 44 | **8** |
+| E3 | minor | 180 | **6** |
+| E4 | major | 2 | 1 |
+| I2 | major | 5 | 2 |
+| I6 | major | 2 | 1 |
+| I7 | minor | 5 | 2 |
+| S1 | major | 3 | 3 |
+
+`counts` on the real run: `{critical: 2, major: 56, minor: 185, note: 0}`.
+`distinct` on the same run: `{critical: 2, major: 15, minor: 8, note: 0}`.
+
+A related fix landed alongside this: the HTML report's `rollUp()` originally grouped findings by
+`rule` alone and kept only the most severe member, which re-merged the exact severity split E3 had
+just been given — 44 `major` + 180 `minor` E3 findings collapsed into one row chipped "Major · 224
+находок," making the calibration invisible in the artifact a human actually reads. `rollUp()` now
+groups by `rule + severity + confidence`, so each combination renders as its own row.
+
+**Takeaway for anyone consuming this engine's output (including the `/qc-site` skill):** lead with
+`distinct`, use raw `counts` only as a secondary "how many pages does this touch" figure, and always
+surface `heuristics` separately as unconfirmed rather than folding it into either number.
