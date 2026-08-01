@@ -1,7 +1,7 @@
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runBrowserPass } from '../../src/browser/run.js'
@@ -393,6 +393,137 @@ test('a finding on the SECOND of two selector-identical elements is tagged with 
     assert.equal(probe.selector, 'div > a.probe', 'sanity check: the collision is real -- both instances share this selector')
     assert.equal(probe.containerId, '200', 'must be tagged with the FOOTER container, where the finding actually occurred')
     assert.equal(probe.region, 'footer', 'must resolve to footer, not header')
+  } finally {
+    close()
+  }
+})
+
+// --- Task 8: screenshot capture wired into the run loop ---------------------
+//
+// Capture happens right after each width's findings are collected (still on
+// the same, already-open page/width -- see screenshot.js and the module
+// comment in run.js's attemptPage), so the first occurrence of a defect in a
+// pass gets its `shot` field set to a real file on disk.
+test('a finding gets a shot path, and the file actually exists', async () => {
+  const html = `<!doctype html><html><head><title>shot</title></head><body>
+    <div class="probe" style="width:120px;height:40px;background:#fbb">probe</div>
+  </body></html>`
+  const { base: contentBase, close } = await serveContent(html)
+  const probeRule = {
+    id: 'ZZ_SHOT',
+    check: function (ctx) {
+      var el = document.querySelector('.probe')
+      if (!el) return []
+      return [{
+        rule: 'ZZ_SHOT', title: 'probe', severity: 'note', confidence: 'high',
+        engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint,
+        selector: ctx.helpers.selector(el), containerId: ctx.helpers.containerId(el),
+        found: 'probe', expected: null,
+      }]
+    },
+  }
+  try {
+    const s = await runBrowserPass({
+      host: 'run-shot', pages: [`${contentBase}/`], widths: [1024],
+      opts: { extraRules: [probeRule] },
+    })
+    const f = s.findings.find(x => x.rule === 'ZZ_SHOT')
+    assert.ok(f, 'the probe rule fired')
+    assert.ok(f.shot, 'the finding carries a shot path')
+    assert.ok(existsSync(f.shot), 'the shot file was actually written to disk')
+  } finally {
+    close()
+  }
+})
+
+// --- Judgement call: cost -- capture at most once per identity per pass ----
+//
+// A defect that renders identically on many pages (a shared-region defect,
+// or here, two independent pages that happen to render the same markup)
+// must not be re-captured for every occurrence -- that is the scenario that
+// could produce hundreds of near-duplicate screenshots on a real site.
+// `defectIdentity()` (no `page` in its key) is what makes two findings on
+// two different pages count as "the same defect" in the first place; this
+// pins that the SECOND occurrence within one pass does not pay for another
+// capture, while the first occurrence's crop is real and on disk.
+test('a defect repeated across pages is captured only once per pass', async () => {
+  const html = `<!doctype html><html><head><title>shared</title></head><body>
+    <div class="probe" style="width:120px;height:40px;background:#fbb">probe</div>
+  </body></html>`
+  const { base: pageA, close: closeA } = await serveContent(html)
+  const { base: pageB, close: closeB } = await serveContent(html)
+  const probeRule = {
+    id: 'ZZ_SHARED',
+    check: function (ctx) {
+      var el = document.querySelector('.probe')
+      if (!el) return []
+      return [{
+        rule: 'ZZ_SHARED', title: 'probe', severity: 'note', confidence: 'high',
+        engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint,
+        selector: ctx.helpers.selector(el), containerId: ctx.helpers.containerId(el),
+        found: 'probe', expected: null,
+      }]
+    },
+  }
+  try {
+    const s = await runBrowserPass({
+      host: 'run-shared', pages: [`${pageA}/`, `${pageB}/`], widths: [1024],
+      opts: { extraRules: [probeRule] },
+    })
+    const shared = s.findings.filter(x => x.rule === 'ZZ_SHARED')
+    assert.equal(shared.length, 2, 'both pages produced the (identical-identity) finding')
+    assert.ok(shared[0].shot, 'the first occurrence is captured')
+    assert.ok(existsSync(shared[0].shot))
+    assert.equal(shared[1].shot, undefined,
+      'a later occurrence of the SAME identity within one pass is not re-captured -- bounds cost')
+  } finally {
+    closeA(); closeB()
+  }
+})
+
+// --- Cross-width isolation: a capture at one width must not survive onto --
+// the next width on the SAME reused page (one Playwright Page object is
+// reused across the several widths of one url -- see the module comment at
+// the top of this file). Note this does NOT pin "no leakage within a
+// width": that case is structurally impossible here rather than merely
+// tested, because every width's rules run in one atomic page.evaluate()
+// call that fully materialises `got` BEFORE any capture starts (see the
+// capture site in attemptPage() in run.js) -- there is no rule execution
+// left for a same-width highlight to interfere with. What could still leak
+// is a highlight surviving from width N into width N+1's rule run; that is
+// what this test actually exercises, end to end through the real run loop.
+// The underlying mechanism (highlight fully reverted, box unchanged) is
+// pinned at the unit level in screenshot.test.js.
+test('a capture at one width does not survive into the next width\'s measurement on the same reused page', async () => {
+  const html = `<!doctype html><html><head><title>multi-width</title>
+    <style>body{margin:0}</style></head><body>
+    <div class="probe" style="width:120px;height:40px;background:#fbb">probe</div>
+  </body></html>`
+  const { base: contentBase, close } = await serveContent(html)
+  const probeRule = {
+    id: 'ZZ_MULTI',
+    check: function (ctx) {
+      var el = document.querySelector('.probe')
+      if (!el) return []
+      return [{
+        rule: 'ZZ_MULTI', title: 'probe', severity: 'note', confidence: 'high',
+        engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint,
+        selector: ctx.helpers.selector(el), containerId: ctx.helpers.containerId(el),
+        found: 'probe', expected: null,
+      }]
+    },
+  }
+  try {
+    const s = await runBrowserPass({
+      host: 'run-multi-width', pages: [`${contentBase}/`], widths: [1024, 1440],
+      opts: { extraRules: [probeRule] },
+    })
+    const probes = s.findings.filter(x => x.rule === 'ZZ_MULTI')
+    assert.equal(probes.length, 2, 'the probe fired at both widths')
+    assert.ok(probes[0].shot, 'the first width triggered a real capture (with a highlight, briefly, on this page)')
+    const c1 = s.findings.filter(x => x.rule === 'C1')
+    assert.equal(c1.length, 0,
+      'a clean, non-overflowing page must not trip C1 at the second width just because the first width was screenshotted')
   } finally {
     close()
   }

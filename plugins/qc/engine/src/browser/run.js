@@ -25,6 +25,8 @@
 import { launchBrowser, preparePage, PAGE_TIMEOUT_MS } from './launch.js'
 import { buildBundle } from './bundle.js'
 import { proveRegions, regionOf } from './regions.js'
+import { captureDefect } from './screenshot.js'
+import { defectIdentity } from '../report/json.js'
 import {
   appendBrowserResult, loadBrowserResults, clearBrowserResults, loadSnapshot,
 } from '../crawl/store.js'
@@ -86,7 +88,7 @@ const errorText = (e) => {
 // separately-reported outcomes instead of collapsing a minor gap into a
 // full-page failure that would trigger a wasted retry, or hiding it inside
 // a silently-incomplete success.
-async function attemptPage({ newPage, url, widths, timeout, bundle, regions }) {
+async function attemptPage({ newPage, url, widths, timeout, bundle, regions, host, capturedIdentities }) {
   let page
   try {
     page = await newPage()
@@ -110,6 +112,40 @@ async function attemptPage({ newPage, url, widths, timeout, bundle, regions }) {
         // module comment above). This is a pure lookup, nothing more.
         for (const f of got) {
           f.region = regionOf(f, regions)
+
+          // Screenshot capture (Task 8): the page is already open at this
+          // width, right here, right after this width's rules finished
+          // running in their own single page.evaluate() call -- so a crop's
+          // highlight can never be visible to a rule still mid-measurement
+          // on this page/width; there is no rule left to run before this
+          // page moves on to preparePage()'s next full navigation.
+          //
+          // Cost (judgement call 2): capturing every occurrence of every
+          // finding could mean hundreds of near-duplicate screenshots on a
+          // real site. `capturedIdentities` is scoped to the WHOLE pass (see
+          // runBrowserPass below), so a defect is captured at most once --
+          // the first time its identity is seen, at whichever width and
+          // page that happens to be -- never again for the rest of the run.
+          // A defect whose `found` text is width-invariant collapses to one
+          // shot at its first width; one whose text embeds the viewport
+          // (e.g. C2) gets a distinct identity, and so a distinct shot, per
+          // width -- that difference is a property of defectIdentity(), not
+          // special-cased here. See screenshot.js's shotPath() for the
+          // separate, disk-level dedup that makes a RERUN of the same
+          // defect reuse the existing file instead of re-capturing it.
+          const identity = defectIdentity(f)
+          if (!capturedIdentities.has(identity)) {
+            capturedIdentities.add(identity)
+            try {
+              const shot = await captureDefect(page, f, host)
+              if (shot) f.shot = shot
+            } catch {
+              // A capture must never fail the page/pass -- see screenshot.js;
+              // this catch is belt-and-braces on top of that module's own
+              // internal handling.
+            }
+          }
+
           findings.push(f)
         }
       } catch (e) {
@@ -170,6 +206,9 @@ export async function runBrowserPass({ host, pages, widths, opts = {} }) {
   const bundle = await buildBundle({ extraRules })
   const { browser, newPage } = await launchBrowser({ headed })
   let consecutive = 0
+  // Bounds screenshot capture to at most one attempt per distinct defect for
+  // the whole pass -- see the capture site in attemptPage() above.
+  const capturedIdentities = new Set()
 
   try {
     for (let i = 0; i < todo.length; i++) {
@@ -182,12 +221,13 @@ export async function runBrowserPass({ host, pages, widths, opts = {} }) {
         break
       }
 
-      let result = await attemptPage({ newPage, url, widths, timeout, bundle, regions })
+      const pageArgs = { newPage, url, widths, timeout, bundle, regions, host, capturedIdentities }
+      let result = await attemptPage(pageArgs)
       if (!result.ok) {
         // Failure policy: 45s per page, one retry. A dead-on-arrival
         // response and a fluke (a slow cold start, a transient DNS hiccup)
         // are indistinguishable without trying again.
-        result = await attemptPage({ newPage, url, widths, timeout, bundle, regions })
+        result = await attemptPage(pageArgs)
       }
 
       let row
