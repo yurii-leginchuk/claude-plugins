@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { rollUp, verdict, diffRuns } from '../../src/report/json.js'
+import { rollUp, verdict, diffRuns, countDistinct } from '../../src/report/json.js'
 
 const f = (o) => ({
   rule: 'E4', title: 'tel', severity: 'major', engine: 'static', confidence: 'high',
@@ -59,19 +59,53 @@ test('rollUp returns heuristic findings even though they do not affect verdict',
 })
 
 // Judgement call 2: Mixed severity in a rule group
-test('rollUp with mixed severity in same rule uses most severe but counts all', () => {
+//
+// Review follow-up (Important 1): rollUp used to group by rule alone and
+// collapse mixed severities into a single "most severe wins" row. Rendered
+// against the real cached cleaningny.com run, that made E3's 44 major
+// findings (internal target=_blank, a real house-rule defect) and 180 minor
+// findings (external missing rel=noopener, hygiene) merge into one row
+// chipped "Major · 224 находок" -- exactly the flood the E1/E3 calibration
+// was meant to fix, just moved into the report. Grouping now includes
+// severity and confidence, so same-rule/different-severity findings are
+// separate rows/chips.
+test('rollUp with same rule but different severities produces separate groups, not a merged "most severe" row', () => {
   const findings = [
     f({ rule: 'E1', severity: 'critical', page: 'https://ex.com/a' }),
     f({ rule: 'E1', severity: 'major', page: 'https://ex.com/b' }),
     f({ rule: 'E1', severity: 'critical', page: 'https://ex.com/c' }),
   ]
   const r = rollUp(findings)
-  assert.equal(r.length, 1)
-  const group = r[0]
-  assert.equal(group.severity, 'critical', 'should use most severe')
-  assert.equal(group.count, 3, 'should count all findings')
-  assert.deepEqual(group.pages.sort(), ['https://ex.com/a', 'https://ex.com/b', 'https://ex.com/c'])
-  assert.equal(group.example.severity, 'critical', 'example should be from most severe')
+  assert.equal(r.length, 2, 'critical and major E1 findings must not collapse into one group')
+  const crit = r.find(g => g.rule === 'E1' && g.severity === 'critical')
+  const maj = r.find(g => g.rule === 'E1' && g.severity === 'major')
+  assert.equal(crit.count, 2)
+  assert.deepEqual(crit.pages.sort(), ['https://ex.com/a', 'https://ex.com/c'])
+  assert.equal(maj.count, 1)
+  assert.deepEqual(maj.pages, ['https://ex.com/b'])
+  // Ordering contract preserved: severity first, then descending count.
+  assert.equal(r[0].severity, 'critical', 'critical group sorts before major')
+})
+
+// Important 1, explicit ask: "add one asserting that a single rule emitting
+// two severities produces two groups with the correct chips." `severity`
+// and `confidence` on each group are exactly what src/report/html.js's
+// CHIP/LABEL lookup renders as the chip, so asserting those fields here is
+// asserting the chip is correct without duplicating html.js's rendering.
+test('rollUp: a single rule emitting two severities produces two groups with the correct severity/confidence chips', () => {
+  const findings = [
+    f({ rule: 'E3', title: 'target=_blank', severity: 'major', confidence: 'high', selector: 'a.internal', found: 'internal blank' }),
+    f({ rule: 'E3', title: 'target=_blank', severity: 'minor', confidence: 'high', selector: 'a.social', found: 'missing noopener' }),
+  ]
+  const r = rollUp(findings)
+  assert.equal(r.length, 2)
+  assert.deepEqual(r.map(g => g.severity), ['major', 'minor'], 'major group sorts before minor')
+  for (const g of r) {
+    assert.equal(g.rule, 'E3')
+    assert.equal(g.title, 'target=_blank', 'rule title is preserved on every row, not just the first')
+    assert.equal(g.confidence, 'high')
+    assert.equal(g.count, 1)
+  }
 })
 
 // Judgement call 3: Rule-specific normalization for volatile found values
@@ -246,4 +280,64 @@ test('diffRuns requires current to be an array', () => {
   assert.equal(d1.added.length, 1, 'diffRuns with null previous should work')
   const d2 = diffRuns([f({})], undefined)
   assert.equal(d2.added.length, 1, 'diffRuns with undefined previous should work')
+})
+
+// --- Review follow-up (Important 2): `distinct` counts defects, not raw
+// occurrences -----------------------------------------------------------
+//
+// The reviewer measured the real cached run: 44 E3-major findings are 8
+// distinct link positions (one -- the /privacy-policy/ footer link -- is
+// 32 of the 44 on its own). `counts.major: 56` overstates the fix list by
+// an order of magnitude; `distinct` is meant to say "8 things to fix," not
+// "56 findings."
+
+test('countDistinct collapses a defect repeated verbatim across many pages into one, while raw counts stay at the full occurrence total', () => {
+  const template = Array.from({ length: 5 }, (_, i) => f({
+    rule: 'E3', severity: 'major', selector: 'a.elementor-icon.elementor-social-icon',
+    found: 'внешняя ссылка без rel=noopener: https://www.facebook.com/people/Opura',
+    page: `https://cleaningny.com/p${i}/`,
+  }))
+  assert.equal(template.length, 5, 'sanity: 5 raw occurrences, one per page')
+  assert.equal(countDistinct(template).major, 1, 'same rule+selector+found across 5 pages is one distinct defect')
+})
+
+test('countDistinct keeps two genuinely different defects behind the same selector distinct, because found differs', () => {
+  const findings = [
+    f({ rule: 'E4', severity: 'major', selector: 'a.phone', found: 'tel:+1234567890' }),
+    f({ rule: 'E4', severity: 'major', selector: 'a.phone', found: 'tel:+1987654321' }),
+  ]
+  assert.equal(countDistinct(findings).major, 2, 'different phone numbers behind the same selector are different defects')
+})
+
+test('countDistinct vs counts on a fixture with one repeated template defect and one genuinely-repeated-but-distinct defect', () => {
+  // One template-level defect (same footer link) repeated across 4 pages.
+  const templateRepeated = Array.from({ length: 4 }, (_, i) => f({
+    rule: 'E3', severity: 'major', selector: 'a.social', found: 'facebook link missing noopener',
+    page: `https://ex.com/p${i}`,
+  }))
+  // Two genuinely different defects that happen to share a selector (two
+  // different wrong phone numbers behind the same "call us" link markup).
+  const genuinelyDistinct = [
+    f({ rule: 'E4', severity: 'major', selector: 'a.phone', found: 'tel:+1111111111', page: 'https://ex.com/contact' }),
+    f({ rule: 'E4', severity: 'major', selector: 'a.phone', found: 'tel:+1222222222', page: 'https://ex.com/about' }),
+  ]
+  const all = [...templateRepeated, ...genuinelyDistinct]
+
+  const rawMajor = all.filter(x => x.severity === 'major' && x.confidence !== 'heuristic').length
+  assert.equal(rawMajor, 6, 'raw occurrence total: 4 template repeats + 2 distinct phone numbers')
+
+  const distinct = countDistinct(all)
+  assert.equal(distinct.major, 3, 'distinct total: 1 template defect (collapsed) + 2 genuinely different phone numbers')
+})
+
+test('countDistinct excludes heuristic-confidence findings, matching the population counts.* covers', () => {
+  const findings = [
+    f({ rule: 'E3', severity: 'minor', confidence: 'heuristic', selector: 'a.x', found: 'no target' }),
+    f({ rule: 'E3', severity: 'minor', confidence: 'heuristic', selector: 'a.y', found: 'no target 2' }),
+  ]
+  assert.deepEqual(countDistinct(findings), { critical: 0, major: 0, minor: 0, note: 0 })
+})
+
+test('countDistinct always returns all four severity keys, even for an empty findings list', () => {
+  assert.deepEqual(countDistinct([]), { critical: 0, major: 0, minor: 0, note: 0 })
 })

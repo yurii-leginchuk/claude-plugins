@@ -15,7 +15,7 @@ import { loadStrategySheet } from './crawl/sheet.js'
 import { parsePage } from './parse/page.js'
 import { buildIndex } from './parse/index.js'
 import { runStaticRules, allRules } from './rules/index.js'
-import { diffRuns, verdict } from './report/json.js'
+import { diffRuns, verdict, countDistinct } from './report/json.js'
 import { renderReport } from './report/html.js'
 import {
   loadSnapshot, listSnapshots, clearSnapshot, clearAll, saveSnapshot, saveRun, previousRun,
@@ -309,19 +309,38 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   // indistinguishable from a genuinely clean site, even though
   // findings.json holds real, unconfirmed findings that need a human look.
   // `heuristics` closes that gap without folding into `counts` or `verdict`.
+  //
+  // `heuristics` is broken down by severity, not a single number: 97
+  // "external host answered 400, needs a human to click the link" and 32
+  // "external link doesn't open in a new tab, a style call" are very
+  // different asks of the human reading the summary, and a flat count
+  // conflates them. This also gets rid of the `note: 0` illusion in
+  // `counts` -- note-severity findings mostly arrive as heuristics (see
+  // E1's bot-protection downgrade), so they show up here instead of looking
+  // like a phantom zero in `counts`.
   const counts = { critical: 0, major: 0, minor: 0, note: 0 }
-  let heuristics = 0
+  const heuristics = { critical: 0, major: 0, minor: 0, note: 0 }
   for (const f of findings) {
-    if (f.confidence === 'heuristic') heuristics++
+    if (f.confidence === 'heuristic') heuristics[f.severity] = (heuristics[f.severity] ?? 0) + 1
     else counts[f.severity]++
   }
+
+  // `distinct` answers "how many actual defects," not "how many times did a
+  // defect show up." `counts` is raw occurrences (a footer link repeated on
+  // 31 pages contributes 31 to counts.major); `distinct` collapses that same
+  // link, repeated verbatim across pages, to 1 -- while two different wrong
+  // phone numbers behind the same selector still count as 2, because the
+  // defect identity includes `found`. Both blocks matter: `counts` for
+  // blast radius, `distinct` so a caller doesn't tell a human "56 major
+  // issues" when the actual fix list is 8 items long.
+  const distinct = countDistinct(findings)
 
   return {
     host, env, envReason: reason, pages: pages.length, source, sitemapStatus,
     fromCache, cacheAgeDays: Number(cacheAgeDays.toFixed(4)),
     pagesRequested, pagesFailed, failedUrls: failedUrls.slice(0, 20),
     prodUrl,
-    verdict: verdict(findings), counts, heuristics,
+    verdict: verdict(findings), counts, distinct, heuristics,
     diff: { added: diff.added.length, fixed: diff.fixed.length, remaining: diff.remaining.length },
     runDir, reportPath: join(runDir, 'report.html'),
   }

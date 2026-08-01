@@ -179,6 +179,45 @@ test('truncates a rule group page list at 200 and says so visibly', () => {
   assert.match(out, /ещё 50/) // visible truncation notice for the remaining 50 pages
 })
 
+// Review follow-up (Important 1): a rule that emits findings at more than
+// one severity used to collapse into a single row chipped with the most
+// severe of the bunch -- rendered against the real cached cleaningny.com
+// run, E3's 44 major + 180 minor findings showed up as one "Major · 224
+// находок" row, hiding that the calibration had split them at all. Assert
+// the rendered HTML now shows two separate <details class="rule"> rows,
+// each with its own correct chip and its own count.
+test('a rule that emits two severities renders as two separate rows with distinct chips, not one merged row', () => {
+  const findings = [
+    ...Array.from({ length: 3 }, (_, i) => ({
+      rule: 'E3', title: 'Правила target=_blank', severity: 'major', engine: 'static', confidence: 'high',
+      page: `https://ex.com/major-${i}`, selector: 'a.internal', found: 'внутренняя ссылка с target=_blank',
+      expected: 'без target', breakpoint: null,
+    })),
+    ...Array.from({ length: 5 }, (_, i) => ({
+      rule: 'E3', title: 'Правила target=_blank', severity: 'minor', engine: 'static', confidence: 'high',
+      page: `https://ex.com/minor-${i}`, selector: 'a.social', found: 'внешняя ссылка без rel=noopener',
+      expected: 'rel="noopener"', breakpoint: null,
+    })),
+  ]
+  const out = renderReport({
+    host: 'ex.com', env: 'prod', envReason: '', pages: 8, findings,
+    diff: { fixed: [], remaining: [], added: findings }, snapshotAgeDays: 0, source: 'sitemap',
+  })
+  const ruleRows = [...out.matchAll(/<details class="rule">[\s\S]*?<\/details>/g)]
+  const e3Rows = ruleRows.filter(m => m[0].includes('>E3<'))
+  assert.equal(e3Rows.length, 2, 'E3 major and minor findings must render as two separate rows')
+
+  const majorRow = e3Rows.find(m => /chip maj/.test(m[0]))
+  const minorRow = e3Rows.find(m => /chip min/.test(m[0]))
+  assert.ok(majorRow, 'expected a row with the major chip')
+  assert.ok(minorRow, 'expected a row with the minor chip')
+  assert.match(majorRow[0], /3 находок/, 'major row counts only its own 3 findings')
+  assert.match(minorRow[0], /5 находок/, 'minor row counts only its own 5 findings')
+  // No single row should claim all 8 -- that would mean they were re-merged.
+  assert.doesNotMatch(majorRow[0], /8 находок/)
+  assert.doesNotMatch(minorRow[0], /8 находок/)
+})
+
 test('truncates the page index at 500 and says so visibly', () => {
   const findings = []
   for (let i = 0; i < 600; i++) {

@@ -33,7 +33,19 @@ function normalizeFound(found, rule) {
   return found.replace(pattern, 'N')
 }
 
-const key = (f) => [f.rule, f.page, f.selector, normalizeFound(f.found, f.rule)].join('|')
+// The core identity of a *defect*, independent of which page it happens to
+// show up on: the same rule flagging the same selector with the same
+// (normalized) `found` text is one underlying problem, whether it appears
+// once or on every page of the site (e.g. a footer link repeated across 31
+// pages is one defect, not 31). `countDistinct()` in cli.js keys off exactly
+// this function, and `key()` below builds on it (adding page) for diffRuns'
+// per-page-occurrence tracking -- so "how many distinct defects" and "what
+// changed since last run" can never define sameness differently by accident.
+export function defectIdentity(f) {
+  return [f.rule, f.selector, normalizeFound(f.found, f.rule)].join('|')
+}
+
+const key = (f) => `${defectIdentity(f)}|${f.page}`
 
 export function rollUp(findings) {
   // Validate that findings is an array (not just iterable, which includes strings)
@@ -42,25 +54,27 @@ export function rollUp(findings) {
     throw new TypeError(`rollUp requires an array, got ${received}`)
   }
 
+  // Grouped by rule + severity + confidence, not by rule alone: a single
+  // rule (E3, say) can legitimately emit findings at more than one severity
+  // -- an internal target=_blank house-rule violation at major next to an
+  // external missing-noopener hygiene issue at minor. Collapsing those into
+  // one rule-wide row (keyed on rule alone, "most severe wins") would hide
+  // the whole point of splitting a rule's findings by certainty: the report
+  // would show one "Major" chip covering both, exactly the flood this
+  // calibration was meant to fix. Each (rule, severity, confidence)
+  // combination gets its own row/chip instead.
   const groups = new Map()
   for (const f of findings) {
-    if (!groups.has(f.rule)) {
-      groups.set(f.rule, {
+    const groupKey = `${f.rule}|${f.severity}|${f.confidence}`
+    if (!groups.has(groupKey)) {
+      groups.set(groupKey, {
         rule: f.rule, title: f.title, severity: f.severity,
         confidence: f.confidence, count: 0, pages: [], example: f,
       })
     }
-    const g = groups.get(f.rule)
+    const g = groups.get(groupKey)
     g.count++
     if (!g.pages.includes(f.page)) g.pages.push(f.page)
-
-    // Update severity if we found a more severe one
-    const oldSeverityOrder = ORDER[g.severity] ?? 999  // Unknown severities sort last
-    const newSeverityOrder = ORDER[f.severity] ?? 999
-    if (newSeverityOrder < oldSeverityOrder) {
-      g.severity = f.severity
-      g.example = f
-    }
   }
 
   return [...groups.values()].sort((a, b) => {
@@ -75,6 +89,34 @@ export function verdict(findings) {
   if (solid.some(f => f.severity === 'critical')) return 'Fail'
   if (solid.some(f => f.severity === 'major')) return 'Needs fixes'
   return 'Pass'
+}
+
+// `counts` (built by the caller, see cli.js) answers "how many raw
+// occurrences" -- useful for gauging blast radius (a defect hitting 31
+// pages is worse than one hitting 1). `countDistinct` answers a different
+// question: "how many actual defects does a human need to go fix," which is
+// what a summary consumer (a Claude skill, a person skimming stdout) needs
+// in order not to overstate the remaining work by an order of magnitude
+// when one template-level bug is repeated across every page.
+//
+// Keyed on defectIdentity() (rule + selector + normalized found, no page),
+// the same identity diffRuns' own key() builds on -- so "how many distinct
+// defects" and "what changed since last run" can never disagree about what
+// counts as "the same defect". Only non-heuristic findings are counted,
+// mirroring `counts` so the two blocks describe the same population and
+// remain directly comparable (raw vs. distinct of the same solid findings).
+export function countDistinct(findings) {
+  const seen = { critical: new Set(), major: new Set(), minor: new Set(), note: new Set() }
+  for (const f of findings) {
+    if (f.confidence === 'heuristic') continue
+    const bucket = seen[f.severity]
+    if (!bucket) continue // unknown severity: not counted, matches counts' implicit contract
+    bucket.add(defectIdentity(f))
+  }
+  return {
+    critical: seen.critical.size, major: seen.major.size,
+    minor: seen.minor.size, note: seen.note.size,
+  }
 }
 
 export function diffRuns(current, previous) {

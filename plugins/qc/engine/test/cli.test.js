@@ -65,6 +65,11 @@ test('audit crawls, finds the tel defect and writes a report', async () => {
   assert.equal(out.pages, 1)
   assert.equal(out.env, 'prod')
   assert.ok(out.counts.major >= 1, 'expected the E4 tel finding')
+  // `distinct` sits alongside `counts`: one page, one E4 finding, so raw
+  // occurrences and distinct defects agree here (both >= 1). The point of
+  // the field only shows up when the same defect repeats across pages,
+  // covered separately in report/json.test.js.
+  assert.ok(out.distinct.major >= 1, 'expected distinct to report the same E4 defect')
   assert.ok(existsSync(out.reportPath))
 })
 
@@ -358,7 +363,15 @@ test('a heuristic-only page reports verdict Pass with a non-zero heuristics coun
     assert.equal(out.verdict, 'Pass')
     assert.equal(out.counts.critical, 0)
     assert.equal(out.counts.major, 0)
-    assert.ok(out.heuristics >= 1, `expected at least one heuristic finding, got ${out.heuristics}`)
+    // `heuristics` is broken down by severity (see Important/Minor review
+    // follow-up), not a flat count -- the E4 bare-10-digit-tel finding is a
+    // 'major'-severity, 'heuristic'-confidence finding, so it shows up in
+    // heuristics.major, not in counts.major.
+    assert.ok(
+      Object.values(out.heuristics).some(n => n >= 1),
+      `expected at least one heuristic finding, got ${JSON.stringify(out.heuristics)}`
+    )
+    assert.ok(out.heuristics.major >= 1, `expected the bare-tel heuristic under 'major', got ${JSON.stringify(out.heuristics)}`)
   } finally {
     s.close()
     rmSync(cache7, { recursive: true, force: true })
