@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import rule from '../../src/rules/static/E4-tel-format.js'
-import { runStaticRules } from '../../src/rules/index.js'
+import { runStaticRules, allRules } from '../../src/rules/index.js'
 
 const pageWith = (raws) => ({
   url: 'https://ex.com/a',
@@ -41,11 +41,26 @@ test('does not crash on an empty tel', () => {
 })
 
 test('runStaticRules catches throwing rules and emits note-severity findings', async () => {
+  const throwingStub = {
+    id: 'TEST-throws',
+    title: 'Test Rule That Throws',
+    severity: 'major',
+    engine: 'static',
+    check() {
+      throw new Error('intentional test error')
+    },
+  }
   const pages = [{ url: 'https://ex.com/test', links: [] }]
   const site = { host: 'ex.com' }
-  const findings = await runStaticRules(pages, site, { only: ['TEST-throws'] })
+  const findings = await runStaticRules(pages, site, { only: ['TEST-throws'], rules: [throwingStub] })
   assert.equal(findings.length, 1)
   assert.equal(findings[0].rule, 'TEST-throws')
   assert.equal(findings[0].severity, 'note')
   assert.match(findings[0].found, /rule crashed/)
+})
+
+test('production registry contains only expected rules', async () => {
+  const rules = await allRules()
+  const ruleIds = rules.map(r => r.id).sort()
+  assert.deepEqual(ruleIds, ['E4'])
 })

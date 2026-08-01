@@ -33,12 +33,13 @@ export async function allRules() {
   return cache
 }
 
-export async function runStaticRules(pages, site, { only = [], skip = [] } = {}) {
-  const rules = (await allRules()).filter(r =>
+export async function runStaticRules(pages, site, { only = [], skip = [], rules = null } = {}) {
+  const ruleSet = rules !== null ? rules : await allRules()
+  const filtered = ruleSet.filter(r =>
     (only.length === 0 || only.includes(r.id)) && !skip.includes(r.id))
   const out = []
   for (const page of pages) {
-    for (const rule of rules) {
+    for (const rule of filtered) {
       try {
         out.push(...(rule.check(page, site) || []))
       } catch (e) {
