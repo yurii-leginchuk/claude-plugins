@@ -41,8 +41,13 @@ function parseForms(root) {
     const fields = scope.querySelectorAll('.gfield').map((f) => {
       const cls = f.getAttribute('class') || ''
       const input = f.querySelector('input, textarea, select')
+      // Gravity Forms marks the field's semantic type on the wrapper as `gfield--type-<x>`
+      // (e.g. `gfield--type-phone`, `gfield--type-email`). This is an observed fact about
+      // the field, unlike inferring purpose from a formatted selector string.
+      const typeMatch = /\bgfield--type-([a-z0-9-]+)\b/i.exec(cls)
       return {
         inputType: input ? (input.getAttribute('type') || input.rawTagName) : null,
+        fieldType: typeMatch ? typeMatch[1].toLowerCase() : null,
         required: cls.includes('gfield_contains_required'),
         markedRequired: Boolean(f.querySelector('.gfield_required')),
         selector: selectorOf(f),

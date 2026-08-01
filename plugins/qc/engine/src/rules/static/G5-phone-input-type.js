@@ -10,17 +10,16 @@ export default {
     for (const form of page.forms || []) {
       if (!form.gravity) continue
       for (const f of form.fields || []) {
-        // Phone fields are identified by matching /phone/i against the field's selector
-        // (typically a Gravity Forms class like .gfield--type-phone). This infers the
-        // field's purpose from a class name rather than observing it directly, so
-        // findings from this rule are marked as heuristic confidence.
-        const isPhone = /phone/i.test(f.selector || '')
-        if (isPhone && f.inputType !== 'tel') {
+        // Phone fields are identified by `fieldType === 'phone'`, parsed in
+        // src/parse/page.js from the `gfield--type-phone` class Gravity Forms puts on
+        // the field wrapper. This is an observed fact about the field (not inferred from
+        // a formatted selector string), so findings from this rule use the default
+        // (high) confidence.
+        if (f.fieldType === 'phone' && f.inputType !== 'tel') {
           out.push(finding(this, page, {
             selector: f.selector,
             found: `type=${f.inputType || '(нет)'}`,
             expected: 'type="tel"',
-            confidence: 'heuristic',
           }))
         }
       }

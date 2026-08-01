@@ -78,6 +78,28 @@ test('detects the Gravity form and its fields', () => {
   assert.ok(gf.fields.length > 0)
 })
 
+test('parses fieldType from the gfield--type-<x> wrapper class, observed rather than inferred from the selector', () => {
+  const gf = doc.forms.find(f => f.gravity)
+  const phone = gf.fields.find(f => f.fieldType === 'phone')
+  assert.ok(phone, 'expected a field with fieldType "phone"')
+  assert.equal(phone.inputType, 'tel')
+  // The real selector never contains the word "phone" — it's id-based, per selectorOf()'s
+  // preference for id over class. This is exactly why G5 cannot key off the selector string.
+  assert.doesNotMatch(phone.selector, /phone/i)
+
+  const email = gf.fields.find(f => f.fieldType === 'email')
+  assert.ok(email, 'expected a field with fieldType "email"')
+
+  const noType = doc2FieldWithoutTypeClass()
+  assert.equal(noType.fieldType, null)
+})
+
+function doc2FieldWithoutTypeClass() {
+  const html = '<html><body><form id="gform_9" class="gform_wrapper"><div class="gfield"><input type="text"></div></form></body></html>'
+  const d = parsePage({ url: 'https://example.com/', html })
+  return d.forms[0].fields[0]
+}
+
 test('records elementor container ids and locations', () => {
   assert.ok(doc.elementor.containerIds.includes('3374'))
   assert.ok(doc.elementor.locations.includes('header'))
