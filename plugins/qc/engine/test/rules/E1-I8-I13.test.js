@@ -83,10 +83,27 @@ test('E1 stays silent on an external timeout/DNS failure (status 0) -- not our b
   assert.deepEqual(E1.check(p, site), [])
 })
 
-test('E1 stays silent on an external 5xx -- a transient error on a server we do not control, not a confirmed dead link', () => {
+test('E1 flags an external 500 at major severity -- it survived fetchOne\'s retries, so it is durable breakage, not a transient blip', () => {
   const p = page({ links: [{ raw: 'https://other.com/down', href: 'https://other.com/down', internal: false, selector: 'a' }] })
-  const site = { linkStatus: new Map([['https://other.com/down', { status: 503, ok: false }]]) }
+  const site = { linkStatus: new Map([['https://other.com/down', { status: 500, ok: false }]]) }
+  const f = E1.check(p, site)
+  assert.equal(f.length, 1)
+  assert.equal(f[0].severity, 'major')
+  assert.match(f[0].found, /500/)
+})
+
+test('E1 still stays silent on an external status 0 -- ambiguous between "their site is down" and "our checker got blocked"', () => {
+  const p = page({ links: [{ raw: 'https://flaky-host.example/x', href: 'https://flaky-host.example/x', internal: false, selector: 'a' }] })
+  const site = { linkStatus: new Map([['https://flaky-host.example/x', { status: 0, ok: false, error: 'timeout' }]]) }
   assert.deepEqual(E1.check(p, site), [])
+})
+
+test('E1 flags an internal 500 at critical -- our own infrastructure returning a server error is unambiguously our bug', () => {
+  const p = page({ links: [{ raw: '/down', href: 'https://ex.com/down', internal: true, selector: 'a' }] })
+  const site = { linkStatus: new Map([['https://ex.com/down', { status: 500, ok: false }]]) }
+  const f = E1.check(p, site)
+  assert.equal(f.length, 1)
+  assert.equal(f[0].severity, 'critical')
 })
 
 test('E1 still flags an internal status-0 failure at critical -- our own infrastructure is always our bug', () => {
@@ -97,11 +114,12 @@ test('E1 still flags an internal status-0 failure at critical -- our own infrast
   assert.equal(f[0].severity, 'critical')
 })
 
-test('E1 handles a realistic mixed page: internal 404, external 404, external timeout, healthy link, all in one pass', () => {
+test('E1 handles a realistic mixed page: internal 404, external 404, external 500, external timeout, healthy link, all in one pass', () => {
   const p = page({
     links: [
       { raw: '/gone', href: 'https://ex.com/gone', internal: true, selector: 'a.nav' },
       { raw: 'https://other.com/gone', href: 'https://other.com/gone', internal: false, selector: 'a.partner' },
+      { raw: 'https://other.com/down', href: 'https://other.com/down', internal: false, selector: 'a.widget' },
       { raw: 'https://flaky.example/x', href: 'https://flaky.example/x', internal: false, selector: 'a.badge' },
       { raw: '/ok', href: 'https://ex.com/ok', internal: true, selector: 'a.home' },
     ],
@@ -110,16 +128,18 @@ test('E1 handles a realistic mixed page: internal 404, external 404, external ti
     linkStatus: new Map([
       ['https://ex.com/gone', { status: 404, ok: false }],
       ['https://other.com/gone', { status: 404, ok: false }],
+      ['https://other.com/down', { status: 500, ok: false }],
       ['https://flaky.example/x', { status: 0, ok: false, error: 'timeout' }],
       ['https://ex.com/ok', { status: 200, ok: true }],
     ]),
   }
   const f = E1.check(p, site)
-  assert.equal(f.length, 2)
+  assert.equal(f.length, 3)
   const bySelector = Object.fromEntries(f.map(x => [x.selector, x]))
   assert.equal(bySelector['a.nav'].severity, 'critical')
   assert.equal(bySelector['a.partner'].severity, 'major')
-  assert.equal(bySelector['a.badge'], undefined, 'external timeout must not produce a finding')
+  assert.equal(bySelector['a.widget'].severity, 'major', 'external 500 is durable breakage once it survives retries, so it is reported at major')
+  assert.equal(bySelector['a.badge'], undefined, 'external timeout (status 0) must not produce a finding')
 })
 
 test('E1 tolerates a page with no links array at all', () => {
@@ -182,4 +202,18 @@ test('I13 marks a confirmed-broken favicon finding as high confidence (directly 
   const site = { linkStatus: new Map([['https://ex.com/fav.ico', { status: 404, ok: false }]]) }
   const f = I13.check(p, site)
   assert.equal(f[0].confidence, 'high')
+})
+
+test('I13 does not list the same broken URL twice when several rel values point at it', () => {
+  const p = page({
+    favicons: [
+      { href: 'https://ex.com/favicon.ico', rel: 'icon' },
+      { href: 'https://ex.com/favicon.ico', rel: 'shortcut icon' },
+    ],
+  })
+  const site = { linkStatus: new Map([['https://ex.com/favicon.ico', { status: 404, ok: false }]]) }
+  const f = I13.check(p, site)
+  assert.equal(f.length, 1)
+  const occurrences = f[0].found.split('https://ex.com/favicon.ico').length - 1
+  assert.equal(occurrences, 1, `expected the broken URL to appear once, found: ${f[0].found}`)
 })

@@ -25,8 +25,18 @@ export default {
     // A page commonly declares several icon variants (icon, apple-touch-icon,
     // shortcut icon). When they are all served from the same broken origin,
     // reporting one finding per <link> is noise that overstates the problem
-    // -- collapse to a single finding per page, listing every broken href.
-    const list = broken.map(i => `${i.rel || 'icon'} ${i.href} (HTTP ${status.get(i.href).status || 'нет ответа'})`).join(', ')
+    // -- collapse to a single finding per page. Several `rel` values can
+    // point at the very same broken URL (e.g. `icon` and `shortcut icon`
+    // both set to /favicon.ico); dedupe by href first so that URL is not
+    // listed twice, merging the rel names that reference it.
+    const byHref = new Map()
+    for (const i of broken) {
+      if (!byHref.has(i.href)) byHref.set(i.href, new Set())
+      byHref.get(i.href).add(i.rel || 'icon')
+    }
+    const list = [...byHref.entries()]
+      .map(([href, rels]) => `${[...rels].join('/')} ${href} (HTTP ${status.get(href).status || 'нет ответа'})`)
+      .join(', ')
     return [finding(this, page, {
       selector: 'link[rel~=icon]',
       found: `favicon не отдаёт 200: ${list}`,
