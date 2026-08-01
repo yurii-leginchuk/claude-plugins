@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { mkdtempSync, rmSync, existsSync } from 'node:fs'
+import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 // Direct (in-process) imports, used only by the pairedAsDev-precedence test
@@ -17,7 +17,7 @@ import { join } from 'node:path'
 // awkwardness of passing a fetchImpl through a subprocess's argv.
 import { audit } from '../src/cli.js'
 import { parsePage } from '../src/parse/page.js'
-import { saveSnapshot } from '../src/crawl/store.js'
+import { saveSnapshot, loadSnapshot } from '../src/crawl/store.js'
 
 const run = promisify(execFile)
 const cwd = new URL('..', import.meta.url).pathname
@@ -375,5 +375,96 @@ test('a heuristic-only page reports verdict Pass with a non-zero heuristics coun
   } finally {
     s.close()
     rmSync(cache7, { recursive: true, force: true })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Review follow-up (Critical 2): the crawler parsed each page against the
+// *requested* URL and threw away `res.finalUrl`. Requesting `/about` on a site
+// that 301s to `/about/` produced a PageDoc keyed to `/about` while the
+// document's (correct, self-referencing) canonical said `/about/` -- so I5
+// reported a Critical "canonical с лишним слешем" on a page with no defect at
+// all. Hand-typed strategy-sheet URLs and any http->https site hit this on
+// every page. Read through the whole pipeline (discover -> fetch -> parse ->
+// rules), because every layer in that chain had to agree for the bug to exist.
+// ---------------------------------------------------------------------------
+
+test('a correct canonical behind a redirect produces no I5 finding', async () => {
+  const redirCache = mkdtempSync(join(tmpdir(), 'qc-redir-'))
+  let rbase
+  const redirServer = createServer((req, res) => {
+    if (req.url === '/robots.txt') { res.writeHead(200); return res.end(`Sitemap: ${rbase}/sitemap.xml`) }
+    if (req.url === '/sitemap.xml') {
+      res.writeHead(200, { 'content-type': 'application/xml' })
+      // The list carries the pre-redirect form, exactly as a strategy sheet
+      // (or a sitemap written before a trailing-slash policy change) would.
+      return res.end(`<urlset><url><loc>${rbase}/about</loc></url></urlset>`)
+    }
+    if (req.url === '/about') {
+      res.writeHead(301, { location: `${rbase}/about/` })
+      return res.end()
+    }
+    if (req.url === '/about/') {
+      res.writeHead(200, { 'content-type': 'text/html' })
+      return res.end(`<!doctype html><html lang="en"><head><title>О нас</title>
+<link rel="canonical" href="${rbase}/about/"></head>
+<body><header>h</header><main><h1>О нас</h1></main></body></html>`)
+    }
+    res.writeHead(404); res.end('nope')
+  })
+  await new Promise(r => redirServer.listen(0, r))
+  rbase = `http://127.0.0.1:${redirServer.address().port}`
+
+  const prevCacheDir = process.env.QC_CACHE_DIR
+  process.env.QC_CACHE_DIR = redirCache
+  try {
+    const out = await audit(rbase, { env: 'prod', only: 'I5', fresh: true })
+    assert.equal(out.pages, 1)
+    assert.equal(out.counts.critical, 0, 'a self-referencing canonical behind a 301 is not a defect')
+    assert.equal(out.heuristics.critical, 0)
+
+    const findings = JSON.parse(readFileSync(join(out.runDir, 'findings.json'), 'utf8'))
+    assert.deepEqual(findings, [], `expected no I5 findings, got ${JSON.stringify(findings)}`)
+  } finally {
+    if (prevCacheDir === undefined) delete process.env.QC_CACHE_DIR
+    else process.env.QC_CACHE_DIR = prevCacheDir
+    redirServer.close()
+    rmSync(redirCache, { recursive: true, force: true })
+  }
+})
+
+test('a page fetched through a redirect is keyed to its final URL', async () => {
+  const redirCache = mkdtempSync(join(tmpdir(), 'qc-redir2-'))
+  let rbase
+  const redirServer = createServer((req, res) => {
+    if (req.url === '/robots.txt') { res.writeHead(200); return res.end(`Sitemap: ${rbase}/sitemap.xml`) }
+    if (req.url === '/sitemap.xml') {
+      res.writeHead(200, { 'content-type': 'application/xml' })
+      return res.end(`<urlset><url><loc>${rbase}/about</loc></url></urlset>`)
+    }
+    if (req.url === '/about') { res.writeHead(301, { location: `${rbase}/about/` }); return res.end() }
+    if (req.url === '/about/') {
+      res.writeHead(200, { 'content-type': 'text/html' })
+      return res.end(`<!doctype html><html lang="en"><head><title>О нас</title>
+<link rel="canonical" href="${rbase}/about/"></head><body><h1>О нас</h1></body></html>`)
+    }
+    res.writeHead(404); res.end('nope')
+  })
+  await new Promise(r => redirServer.listen(0, r))
+  rbase = `http://127.0.0.1:${redirServer.address().port}`
+
+  const prevCacheDir = process.env.QC_CACHE_DIR
+  process.env.QC_CACHE_DIR = redirCache
+  try {
+    const out = await audit(rbase, { env: 'prod', only: 'I5', fresh: true })
+    const snap = loadSnapshot(out.host)
+    assert.equal(snap.pages.length, 1)
+    assert.equal(snap.pages[0].url, `${rbase}/about/`, 'PageDoc must carry the post-redirect URL')
+    assert.equal(snap.pages[0].canonical, `${rbase}/about/`)
+  } finally {
+    if (prevCacheDir === undefined) delete process.env.QC_CACHE_DIR
+    else process.env.QC_CACHE_DIR = prevCacheDir
+    redirServer.close()
+    rmSync(redirCache, { recursive: true, force: true })
   }
 })

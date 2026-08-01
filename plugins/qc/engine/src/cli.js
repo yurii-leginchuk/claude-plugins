@@ -253,7 +253,22 @@ export async function audit(input, flags, { fetchImpl } = {}) {
       // a 404 page can still carry a non-empty body ("not found" HTML),
       // and treating that as a successfully-audited page would be wrong.
       if (res.ok && res.body) {
-        pages.push(parsePage({ url, html: res.body, status: res.status, headers: res.headers }))
+        // Parse against the URL the response actually came from, not the one
+        // we asked for. fetchOne follows redirects, so requesting `/about` on
+        // a site that 301s to `/about/` returns the `/about/` document with a
+        // correctly self-referencing canonical -- and keying the PageDoc to
+        // the requested URL made I5 report a Critical "canonical с лишним
+        // слешем" on every such page. That is the normal case for hand-typed
+        // strategy-sheet URLs and for any http->https site, so it fired
+        // site-wide. finalUrl also keeps buildIndex keys, I6's homepage check
+        // and internal/external link classification honest.
+        //
+        // The *requested* URL is still what failedUrls records below, so
+        // "which of the URLs I was given could not be fetched" stays
+        // answerable in the operator's own terms.
+        pages.push(parsePage({
+          url: res.finalUrl || url, html: res.body, status: res.status, headers: res.headers,
+        }))
       } else {
         failedUrls.push({ url, status: res.status, error: res.error || null })
       }
