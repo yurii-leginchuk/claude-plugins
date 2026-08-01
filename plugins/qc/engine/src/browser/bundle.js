@@ -5,21 +5,23 @@ import { helpers } from '../rules/browser/_helpers.js'
 // window.__qc.run(ctx). Rules are serialised by source, so a check that closes
 // over module scope will throw the moment it runs -- Task 1's contract test
 // catches that before it can reach a real site.
-function serialiseHelpers(obj) {
-  const entries = Object.entries(obj).map(([k, v]) => {
-    // ES2015 method shorthand's toString() retains the method name, e.g.
-    // "selector(el) { ... }" -- invalid as an object-literal value on its
-    // own. Rewrite the leading `name(` to `function (` so it becomes a
-    // function expression; `this` still binds correctly since these are
-    // always called as helpers.<name>(...).
-    const src = v.toString().replace(/^[A-Za-z0-9_$]+\s*\(/, 'function (')
-    return `${k}: ${src}`
-  })
+//
+// A straight toString() per entry is safe here ONLY because _helpers.js
+// deliberately writes every entry as `key: function (...) {...}` rather than
+// ES2015 method shorthand -- shorthand's toString() retains the method name
+// (e.g. "selector(el) {...}"), which is invalid once spliced back in as an
+// object-literal value. See the comment at the top of _helpers.js. Exported
+// so tests can assert the serialised form actually parses and behaves.
+export function serialiseHelpers(obj) {
+  const entries = Object.entries(obj).map(([k, v]) => `${k}: ${v.toString()}`)
   return `{ ${entries.join(',\n')} }`
 }
 
-export async function buildBundle() {
-  const rules = await allBrowserRules()
+// `extraRules` lets tests inject a rule (e.g. one that throws) without
+// dropping a file into src/rules/browser/, which is the production registry
+// -- a stub file there would become a live rule on every real crawl.
+export async function buildBundle({ extraRules = [] } = {}) {
+  const rules = [...(await allBrowserRules()), ...extraRules]
   const parts = rules.map(r => `  { id: ${JSON.stringify(r.id)}, check: ${r.check.toString()} }`)
   return `
 (function () {

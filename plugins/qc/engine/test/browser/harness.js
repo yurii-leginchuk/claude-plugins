@@ -23,14 +23,17 @@ export async function serveFixtures() {
 }
 
 // Loads one fixture at one width and returns the findings of `ruleIds`.
-export async function findingsFor(fixture, { width = 1440, only = null } = {}) {
+// `extraRules` is passed straight through to buildBundle() -- it lets a test
+// inject a throwing rule to pin crash isolation without adding a file to the
+// production rule registry (see bundle.js's buildBundle comment).
+export async function findingsFor(fixture, { width = 1440, only = null, extraRules = [] } = {}) {
   const { base, close } = await serveFixtures()
   const { browser, newPage } = await launchBrowser()
   try {
     const page = await newPage()
     const url = `${base}/${fixture}`
     await preparePage(page, { width, url })
-    const bundle = await buildBundle()
+    const bundle = await buildBundle({ extraRules })
     await page.evaluate(bundle)
     const all = await page.evaluate(
       (ctx) => window.__qc.run(ctx),
