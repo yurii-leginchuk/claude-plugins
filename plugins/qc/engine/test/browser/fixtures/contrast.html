@@ -1,0 +1,14 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Contrast</title>
+<style>body{margin:0;background:#fff}
+#strong{color:#111;background:#fff}
+#faint{color:#cfcfcf;background:#fff}
+#over-image{color:#888;background-image:linear-gradient(#fff,#000)}
+.dark-section{background:#111;padding:20px}
+.wrapper{padding:4px}
+.overlay{background:rgba(0,0,0,.85);padding:8px}
+</style></head>
+<body><main><p id="strong">readable text</p><p id="faint">barely readable text</p>
+<p id="over-image">text on a gradient</p>
+<section class="dark-section"><div class="wrapper"><div><p id="distant-dark" style="color:#fff">white text several levels below a dark section background</p></div></div></section>
+<div class="overlay"><p id="over-overlay" style="color:#fff">white text over a semi-transparent dark overlay</p></div>
+</main></body></html>

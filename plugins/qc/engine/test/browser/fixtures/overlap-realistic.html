@@ -1,0 +1,45 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Realistic overlap</title>
+<style>
+body{margin:0;font:16px system-ui}
+/* Fixed header: 60px tall, full width, sits at the very top. Real sites
+   compensate with padding-top on the content so this does not visually
+   overlap anything, but the fixture deliberately omits that compensation --
+   the point is to measure what the naive absolute/fixed comparison reports
+   on the single most common piece of fixed UI chrome that exists. */
+header{position:fixed;top:0;left:0;right:0;height:60px;background:#222;color:#fff}
+main{padding:0 20px}
+.hero{height:400px;background:#eef}
+.section{height:300px;background:#efe;margin-top:8px}
+/* Cookie consent banner, fixed to the bottom, full width. */
+.cookie-banner{position:fixed;left:0;right:0;bottom:0;height:80px;background:#333;color:#fff}
+footer{height:200px;background:#ccc;margin-top:8px}
+/* Back-to-top button, fixed bottom-right, small. Positioned to land inside
+   the cookie banner's footprint -- a very common real bug (a banner shipped
+   later without checking existing fixed UI), used to prove the noise-cutting
+   fix below does not also blind B6 to genuine fixed-vs-fixed collisions. */
+.back-to-top{position:fixed;right:16px;bottom:16px;width:44px;height:44px;border-radius:50%;background:#06c}
+/* Dropdown menu: absolutely positioned, appears under a nav toggle, and is
+   authored open (display:block) in this static fixture so its overlap with
+   the content below is exercised the same way a real "menu left open"
+   regression would look from a static DOM snapshot. */
+nav{position:relative}
+.dropdown-menu{position:absolute;top:24px;left:0;width:220px;height:120px;background:#fff;border:1px solid #999}
+/* A modal/mobile-nav backdrop, baked open in this static fixture the same
+   way "the QA snapshot happened to load with the drawer open" would look.
+   Covers effectively the whole viewport by design -- this is the actual
+   noise source measured below, not the small chrome pieces above. */
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.5)}
+.modal{position:fixed;top:80px;left:50%;transform:translateX(-50%);width:480px;height:320px;background:#fff}
+</style></head>
+<body>
+<header><nav>Site nav<div class="dropdown-menu">menu item one<br>menu item two</div></nav></header>
+<main>
+<div class="hero">Hero content</div>
+<div class="section">Section content</div>
+</main>
+<footer>Footer content</footer>
+<div class="cookie-banner">We use cookies. <button>Accept</button></div>
+<div class="back-to-top">&uarr;</div>
+<div class="modal-backdrop"></div>
+<div class="modal">A dialog, open in this static snapshot</div>
+</body></html>

@@ -71,6 +71,18 @@ test('every browser rule check is self-contained and survives serialisation', as
 // test was written to close (see above). The added <style> block declares a
 // real :hover rule matching the existing <a> so F5's full path executes. The
 // added <button> exercises F4's native-form-control exclusion branch.
+//
+// Task 5 (F1/J3/B6) extended this content again, for the same reason. B6
+// only iterates candidates whose computed position is absolute/fixed -- with
+// none present, its entire pairwise comparison loop (including the
+// el.contains()/overlap-math/ctx.helpers.selector path where a bug would
+// actually live) ran zero iterations despite the outer "collect candidates"
+// loop technically executing. The two added <div>s are absolutely positioned
+// and genuinely overlap, so B6's full path -- including pushing a finding --
+// executes here. F1 and J3 needed no further additions: F1 already gets a
+// covered <a> and an uncovered <button> from the existing markup/style, and
+// J3 already gets text-bearing elements to walk (<div>, <a>, <button>) with
+// no background anywhere in the chain, exercising its compositing walk.
 test('every browser rule check executes without crashing (module-scope contract)', async () => {
   const { launchBrowser } = await import('../../src/browser/launch.js')
   const { buildBundle } = await import('../../src/browser/bundle.js')
@@ -79,12 +91,18 @@ test('every browser rule check executes without crashing (module-scope contract)
   try {
     const page = await newPage()
     await page.setContent(`<!doctype html><html lang="en"><head>
-      <style>a:hover{color:red}</style>
+      <style>a:hover{color:red}
+      body{position:relative}
+      .ov-a{position:absolute;left:10px;top:10px;width:60px;height:60px;background:#fdd}
+      .ov-b{position:absolute;left:30px;top:30px;width:60px;height:60px;background:#ddf}
+      </style>
       </head><body>
       <div>content</div>
       <a href="/">link</a>
       <button>plain button</button>
       <img alt="x" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+      <div class="ov-a">a</div>
+      <div class="ov-b">b</div>
     </body></html>`)
     // X1 reads this array rather than iterating live DOM; seed one entry so
     // its loop body executes at least once too.
