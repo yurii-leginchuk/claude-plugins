@@ -28,6 +28,7 @@ import { runBrowserPass } from './browser/run.js'
 import { parse as parseHtml } from 'node-html-parser'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { readFileSync } from 'node:fs'
 
 // How long a saved snapshot is trusted as a stand-in for a live crawl when
 // --fresh is not given. See the `--fresh` section of audit() below for the
@@ -125,6 +126,42 @@ function loadFreshSnapshot(host) {
   if (ageMs >= SNAPSHOT_TTL_MS) return null
   if (!snap.pages.length) return null
   return { snap, ageDays: ageMs / 86400000 }
+}
+
+// Reads each browser finding's `shot` file (a PNG on disk, written by
+// src/browser/screenshot.js) and sets `shotDataUri` on the finding in place
+// -- the base64 data URI renderReport actually embeds. renderReport itself
+// stays filesystem-free (it is exercised directly with hand-built
+// `shotDataUri` values in test/report/html-browser.test.js), so this is the
+// one place in the engine that turns a `shot` path into report-ready bytes.
+//
+// A defect in a shared region occurs on every page it appears on, and
+// run.js's backfill means every one of those occurrences already points at
+// the SAME file path -- so the same path is read at most once per audit run
+// (cached by path in `seen`) rather than once per occurrence.
+//
+// A missing/unreadable file (deleted from the cache after browser.jsonl was
+// written, or a capture that genuinely failed and left `shot` unset) must
+// not fail the whole audit -- the finding is still valid evidence without
+// its crop; it simply renders with no image, same as any finding that never
+// had one.
+function inlineScreenshots(findings) {
+  const seen = new Map()
+  for (const f of findings) {
+    if (!f.shot) continue
+    if (seen.has(f.shot)) {
+      f.shotDataUri = seen.get(f.shot)
+      continue
+    }
+    try {
+      const uri = `data:image/png;base64,${readFileSync(f.shot).toString('base64')}`
+      seen.set(f.shot, uri)
+      f.shotDataUri = uri
+    } catch {
+      seen.set(f.shot, undefined)
+    }
+  }
+  return findings
 }
 
 // `fetchImpl`, when given, is threaded through to loadStrategySheet for a
@@ -327,7 +364,37 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   const { env, reason } = detectEnv({ host, pages, pairedAsDev, pairedAsDevReason, override: envOverride })
 
   const site = { host, env, prodHost, pages, index: buildIndex(pages), linkStatus }
-  const findings = await runStaticRules(pages, site, { only: onlyIds, skip: skipIds })
+  const staticFindings = await runStaticRules(pages, site, { only: onlyIds, skip: skipIds })
+
+  // Task 10: merge in whatever `qc browse` has already recorded for this
+  // host. `loadBrowserResults` reads browser.jsonl directly (never re-runs
+  // the browser pass -- `audit` never launches a browser at all) and returns
+  // [] when the file does not exist, which is exactly the "browse was never
+  // run" case `browserCoverage` below distinguishes from "browse ran and
+  // covered N of M pages". --only/--skip above validate against static rule
+  // ids only (see `validIds`) and never touch these -- a browser-pass id
+  // would already have thrown "неизвестные идентификаторы правил" before
+  // reaching here, so browser findings are always included whole.
+  const browserRows = loadBrowserResults(host)
+  const browserFindings = browserRows.flatMap(r => r.findings || [])
+  inlineScreenshots(browserFindings)
+  const findings = [...staticFindings, ...browserFindings]
+
+  // Coverage is reported only when a browser pass has actually left rows on
+  // disk for this host -- an empty array here (never run) must produce NO
+  // `browserCoverage`, not one claiming 0-of-N, so renderReport's "browser
+  // pass never ran" header (as opposed to its "ran but partial") fires
+  // correctly. `pagesDone` mirrors run.js's own definition (a row with
+  // `error: null` -- a page that was actually opened and measured), not
+  // merely "has a row", so a host with only failed attempts does not read as
+  // partially checked.
+  const browserCoverage = browserRows.length
+    ? {
+        pagesDone: browserRows.filter(r => !r.error).length,
+        pagesTotal: pages.length,
+        widths: [...new Set(browserRows.flatMap(r => r.widths || []))].sort((a, b) => a - b),
+      }
+    : null
 
   const prev = previousRun(host)
   const diff = diffRuns(findings, prev?.findings || null)
@@ -347,7 +414,7 @@ export async function audit(input, flags, { fetchImpl } = {}) {
 
   const html = renderReport({
     host, env, envReason: reason, pages: pages.length, findings, diff,
-    snapshotAgeDays: cacheAgeDays, source, sitemapStatus,
+    snapshotAgeDays: cacheAgeDays, source, sitemapStatus, browserCoverage,
   })
   const runDir = saveRun(host, findings, html)
 
@@ -396,6 +463,11 @@ export async function audit(input, flags, { fetchImpl } = {}) {
     prodUrl,
     verdict: verdict(findings), counts, distinct, heuristics,
     diff: { added: diff.added.length, fixed: diff.fixed.length, remaining: diff.remaining.length },
+    // null (not omitted) when `qc browse` has never run for this host --
+    // matches renderReport's own "never ran" vs "ran but partial" split, and
+    // a caller reading the JSON summary alone (never opening the HTML) sees
+    // the same distinction the report states in its header.
+    browserCoverage,
     runDir, reportPath: join(runDir, 'report.html'),
   }
 }
