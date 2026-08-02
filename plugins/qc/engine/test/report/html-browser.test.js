@@ -152,7 +152,7 @@ test('a realistic run (60 distinct defects, each with a screenshot) stays comfor
   assert.equal([...html.matchAll(/<img /g)].length, 60)
 })
 
-test('when screenshots alone exceed the budget, note/minor are dropped before major, and critical is never dropped', () => {
+test('when screenshots alone exceed the budget, note screenshots are dropped before critical, when that alone is enough', () => {
   const findings = [
     ...buildShotFindings({ count: 5, severity: 'critical', fillChar: 'C', bytesPerShot: 20000 }),
     ...buildShotFindings({ count: 60, severity: 'note', fillChar: 'O', bytesPerShot: 60000 }),
@@ -165,7 +165,10 @@ test('when screenshots alone exceed the budget, note/minor are dropped before ma
   assert.match(html, /лимит размера/i)
   assert.ok(bytes < 2.2 * 1024 * 1024, `expected the drop to bring the document back near budget, got ${bytes} bytes`)
 
-  // All 5 critical screenshots survive -- critical is never dropped.
+  // All 5 critical screenshots survive -- dropping the note tier alone
+  // already clears the budget here, so critical (the last resort) is never
+  // touched. This is priority ordering, not an absolute "critical is never
+  // dropped" rule -- see the next test for the last-resort case.
   for (let i = 0; i < 5; i++) assert.match(html, new RegExp(`#critical${i}"`))
   // At least one note screenshot was dropped (the whole point of the test).
   const noteImgs = [...html.matchAll(/#note\d+"/g)].length
@@ -173,4 +176,98 @@ test('when screenshots alone exceed the budget, note/minor are dropped before ma
   // The defect's own text survives even for a dropped screenshot -- only
   // the image itself is suppressed, never the finding it belongs to.
   assert.match(html, /дефект №0 серьёзности note/)
+  // Clearing the budget via dropping means no "still oversized" note is
+  // needed -- that note is reserved for when dropping wasn't enough.
+  assert.doesNotMatch(html, /превышает рекомендуемый лимит/i)
+})
+
+// ---------------------------------------------------------------------------
+// Review fix: an earlier version of this budget exempted `critical`
+// screenshots entirely. Real scale broke that -- a struggling multi-hundred
+// page site with dozens of distinct CRITICAL visual bugs per rule produced a
+// report where every single screenshot was critical, so nothing was ever
+// eligible to drop, and a 5.1MB document (2.5x over budget) shipped with
+// zero screenshots dropped and no warning anywhere. Critical is now
+// droppable too, strictly as a last resort (only reached once note/minor/
+// major are exhausted) -- reproduced here with an all-critical findings set
+// that has nothing else to fall back on.
+// ---------------------------------------------------------------------------
+
+test('drops critical screenshots as a genuine last resort when nothing else is left to drop', () => {
+  const findings = buildShotFindings({ count: 50, severity: 'critical', fillChar: 'C', bytesPerShot: 60000 })
+  const html = renderReport({ ...base, findings })
+  const bytes = Buffer.byteLength(html, 'utf8')
+
+  // ~3MB of all-critical screenshot payload: dropping must have happened
+  // (there is nothing else to drop) and the result must fit back under
+  // budget.
+  assert.ok(bytes <= 2 * 1024 * 1024, `expected dropping critical as a last resort to clear the budget, got ${bytes} bytes`)
+  assert.match(html, /лимит размера/i)
+  assert.match(html, /critical/, 'the drop notice should name critical among the tiers it may reach')
+
+  const remainingImgs = [...html.matchAll(/#critical\d+"/g)].length
+  assert.ok(remainingImgs < 50, `expected at least one critical screenshot dropped, saw all ${remainingImgs}`)
+  // Every defect's text -- even the ones whose screenshot got dropped --
+  // stays in the document; only images were sacrificed.
+  for (let i = 0; i < 50; i++) assert.match(html, new RegExp(`дефект №${i} серьёзности critical`))
+})
+
+// ---------------------------------------------------------------------------
+// Review fix: the "still over budget" note must render even when NOTHING
+// was droppable at all -- e.g. no screenshots in the document whatsoever,
+// and the findings' own text is simply too large. The old code only ever
+// rendered a size-related note when `suppressedShots.size > 0`, so this
+// case shipped an oversized document with total silence about it.
+// ---------------------------------------------------------------------------
+
+test('states the document is over budget even when there was nothing to drop (no screenshots at all)', () => {
+  const bigText = 'A'.repeat(40000)
+  const findings = Array.from({ length: 60 }, (_, i) => f({
+    page: `https://big.example.com/${i}`, selector: `.big-${i}`,
+    found: `MARKER-${i}-${bigText}`, shotDataUri: undefined,
+  }))
+  const html = renderReport({ ...base, findings })
+  const bytes = Buffer.byteLength(html, 'utf8')
+  assert.ok(bytes > 2 * 1024 * 1024, `test setup should exceed the budget from text alone, got ${bytes} bytes`)
+
+  assert.match(html, /превышает рекомендуемый лимит/i)
+  // Nothing was suppressed -- there were no screenshots to suppress -- so
+  // the "N screenshots hidden" note must NOT also claim a drop happened.
+  assert.doesNotMatch(html, /Часть скриншотов скрыта/i)
+  // The content itself is untouched -- every defect's text is still there.
+  assert.match(html, /MARKER-0-/)
+  assert.match(html, /MARKER-59-/)
+})
+
+// ---------------------------------------------------------------------------
+// Review fix: `shotDataUri` reaches renderReport straight from caller-
+// supplied findings (this test file calls it directly, same as any future
+// caller could). A live external URL, though harmless as injection (it's
+// escaped), would still be a real external reference in a document whose
+// whole premise is "no external requests" once published as a sandboxed
+// Artifact. Only a genuine `data:image/...` URI may become an <img src>.
+// ---------------------------------------------------------------------------
+
+test('a non-data-uri shotDataUri (an external URL) is never rendered as an <img>', () => {
+  const html = renderReport({ ...base, findings: [f({ shotDataUri: 'https://evil.example.com/x.png' })] })
+  assert.doesNotMatch(html, /<img/)
+  assert.doesNotMatch(html, /src="https:\/\/evil\.example\.com/i)
+})
+
+// ---------------------------------------------------------------------------
+// Minor, but the payoff of Tasks 6-7's region-proving work: a defect that
+// carries a proved-shared `region` (regions.js) must say so in the report,
+// making the "fix once" reading explicit rather than leaving the reader to
+// infer it from a long page list.
+// ---------------------------------------------------------------------------
+
+test('renders the region as an explicit "fix once" note when the finding carries one', () => {
+  const html = renderReport({ ...base, findings: [f({ region: 'footer' })] })
+  assert.match(html, /регион: <code>footer<\/code>/)
+  assert.match(html, /один раз/i)
+})
+
+test('a defect with no region renders no region line at all', () => {
+  const html = renderReport({ ...base, findings: [f()] })
+  assert.doesNotMatch(html, /регион:/)
 })

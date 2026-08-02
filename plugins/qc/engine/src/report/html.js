@@ -31,13 +31,21 @@ const DEFECT_CAP = 100
 // own allowance and silently doubling the real total.
 const PUBLISH_BYTE_LIMIT = 2 * 1024 * 1024
 
-// When the assembled document is still over budget after everything else,
-// screenshots are dropped -- never the defect text itself, which is the
-// part a developer actually needs to act on. Dropped in this order: note,
-// then minor, then major. Critical is never dropped: it is the smallest
-// category in practice and the one whose visual evidence matters most, so
-// the budget is allowed to be exceeded rather than hide it silently.
-const SHOT_DROP_ORDER = { note: 0, minor: 1, major: 2, critical: 99 }
+// When the assembled document is still over budget, screenshots are dropped
+// -- never the defect text itself, which is the part a developer actually
+// needs to act on. Dropped in this order: note, then minor, then major, and
+// -- as a genuine last resort, only reached once every lower tier is already
+// gone -- critical too. An earlier version of this exempted critical
+// entirely, on the theory that it is normally the smallest bucket. Real
+// scale broke that assumption: a struggling multi-hundred-page site with
+// dozens of distinct critical visual bugs per rule produced a 5.1MB report
+// (2.5x over budget) with every screenshot critical, so nothing was ever
+// eligible to drop and the document shipped oversized with no warning at
+// all (see the "still over budget even after dropping everything droppable"
+// note below, which exists precisely to make that impossible now). A report
+// that is complete in text and short on pictures is far better than one
+// that cannot be published.
+const SHOT_DROP_ORDER = { note: 0, minor: 1, major: 2, critical: 3 }
 
 const CSS = `
 :root{--bg:#fff;--fg:#12151a;--mut:#5d6672;--line:#e4e7ec;--card:#f7f8fa;
@@ -112,7 +120,40 @@ function renderDefect(d, ctx = {}) {
     ? `<div class="kv">брейкпоинты: <code>${[...bps].sort((a, b) => a - b).map(esc).join(', ')}</code></div>`
     : ''
 
-  const shotDataUri = d.example?.shotDataUri ?? null
+  // A `region` is a proved-shared container (regions.js, Tasks 6-7 -- header,
+  // footer, a repeated widget) attached to a finding as a LABEL, not just an
+  // extra key that happens to widen defectIdentity(). json.js's own comment
+  // calls it out explicitly: "this is the footer, fix it once." Rendering it
+  // is the whole payoff of that mechanism actually reaching a human reader --
+  // without it, a defect repeated across every page's shared header shows up
+  // as nothing more than a long, undifferentiated page list, and the reader
+  // has no way to tell "one shared component, fix once" from "N unrelated
+  // instances of the same mistake, fix N times" without already knowing the
+  // site's template structure. Every occurrence of one identity carries the
+  // SAME region (it is part of the identity key), so `d.example.region` is
+  // authoritative here, same as the screenshot fields below.
+  const region = d.example?.region ?? null
+  const regionHtml = region
+    ? `<div class="kv">регион: <code>${esc(region)}</code> — общий для всех вхождений ниже, исправить нужно один раз</div>`
+    : ''
+
+  // Review fix: `shotDataUri` reaches this function from `d.example`, which
+  // for a report built directly against hand-supplied findings (as this
+  // module's own test suite does, and as any future caller is free to do --
+  // renderReport is a public, filesystem-free API, not something only
+  // cli.js's own inlineScreenshots() ever feeds) could be ANY string, not
+  // necessarily one cli.js actually produced. This report's whole premise
+  // is "no external requests" (it is published as a sandboxed Artifact where
+  // those are blocked outright); an `<img src>` pointed at a live
+  // `https://` URL would be escaped (no injection) but would still be a
+  // real external reference sitting in a document that promises there are
+  // none. Only a genuine embedded `data:image/...` URI is accepted --
+  // anything else (an http(s) URL, a bare string, a non-string) is treated
+  // exactly like "no screenshot for this defect" and silently omitted, same
+  // as any finding that never had one.
+  const shotDataUri = (typeof d.example?.shotDataUri === 'string' && d.example.shotDataUri.startsWith('data:image/'))
+    ? d.example.shotDataUri
+    : null
   const shotWidth = d.example?.shotWidth ?? null
   if (shotDataUri && candidates) {
     // First pass only (candidates is null on the second, decided pass): a
@@ -135,6 +176,7 @@ function renderDefect(d, ctx = {}) {
         ${d.expected ? `<div class="kv">ожидается: <code>${esc(d.expected)}</code></div>` : ''}
         <div class="kv">селектор: <code>${esc(d.selector)}</code></div>
         ${breakpointsHtml}
+        ${regionHtml}
         ${shotHtml}
         <ul class="pages">${shownPages.map(p => `<li>${esc(p)}</li>`).join('')}</ul>
         ${hiddenCount > 0 ? `<p class="kv">…и ещё ${hiddenCount} страниц не показано (ограничение списка)</p>` : ''}
@@ -258,7 +300,20 @@ export function renderReport({
   // over budget, deciding which screenshots to drop and rendering a second,
   // final time. The common case (no screenshots, or few enough to fit) pays
   // for exactly one render.
-  function build(suppressedShots) {
+  //
+  // `oversizeBytes`, when given, forces an UNCONDITIONAL "this document is
+  // still over the publish budget" note -- independent of whether anything
+  // was actually suppressed. Review fix: the note used to only render when
+  // `suppressedShots.size > 0`, so a document with nothing eligible to drop
+  // (every screenshot critical, before critical became a droppable last
+  // resort -- or, still possible today, a document whose TEXT alone exceeds
+  // the budget with no screenshots involved at all) shipped over budget with
+  // no warning anywhere. This note is deliberately a separate condition from
+  // the "N screenshots dropped" one below -- either can be true without the
+  // other (dropping can succeed and clear the budget with no oversize note
+  // needed; or nothing may be droppable/enough may not have been droppable
+  // and the oversize note is the only one that fires).
+  function build(suppressedShots, { oversizeBytes } = {}) {
     const candidates = suppressedShots ? null : []
     const ctx = { breakpointsByIdentity, suppressedShots: suppressedShots ?? new Set(), candidates }
     const groupsHtml = groups.length
@@ -282,7 +337,8 @@ ${heur.map(g => renderGroup(g, ctx)).join('')}`
 ${snapshotAgeDays > 7 ? `<div class="note-box">Снапшот старше 7 дней — данные могли устареть. Перезапустите с <code>--fresh</code>.</div>` : ''}
 ${sitemapWarning ? `<div class="note-box">Sitemap: <b>${esc(sitemapStatus)}</b> — список страниц мог оказаться неполным, часть страниц сайта в отчёт не попала.</div>` : ''}
 ${browserCoverageHtml}
-${suppressedShots && suppressedShots.size ? `<div class="note-box">Отчёт превысил лимит размера публикации: ${esc(suppressedShots.size)} скриншот(ов) скрыто (сначала note, затем minor, затем major — critical сохраняются всегда). Сами дефекты и их описания остаются ниже полностью, скрыты только изображения.</div>` : ''}
+${suppressedShots && suppressedShots.size ? `<div class="note-box">Часть скриншотов скрыта, чтобы уместиться в лимит размера публикации: ${esc(suppressedShots.size)} скриншот(ов) не показано (порядок удаления: сначала note, затем minor, major и, при необходимости, critical). Сами дефекты и их описания — found/expected/селектор/страницы — остаются ниже полностью, скрыты только изображения.</div>` : ''}
+${oversizeBytes != null ? `<div class="note-box">Отчёт превышает рекомендуемый лимит размера публикации (~${esc((oversizeBytes / (1024 * 1024)).toFixed(1))} МБ из ${esc(PUBLISH_BYTE_LIMIT / (1024 * 1024))} МБ), даже после того как были скрыты все скриншоты, которые можно было скрыть. Публикация как Artifact может не сработать из-за размера файла. Сами находки в этом файле не пострадали — это предупреждение о размере, не о содержимом.</div>` : ''}
 <div class="tiles">
   <div class="tile wide"><b>${distinctTotal} дефектов</b><span>${occurrenceTotal} вхождений на ${uniquePages.length} страницах</span></div>
   <div class="tile"><b>${by('critical')}</b><span>Critical</span></div>
@@ -310,18 +366,19 @@ ${hiddenPageCount > 0 ? `<p class="kv">…и ещё ${hiddenPageCount} стра�
   const first = build(null)
   if (Buffer.byteLength(first.html, 'utf8') <= PUBLISH_BYTE_LIMIT) return first.html
 
-  // Over budget: decide which screenshots to drop. Never critical (see
-  // SHOT_DROP_ORDER); among the rest, drop the biggest images first within
-  // the lowest-priority severity, since that recovers the most bytes per
-  // screenshot dropped. `bytesOver` is tracked against the FIRST render's
-  // size -- an approximation (the second render's non-image markup differs
-  // slightly, e.g. the "hidden" placeholder text and the new warning banner
-  // itself), deliberately conservative in the safe direction: it keeps
-  // dropping until it is confident of clearing the limit rather than
+  // Over budget: decide which screenshots to drop, lowest severity first,
+  // with critical only as a last resort (see SHOT_DROP_ORDER's own comment
+  // for why critical is droppable at all now). Among candidates that share a
+  // tier, drop the biggest images first, since that recovers the most bytes
+  // per screenshot dropped. `bytesOver` is tracked against the FIRST
+  // render's size -- an approximation (the second render's non-image markup
+  // differs slightly, e.g. the "hidden" placeholder text and the new
+  // warning banners), deliberately conservative in the safe direction: it
+  // keeps dropping until it is confident of clearing the limit rather than
   // stopping right at the edge and risking a second render that is still
   // over.
   const droppable = first.candidates
-    .filter(c => SHOT_DROP_ORDER[c.severity] !== undefined && SHOT_DROP_ORDER[c.severity] < SHOT_DROP_ORDER.critical)
+    .filter(c => SHOT_DROP_ORDER[c.severity] !== undefined)
     .sort((a, b) => (SHOT_DROP_ORDER[a.severity] - SHOT_DROP_ORDER[b.severity]) || (b.bytes - a.bytes))
 
   const suppressed = new Set()
@@ -333,5 +390,20 @@ ${hiddenPageCount > 0 ? `<p class="kv">…и ещё ${hiddenPageCount} стра�
   }
 
   const second = build(suppressed)
-  return second.html
+  const secondBytes = Buffer.byteLength(second.html, 'utf8')
+  if (secondBytes <= PUBLISH_BYTE_LIMIT) return second.html
+
+  // Review fix: even after dropping every screenshot this document had
+  // anything to drop (every candidate, including critical, may already be
+  // in `suppressed` -- or there may have been no screenshots at all, and the
+  // findings' own text is simply too large), the document can still be over
+  // budget. That must never ship silently: a third, final render bakes an
+  // unconditional oversize note into the SAME place a reader already checks
+  // for size-related warnings, using `secondBytes` (measured just before
+  // this call) as the number to report -- the note's own few hundred bytes
+  // shift the true final size negligibly relative to a multi-megabyte
+  // overage, so it is close enough to be useful without needing a fourth
+  // render to chase an exact figure.
+  const third = build(suppressed, { oversizeBytes: secondBytes })
+  return third.html
 }

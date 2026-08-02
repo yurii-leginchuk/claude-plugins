@@ -101,6 +101,13 @@ test('escapes a "><img onerror payload in selector', () => {
   assert.match(out, /&quot;&gt;&lt;img/)
 })
 
+test('escapes a "><script> payload in region', () => {
+  const payload = '"><script>alert("region")</script>'
+  const out = reportWith({ region: payload })
+  assert.doesNotMatch(out, /"><script>alert\("region"\)<\/script>/)
+  assert.match(out, /&quot;&gt;&lt;script&gt;/)
+})
+
 test('a javascript: URL rendered as text is never emitted as a live href', () => {
   const payload = 'javascript:alert(document.cookie)'
   const out = reportWith({ found: payload })
