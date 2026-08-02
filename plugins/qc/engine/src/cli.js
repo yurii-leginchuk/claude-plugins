@@ -29,21 +29,16 @@ import { parse as parseHtml } from 'node-html-parser'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { readFileSync } from 'node:fs'
+import { SNAPSHOT_TTL_MS } from './lib/snapshot-ttl.js'
 
 // How long a saved snapshot is trusted as a stand-in for a live crawl when
 // --fresh is not given. See the `--fresh` section of audit() below for the
-// full rationale; this constant is the one number that decision hinges on.
-//
-// 7 days, deliberately, resolving a contradiction between two halves of this
-// engine: the spec and report/html.js's staleness banner both say 7 days,
-// while this constant said 24h -- which meant a snapshot was refused before it
-// could ever reach 7 days old, `cacheAgeDays` was always < 1, and the banner
-// was unreachable dead code. Of the two definitions, 7 days is the one to keep:
-// the banner exists precisely so a reused-but-aging snapshot announces itself,
-// and --fresh is the override for anyone who wants a live crawl regardless.
-// A 24h TTL with a 7-day banner is the worst of both -- it re-crawls sites
-// needlessly AND never warns.
-const SNAPSHOT_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7d, matching the report's banner
+// full rationale. The constant itself now lives in lib/snapshot-ttl.js,
+// alongside the report's staleness-banner threshold, so the two are derived
+// together and cannot drift apart the way they did before (see that file's
+// header comment for the history -- commit dc6889e's message claimed this
+// was already fixed; it set the reuse TTL to the banner's own 7 days, which
+// made the banner unreachable instead of fixing it).
 
 const USAGE = `qc audit <site-url|sheet-url> [--fresh] [--env dev|prod] [--prod <url>] [--only IDs] [--skip IDs] [--concurrency n]
 qc browse <host|url> [--breakpoints a,b] [--pages n] [--force] [--concurrency n] [--headed] [--only IDs] [--skip IDs]

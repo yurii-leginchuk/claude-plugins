@@ -1,4 +1,5 @@
 import { rollUp, verdict, countDistinct, defectIdentity } from './json.js'
+import { STALENESS_WARNING_DAYS } from '../lib/snapshot-ttl.js'
 
 // Escaping is the security boundary of this module: every interpolated value
 // originates from a crawled third-party page (found/expected/page/selector)
@@ -334,7 +335,7 @@ ${heur.map(g => renderGroup(g, ctx)).join('')}`
 страниц: ${esc(pages)} · источник списка: ${esc(source)} ·
 снапшот: ${ageLabel}</p>
 <p><span class="verdict ${vClass}">${esc(v)}</span></p>
-${snapshotAgeDays > 7 ? `<div class="note-box">Снапшот старше 7 дней — данные могли устареть. Перезапустите с <code>--fresh</code>.</div>` : ''}
+${snapshotAgeDays > STALENESS_WARNING_DAYS ? `<div class="note-box">Снапшоту больше ${esc(STALENESS_WARNING_DAYS)} дней — данные могли устареть. Перезапустите с <code>--fresh</code>.</div>` : ''}
 ${sitemapWarning ? `<div class="note-box">Sitemap: <b>${esc(sitemapStatus)}</b> — список страниц мог оказаться неполным, часть страниц сайта в отчёт не попала.</div>` : ''}
 ${browserCoverageHtml}
 ${suppressedShots && suppressedShots.size ? `<div class="note-box">Часть скриншотов скрыта, чтобы уместиться в лимит размера публикации: ${esc(suppressedShots.size)} скриншот(ов) не показано (порядок удаления: сначала note, затем minor, major и, при необходимости, critical). Сами дефекты и их описания — found/expected/селектор/страницы — остаются ниже полностью, скрыты только изображения.</div>` : ''}

@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { renderReport } from '../../src/report/html.js'
+import { SNAPSHOT_TTL_DAYS, STALENESS_WARNING_DAYS } from '../../src/lib/snapshot-ttl.js'
 
 const findings = [
   { rule: 'E4', title: 'Формат tel:', severity: 'major', engine: 'static', confidence: 'high',
@@ -306,6 +307,41 @@ test('snapshotAgeDays of 0 renders as fresh, not as "0 дн." or NaN', () => {
   assert.doesNotMatch(out, /NaN/)
   assert.doesNotMatch(out, /0 дн\./)
   assert.match(out, /свеж/i)
+})
+
+// The staleness banner debt: `loadFreshSnapshot` in cli.js only ever hands
+// renderReport a `snapshotAgeDays` strictly LESS than SNAPSHOT_TTL_MS -- a
+// snapshot at or past the TTL is refused before it gets this far. A banner
+// threshold equal to (or above) the TTL is therefore unreachable no matter
+// what number it names; the fix is a threshold strictly below the TTL, and
+// this pins that property directly, not just today's chosen value.
+test('the staleness warning threshold sits strictly below the reuse TTL (so it is reachable at all)', () => {
+  assert.ok(
+    STALENESS_WARNING_DAYS < SNAPSHOT_TTL_DAYS,
+    `banner threshold (${STALENESS_WARNING_DAYS}d) must be below the reuse TTL (${SNAPSHOT_TTL_DAYS}d) or it can never fire`
+  )
+})
+
+test('a snapshot near the TTL (but still within it, i.e. still reused) renders the staleness banner', () => {
+  // "Near the TTL" -- the exact scenario a reused snapshot can actually be
+  // in, since cli.js never reuses one AT or past the TTL. Halfway between
+  // the warning threshold and the TTL itself.
+  const nearTtlAge = (STALENESS_WARNING_DAYS + SNAPSHOT_TTL_DAYS) / 2
+  assert.ok(nearTtlAge < SNAPSHOT_TTL_DAYS, 'sanity: this age must still be inside the reuse window')
+  const out = renderReport({
+    host: 'ex.com', env: 'prod', envReason: '', pages: 5, findings: [],
+    diff: { fixed: [], remaining: [], added: [] }, snapshotAgeDays: nearTtlAge, source: 'sitemap',
+  })
+  assert.match(out, /Снапшоту больше .* дней/, 'a snapshot this old must render the staleness banner')
+  assert.match(out, /--fresh/)
+})
+
+test('a snapshot well within the warning threshold does NOT render the staleness banner', () => {
+  const out = renderReport({
+    host: 'ex.com', env: 'prod', envReason: '', pages: 5, findings: [],
+    diff: { fixed: [], remaining: [], added: [] }, snapshotAgeDays: 1, source: 'sitemap',
+  })
+  assert.doesNotMatch(out, /Снапшоту больше/)
 })
 
 test('env "unknown" renders sensibly', () => {
