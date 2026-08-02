@@ -39,6 +39,52 @@ test('C2 ignores off-canvas decoys at a narrow width too, while still catching t
   assert.ok(!f.some(x => /slidein/.test(x.selector)), 'left:100% decoy must stay silent')
 })
 
+// --- Clipping ancestors (review, browser-pass fix wave) --------------------
+//
+// Live evidence (task 11, cleaningny.com): 19 of 34 distinct Majors were C2
+// findings reading "2843px при вьюпорте 1440px" on sibling elementor-element
+// divs, while C1 saw zero horizontal document scroll on the same pages at the
+// same width -- and the crops captured for two of them show a perfectly
+// ordinary FAQ accordion. Something was containing the overflow; C2 only ever
+// checked whether the PARENT was also over-wide, never whether any ancestor
+// clips. Both directions are pinned here, because a check that silences the
+// clipped case is only safe if it still reports the escaping one.
+test('C2 stays silent for an element whose overflow a clipping ancestor contains', async () => {
+  const f = await findingsFor('overflow-clipped.html', { width: 1440, only: ['C2'] })
+  assert.ok(!f.some(x => /clipper-inner/.test(x.selector)),
+    'overflow-x:hidden on an ancestor that itself fits the viewport hides nothing from view')
+  assert.ok(!f.some(x => /scroller-inner/.test(x.selector)),
+    'overflow-x:auto on an ancestor makes the overflow reachable by design, not a defect')
+})
+
+test('C2 still reports an element that genuinely escapes the viewport', async () => {
+  const f = await findingsFor('overflow-clipped.html', { width: 1440, only: ['C2'] })
+  const esc = f.find(x => /escaping/.test(x.selector))
+  assert.ok(esc, 'an over-wide element with no clipping ancestor must still be reported')
+  assert.match(esc.found, /3000px/)
+})
+
+// body/html are NOT clipping ancestors: per CSS, overflow on them propagates
+// to the viewport instead of clipping inside their own box, and
+// `body { overflow-x: hidden }` is precisely the antipattern C2 exists to
+// catch -- the content really is cut off, and C1 cannot see it because the
+// clip suppresses document scroll. overflow-element.html is that shape.
+test('C2 treats body{overflow-x:hidden} as the viewport being clipped, not as a safe container', async () => {
+  const f = await findingsFor('overflow-element.html', { width: 360, only: ['C2'] })
+  assert.ok(f.some(x => /culprit/.test(x.selector)),
+    'a wide element under body{overflow-x:hidden} is cut off, not contained')
+})
+
+// C2 is heuristic, not high-confidence: see the header comment in
+// src/rules/browser/C2-overflow.js. It must not move the verdict or a
+// severity tile while its live false-positive class is unproven either way.
+test('C2 findings are heuristic so they cannot move the verdict unconfirmed', async () => {
+  const f = await findingsFor('overflow-clipped.html', { width: 1440, only: ['C2'] })
+  assert.ok(f.length >= 1)
+  assert.ok(f.every(x => x.confidence === 'heuristic'), 'C2 must be heuristic')
+  assert.ok(f.every(x => x.severity === 'major'), 'severity is unchanged; only confidence dropped')
+})
+
 test('X1 reports a console error and a failed request', async () => {
   const f = await findingsFor('console-errors.html', { width: 1440, only: ['X1'] })
   assert.ok(f.some(x => /boom/.test(x.found)), 'expected the thrown error')
