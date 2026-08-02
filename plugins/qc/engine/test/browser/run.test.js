@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runBrowserPass } from '../../src/browser/run.js'
 import { saveSnapshot, loadBrowserResults } from '../../src/crawl/store.js'
+import { rollUp } from '../../src/report/json.js'
 import { serveContent } from './harness.js'
 
 let server, base, cache
@@ -440,13 +441,15 @@ test('a finding gets a shot path, and the file actually exists', async () => {
 //
 // A defect that renders identically on many pages (a shared-region defect,
 // or here, two independent pages that happen to render the same markup)
-// must not be re-captured for every occurrence -- that is the scenario that
+// must not be RE-CAPTURED for every occurrence -- that is the scenario that
 // could produce hundreds of near-duplicate screenshots on a real site.
 // `defectIdentity()` (no `page` in its key) is what makes two findings on
 // two different pages count as "the same defect" in the first place; this
 // pins that the SECOND occurrence within one pass does not pay for another
-// capture, while the first occurrence's crop is real and on disk.
-test('a defect repeated across pages is captured only once per pass', async () => {
+// PAGE INTERACTION (no second capture attempt), while still carrying the
+// SAME shot path and shotWidth as the first occurrence -- backfilled for
+// free from the pass-wide identity->{shot,width} map (review, task 8).
+test('a defect repeated across pages is captured once, then backfilled onto every later occurrence', async () => {
   const html = `<!doctype html><html><head><title>shared</title></head><body>
     <div class="probe" style="width:120px;height:40px;background:#fbb">probe</div>
   </body></html>`
@@ -474,8 +477,10 @@ test('a defect repeated across pages is captured only once per pass', async () =
     assert.equal(shared.length, 2, 'both pages produced the (identical-identity) finding')
     assert.ok(shared[0].shot, 'the first occurrence is captured')
     assert.ok(existsSync(shared[0].shot))
-    assert.equal(shared[1].shot, undefined,
-      'a later occurrence of the SAME identity within one pass is not re-captured -- bounds cost')
+    assert.equal(shared[0].shotWidth, 1024, 'the crop records which width it was actually taken at')
+    assert.equal(shared[1].shot, shared[0].shot,
+      'a later occurrence of the SAME identity is backfilled with the SAME shot, not left blank')
+    assert.equal(shared[1].shotWidth, shared[0].shotWidth, 'and the same shotWidth')
   } finally {
     closeA(); closeB()
   }
@@ -526,5 +531,117 @@ test('a capture at one width does not survive into the next width\'s measurement
       'a clean, non-overflowing page must not trip C1 at the second width just because the first width was screenshotted')
   } finally {
     close()
+  }
+})
+
+// --- Review follow-up: a crop may not represent the worst width ------------
+//
+// Confirmed by review: for a rule whose `found` text does not vary by width
+// (true of F1, F4, X2, J3 today -- and this probe, deliberately), the
+// identity is the SAME at every width, so only the FIRST width processed
+// (widths sort ascending, so usually the smallest) is captured -- the
+// capture-once policy from judgement call 2 is being kept, not relaxed. The
+// gap that must not be silent: a defect can look mild at 360px and severe at
+// 1440px, and an unlabelled crop would let a reader mistake the mild one for
+// the whole story. `shotWidth` makes the gap visible: it records the actual
+// width the one capture came from, on every finding that carries `.shot`
+// (including backfilled ones), so a report can say which breakpoint the
+// evidence is from and a reader who knows the defect recurs elsewhere can go
+// look themselves.
+test('shotWidth records the actual width the (once-per-pass) crop came from, even for a defect that also occurs at other widths', async () => {
+  const html = `<!doctype html><html><head><title>worst-width</title></head><body>
+    <div class="probe" style="width:120px;height:40px;background:#fbb">probe</div>
+  </body></html>`
+  const { base: contentBase, close } = await serveContent(html)
+  const probeRule = {
+    id: 'ZZ_WIDTHS',
+    check: function (ctx) {
+      var el = document.querySelector('.probe')
+      if (!el) return []
+      // Deliberately width-invariant `found` text -- the same defect
+      // identity at every breakpoint, exactly the case the review flagged.
+      return [{
+        rule: 'ZZ_WIDTHS', title: 'probe', severity: 'note', confidence: 'high',
+        engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint,
+        selector: ctx.helpers.selector(el), containerId: ctx.helpers.containerId(el),
+        found: 'probe', expected: null,
+      }]
+    },
+  }
+  try {
+    const s = await runBrowserPass({
+      host: 'run-worst-width', pages: [`${contentBase}/`], widths: [360, 768, 1440],
+      opts: { extraRules: [probeRule] },
+    })
+    const probes = s.findings.filter(x => x.rule === 'ZZ_WIDTHS')
+    assert.equal(probes.length, 3, 'the width-invariant defect fired at all three widths')
+    assert.ok(probes.every(f => f.shot === probes[0].shot), 'every occurrence shares the one captured file')
+    assert.equal(probes[0].shotWidth, 360, 'widths sort ascending, so the one capture came from the smallest')
+    assert.ok(probes.every(f => f.shotWidth === 360),
+      'every occurrence -- including the ones that actually happened at 768/1440 -- is labelled with the ' +
+      'width the shot really came from, not with its own breakpoint')
+    // The finding's own breakpoint still reflects where THAT finding
+    // occurred, distinct from shotWidth: this is what lets a reader notice
+    // "the evidence is from 360px, but this finding is at 1440px" instead of
+    // the two being silently conflated.
+    assert.equal(probes[2].breakpoint, 1440)
+    assert.equal(probes[2].shotWidth, 360)
+  } finally {
+    close()
+  }
+})
+
+// --- Review follow-up: rollUp()'s per-identity example must carry the crop -
+//
+// The reviewer traced that rollUp() (src/report/json.js) happens to work
+// today because its per-identity `example` is, by construction, the first
+// finding seen for that identity -- the same finding run.js's capture logic
+// attaches `.shot` to directly (before this review round, the ONLY finding
+// carrying `.shot` for that identity). That is an implicit, previously
+// untested dependency between two modules that the next task (report
+// rendering) will rely on. With the backfill fix above every occurrence now
+// carries `.shot`, which makes this invariant more robust, not less true --
+// pinned here directly against real rollUp() output so a future change to
+// either module's ordering breaks a test instead of breaking silently.
+test('rollUp()\'s per-identity example carries the same crop as every other occurrence of that identity', async () => {
+  const html = `<!doctype html><html><head><title>rollup-shot</title></head><body>
+    <div class="probe" style="width:120px;height:40px;background:#fbb">probe</div>
+  </body></html>`
+  const { base: pageA, close: closeA } = await serveContent(html)
+  const { base: pageB, close: closeB } = await serveContent(html)
+  const probeRule = {
+    id: 'ZZ_ROLLUP',
+    check: function (ctx) {
+      var el = document.querySelector('.probe')
+      if (!el) return []
+      return [{
+        rule: 'ZZ_ROLLUP', title: 'probe', severity: 'note', confidence: 'high',
+        engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint,
+        selector: ctx.helpers.selector(el), containerId: ctx.helpers.containerId(el),
+        found: 'probe', expected: null,
+      }]
+    },
+  }
+  try {
+    const s = await runBrowserPass({
+      host: 'run-rollup-shot', pages: [`${pageA}/`, `${pageB}/`], widths: [1024],
+      opts: { extraRules: [probeRule] },
+    })
+    const raw = s.findings.filter(x => x.rule === 'ZZ_ROLLUP')
+    assert.equal(raw.length, 2)
+    assert.ok(raw[0].shot && raw[1].shot, 'sanity: both raw findings carry a shot (backfilled)')
+
+    const rolled = rollUp(s.findings)
+    const group = rolled.find(g => g.rule === 'ZZ_ROLLUP')
+    assert.ok(group, 'the rule produced a rollUp group')
+    assert.equal(group.identities.length, 1, 'both occurrences are the same defect identity')
+
+    const example = group.identities[0].example
+    assert.ok(example.shot, 'the identity\'s example carries the crop')
+    assert.equal(example.shot, raw[0].shot, 'and it is the SAME crop every raw occurrence carries')
+    assert.equal(example.shotWidth, raw[0].shotWidth)
+    assert.ok(existsSync(example.shot), 'the file the example points at actually exists')
+  } finally {
+    closeA(); closeB()
   }
 })

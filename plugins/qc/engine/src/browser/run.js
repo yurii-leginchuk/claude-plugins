@@ -123,7 +123,7 @@ async function attemptPage({ newPage, url, widths, timeout, bundle, regions, hos
           // Cost (judgement call 2): capturing every occurrence of every
           // finding could mean hundreds of near-duplicate screenshots on a
           // real site. `capturedIdentities` is scoped to the WHOLE pass (see
-          // runBrowserPass below), so a defect is captured at most once --
+          // runBrowserPass below), so a defect is CAPTURED at most once --
           // the first time its identity is seen, at whichever width and
           // page that happens to be -- never again for the rest of the run.
           // A defect whose `found` text is width-invariant collapses to one
@@ -133,16 +133,47 @@ async function attemptPage({ newPage, url, widths, timeout, bundle, regions, hos
           // special-cased here. See screenshot.js's shotPath() for the
           // separate, disk-level dedup that makes a RERUN of the same
           // defect reuse the existing file instead of re-capturing it.
+          //
+          // The gap this leaves (review, task 8): for a width-invariant
+          // identity, the crop always comes from whichever width the
+          // identity was FIRST seen at -- widths are processed ascending, so
+          // usually the smallest one -- even when the defect looks worse at
+          // a later width. Silently showing an unlabelled crop would let a
+          // reader mistake "the evidence" for "the worst case". `shotWidth`
+          // records which width the crop actually came from, right next to
+          // `shot`, so a report can say "снимок с 360px" and a reader who
+          // knows the defect also occurs at 1440 can go look themselves,
+          // rather than trusting an unlabelled image.
+          //
+          // Backfill (review, task 8): capturing is bounded to once per
+          // identity, but every OTHER finding sharing that identity still
+          // gets `.shot`/`.shotWidth` copied from the one capture attempt --
+          // free, since it is a Map lookup, not a second page interaction.
+          // This is what keeps rollUp()'s per-identity `example` (json.js;
+          // "the first finding seen for this identity") carrying the crop
+          // regardless of which occurrence it happens to land on, without
+          // rollUp() having to know anything about screenshots at all -- see
+          // the "example carries the crop" tests in run.test.js.
           const identity = defectIdentity(f)
-          if (!capturedIdentities.has(identity)) {
-            capturedIdentities.add(identity)
+          if (capturedIdentities.has(identity)) {
+            const entry = capturedIdentities.get(identity)
+            if (entry.shot) {
+              f.shot = entry.shot
+              f.shotWidth = entry.width
+            }
+          } else {
+            let shot = null
             try {
-              const shot = await captureDefect(page, f, host)
-              if (shot) f.shot = shot
+              shot = await captureDefect(page, f, host)
             } catch {
               // A capture must never fail the page/pass -- see screenshot.js;
               // this catch is belt-and-braces on top of that module's own
               // internal handling.
+            }
+            capturedIdentities.set(identity, { shot, width })
+            if (shot) {
+              f.shot = shot
+              f.shotWidth = width
             }
           }
 
@@ -206,9 +237,13 @@ export async function runBrowserPass({ host, pages, widths, opts = {} }) {
   const bundle = await buildBundle({ extraRules })
   const { browser, newPage } = await launchBrowser({ headed })
   let consecutive = 0
-  // Bounds screenshot capture to at most one attempt per distinct defect for
-  // the whole pass -- see the capture site in attemptPage() above.
-  const capturedIdentities = new Set()
+  // Bounds screenshot capture to at most one ATTEMPT per distinct defect for
+  // the whole pass, while still letting every later occurrence of the same
+  // identity pick up the result for free: identity -> { shot, width }, where
+  // `shot` is the file path (or null if that one attempt failed) and `width`
+  // is the breakpoint the attempt was made at -- see the capture site in
+  // attemptPage() above.
+  const capturedIdentities = new Map()
 
   try {
     for (let i = 0; i < todo.length; i++) {
