@@ -28,7 +28,7 @@ import { proveRegions, regionOf } from './regions.js'
 import { captureDefect } from './screenshot.js'
 import { defectIdentity } from '../report/json.js'
 import {
-  appendBrowserResult, loadBrowserResults, clearBrowserResults, loadSnapshot,
+  appendBrowserResult, latestBrowserResultsByUrl, clearBrowserResults, loadSnapshot,
 } from '../crawl/store.js'
 
 export const MAX_CONSECUTIVE_FAILURES = 10
@@ -219,7 +219,20 @@ export async function runBrowserPass({ host, pages, widths, opts = {} }) {
   } = opts
 
   if (force) clearBrowserResults(host)
-  const already = new Set(loadBrowserResults(host).map(r => r.url))
+  // "Already done" means "opened and measured", not "has a row". A page that
+  // would not open gets a row too -- deliberately, so it shows up in coverage
+  // and in failedUrls instead of vanishing -- but the spec calls that
+  // "checked UNSUCCESSFULLY" precisely so a plain rerun retries it and
+  // --force is not needed. Counting error rows as done made a failed page
+  // permanently done: the only way back was --force, which throws away every
+  // successful page's results to start over from page one. Worse, the report
+  // told the reader the run was resumable, which was true for a
+  // never-attempted page and false for a failed one. Rows are read as
+  // latest-per-url (see store.js) because a retried page legitimately leaves
+  // both its failure and its retry outcome in the append-only log.
+  const already = new Set(
+    [...latestBrowserResultsByUrl(host).values()].filter(r => !r.error).map(r => r.url)
+  )
   const todo = pages.filter(u => !already.has(u)).slice(0, maxPages)
 
   const summary = {
@@ -275,13 +288,14 @@ export async function runBrowserPass({ host, pages, widths, opts = {} }) {
       // been closed" error -- indistinguishable at a glance from the page
       // itself being broken. Nothing here used to relaunch a dead browser,
       // so a crash midway through a real 300-page run would have doomed
-      // every remaining page. Worse: a failed page still gets a stored row
-      // (so a rerun does not retry it forever, see `already` above), so
-      // those pages could never recover short of --force, which discards
-      // every already-collected result to start completely over. Checking
-      // connectivity right before each attempt turns "the browser process
-      // crashed once" into "one wasted iteration, then a fresh browser
-      // carries the rest of the pass."
+      // every remaining page -- and, at the time, permanently: an error row
+      // counted as done, so the only way back was --force, which discards
+      // every already-collected result to start completely over. A failed
+      // page is retryable now (see `already` above), but that is a safety
+      // net, not a reason to burn a whole pass first. Checking connectivity
+      // right before each attempt turns "the browser process crashed once"
+      // into "one wasted iteration, then a fresh browser carries the rest of
+      // the pass."
       if (!browser.isConnected()) {
         await browser.close().catch(() => {})
         try {
@@ -324,10 +338,10 @@ export async function runBrowserPass({ host, pages, widths, opts = {} }) {
       } else {
         // A page that will not open is recorded with its reason and an
         // empty findings list, and counts as checked unsuccessfully -- NOT
-        // skipped. It still gets a row, so `already` (above) sees it on the
-        // next run and a rerun without --force does not retry it forever,
-        // and it shows up in `failedUrls` instead of silently vanishing
-        // from coverage.
+        // skipped. The row is what puts it in `failedUrls` and in the
+        // report's coverage header instead of letting it silently vanish;
+        // it deliberately does NOT mark the page done, so a plain rerun
+        // retries it (see `already` above).
         consecutive++
         summary.pagesFailed++
         summary.failedUrls.push({ url, error: result.error })

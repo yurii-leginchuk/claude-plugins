@@ -1,7 +1,7 @@
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runBrowserPass } from '../../src/browser/run.js'
@@ -22,6 +22,12 @@ const ERR = `<!doctype html><html><head><title>err</title></head><body><main><h1
 // already isolates on its own and would never reach attemptPage's catch.
 let flakyHits = 0
 
+// `/retryable` is a page that is dead for the first pass and healthy for the
+// second -- a staging host that was down and came back. It is what lets the
+// resume tests below prove the failed page is retried WITHOUT --force, rather
+// than merely that it was recorded.
+let retryableFails = true
+
 before(async () => {
   cache = mkdtempSync(join(tmpdir(), 'qc-browse-'))
   process.env.QC_CACHE_DIR = cache
@@ -36,6 +42,10 @@ before(async () => {
     // to any of these URLs regardless of query.
     const path = req.url.split('?')[0]
     if (path === '/dead') { res.destroy(); return }
+    if (path === '/retryable') {
+      if (retryableFails) { res.destroy(); return }
+      res.writeHead(200, { 'content-type': 'text/html' }); res.end(OK); return
+    }
     if (path === '/err') {
       res.writeHead(200, { 'content-type': 'text/html' }); res.end(ERR); return
     }
@@ -99,6 +109,56 @@ test('a page that will not load is recorded as failed, not skipped', async () =>
   assert.ok(deadRow, 'the dead page has a stored row')
   assert.deepEqual(deadRow.findings, [])
   assert.ok(deadRow.error, 'the row records why it failed')
+})
+
+// --- A failed page is "checked unsuccessfully", not "done" -----------------
+//
+// The already-done set used to be built from EVERY stored row, error rows
+// included, so a page that would not open was permanently done: the only way
+// to try it again was --force, which deletes every successful page's results
+// too and restarts from page one. The spec is the opposite -- a failed page
+// is recorded as checked unsuccessfully precisely so --force is NOT needed to
+// retry it -- and the report meanwhile told the reader the run was resumable,
+// true for a never-attempted page and false for a failed one.
+test('a resumed run retries the page that failed and leaves the successful ones alone', async () => {
+  const host = 'run-retry'
+  const good = `${base}/good`
+  const bad = `${base}/retryable`
+  retryableFails = true
+
+  const first = await runBrowserPass({
+    host, pages: [good, bad], widths: [1440], opts: { timeout: 4000 },
+  })
+  assert.equal(first.pagesDone, 1, 'the healthy page was measured')
+  assert.equal(first.pagesFailed, 1, 'the dead page was recorded as failed')
+
+  // The host recovers; the exact same command runs again, no --force.
+  retryableFails = false
+  const second = await runBrowserPass({
+    host, pages: [good, bad], widths: [1440], opts: { timeout: 4000 },
+  })
+  assert.equal(second.pagesDone, 1, 'exactly the previously-failed page was retried')
+  assert.equal(second.pagesFailed, 0, 'and it succeeded this time')
+  assert.deepEqual(
+    second.findings.map(f => f.page).filter((v, i, a) => a.indexOf(v) === i),
+    [],
+    'the retried page produced no findings on this clean fixture, but it did run',
+  )
+
+  const rows = loadBrowserResults(host)
+  assert.equal(rows.filter(r => r.url === good).length, 1,
+    'the already-successful page must not be redone or re-recorded')
+  const retried = rows.filter(r => r.url === bad)
+  assert.equal(retried.length, 2, 'the failure and its retry are both in the append-only log')
+  assert.ok(retried[0].error, 'first attempt recorded the failure')
+  assert.equal(retried[1].error, null, 'the retry recorded a clean result')
+})
+
+test('a third run does nothing once the retry has succeeded', async () => {
+  const third = await runBrowserPass({
+    host: 'run-retry', pages: [`${base}/good`, `${base}/retryable`], widths: [1440],
+  })
+  assert.equal(third.pagesDone, 0, 'a page that succeeded on retry is done for good')
 })
 
 const MAX_CONSECUTIVE_FAILURES_HINT = 10
@@ -511,6 +571,67 @@ test('a finding gets a shot path, and the file actually exists', async () => {
     assert.ok(f, 'the probe rule fired')
     assert.ok(f.shot, 'the finding carries a shot path')
     assert.ok(existsSync(f.shot), 'the shot file was actually written to disk')
+  } finally {
+    close()
+  }
+})
+
+// --- --force must clear the crops too, because the skill says it does ------
+//
+// clearBrowserResults() removed browser.jsonl only, while captureDefect()
+// short-circuits on existsSync(shotPath) -- so a --force rerun re-measured
+// every page and silently reused every stale PNG. /qc-browse tells users
+// --force "deletes all previously recorded browser findings and screenshots
+// for this host", "e.g. after a site redesign" -- the one case where a crop
+// of the OLD design is actively misleading evidence rather than a saved
+// round-trip.
+test('--force deletes the crops, so a rerun re-captures instead of reusing stale evidence', async () => {
+  const html = `<!doctype html><html><head><title>forceshot</title></head><body>
+    <div class="probe" style="width:120px;height:40px;background:#fbb">probe</div>
+  </body></html>`
+  const { base: contentBase, close } = await serveContent(html)
+  const probeRule = {
+    id: 'ZZ_FORCE',
+    check: function (ctx) {
+      var el = document.querySelector('.probe')
+      if (!el) return []
+      return [{
+        rule: 'ZZ_FORCE', title: 'probe', severity: 'note', confidence: 'high',
+        engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint,
+        selector: ctx.helpers.selector(el), containerId: ctx.helpers.containerId(el),
+        found: 'probe', expected: null,
+      }]
+    },
+  }
+  try {
+    const opts = { extraRules: [probeRule] }
+    const first = await runBrowserPass({
+      host: 'run-force-shot', pages: [`${contentBase}/`], widths: [1024], opts,
+    })
+    const shot = first.findings.find(x => x.rule === 'ZZ_FORCE')?.shot
+    assert.ok(shot && existsSync(shot), 'the first pass captured a crop')
+
+    // Stand in for "the site was redesigned": the crop on disk no longer
+    // shows what the page renders today. A --force rerun must not hand this
+    // file back as evidence.
+    writeFileSync(shot, Buffer.from('stale crop from the previous design'))
+    const strayCrop = join(shot, '..', 'stale-defect-that-no-longer-occurs.png')
+    writeFileSync(strayCrop, Buffer.from('crop of a defect that was fixed'))
+
+    const second = await runBrowserPass({
+      host: 'run-force-shot', pages: [`${contentBase}/`], widths: [1024],
+      opts: { ...opts, force: true },
+    })
+    assert.ok(!existsSync(strayCrop),
+      '--force must remove crops for defects that no longer occur at all')
+
+    const reshot = second.findings.find(x => x.rule === 'ZZ_FORCE')?.shot
+    assert.ok(reshot && existsSync(reshot), 'the forced pass captured the crop again')
+    assert.notEqual(
+      readFileSync(reshot).toString('utf8'),
+      'stale crop from the previous design',
+      'the stale file must have been deleted and genuinely re-captured, not reused',
+    )
   } finally {
     close()
   }

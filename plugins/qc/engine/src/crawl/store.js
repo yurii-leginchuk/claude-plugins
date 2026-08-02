@@ -321,9 +321,41 @@ export function loadBrowserResults(host) {
   }).filter(Boolean)
 }
 
+// The current state of each page, not the raw append log. browser.jsonl is
+// append-only (that is what makes an interrupted run leave a usable partial
+// result), so once a FAILED page becomes retryable -- see runBrowserPass's
+// `already` set, which no longer treats an error row as done -- one url can
+// legitimately carry more than one row: the failure, then the retry's
+// outcome. The last row for a url is the one that describes the page as it
+// stands now; every earlier row is superseded history. Anything answering
+// "was this page checked, and how did it end up" (the resume set, the
+// report's coverage header) must read this rather than counting raw rows,
+// or a page that failed once and then succeeded would be counted as both.
+export function latestBrowserResultsByUrl(host) {
+  const byUrl = new Map()
+  for (const row of loadBrowserResults(host)) {
+    if (row && typeof row.url === 'string') byUrl.set(row.url, row)
+  }
+  return byUrl
+}
+
+// Removes everything `qc browse` recorded for this host: the results file AND
+// the screenshot crops keyed off those results.
+//
+// The crops used to survive --force, while captureDefect() (src/browser/
+// screenshot.js) short-circuits on `existsSync(out)` -- so a --force rerun
+// re-measured every page but silently reused every stale PNG. That is
+// backwards for the one case --force exists for: /qc-browse tells users it
+// "deletes all previously recorded browser findings and screenshots for this
+// host", "e.g. after a site redesign", which is exactly when a crop from
+// the previous design is actively misleading evidence rather than a saved
+// round-trip.
 export function clearBrowserResults(host) {
-  const p = join(snapshotDir(host), 'browser.jsonl')
+  const dir = snapshotDir(host)
+  const p = join(dir, 'browser.jsonl')
   if (existsSync(p)) rmSync(p, { force: true })
+  const shots = join(dir, 'shots')
+  if (existsSync(shots)) rmSync(shots, { recursive: true, force: true })
 }
 
 export function saveRun(host, findings, reportHtml) {
