@@ -1,4 +1,6 @@
-import { rollUp, verdict, countDistinct } from './json.js'
+import { rollUp, verdict, countDistinct, defectIdentity } from './json.js'
+import { STALENESS_WARNING_DAYS } from '../lib/snapshot-ttl.js'
+import { UNNAMED_REGION_PREFIX } from '../browser/regions.js'
 
 // Escaping is the security boundary of this module: every interpolated value
 // originates from a crawled third-party page (found/expected/page/selector)
@@ -19,6 +21,33 @@ const PAGE_INDEX_CAP = 500
 // the group stops being readable, so the rest is truncated -- visibly, with
 // the exact number withheld, never silently.
 const DEFECT_CAP = 100
+
+// A single self-contained HTML file is published as a sandboxed Artifact
+// where every external request is blocked -- every screenshot has to be an
+// inlined base64 data URI, and a handful of those add up fast (a data URI
+// runs ~33% larger than the PNG it encodes). This is the SAME cap the
+// pre-existing "realistic worst case" byte-size test in html.test.js checks
+// findings/pages against; screenshots are measured against it too, not a
+// second, separate budget, so the two concerns (many findings, many crops)
+// compete for the same publish-size headroom rather than each getting their
+// own allowance and silently doubling the real total.
+const PUBLISH_BYTE_LIMIT = 2 * 1024 * 1024
+
+// When the assembled document is still over budget, screenshots are dropped
+// -- never the defect text itself, which is the part a developer actually
+// needs to act on. Dropped in this order: note, then minor, then major, and
+// -- as a genuine last resort, only reached once every lower tier is already
+// gone -- critical too. An earlier version of this exempted critical
+// entirely, on the theory that it is normally the smallest bucket. Real
+// scale broke that assumption: a struggling multi-hundred-page site with
+// dozens of distinct critical visual bugs per rule produced a 5.1MB report
+// (2.5x over budget) with every screenshot critical, so nothing was ever
+// eligible to drop and the document shipped oversized with no warning at
+// all (see the "still over budget even after dropping everything droppable"
+// note below, which exists precisely to make that impossible now). A report
+// that is complete in text and short on pictures is far better than one
+// that cannot be published.
+const SHOT_DROP_ORDER = { note: 0, minor: 1, major: 2, critical: 3 }
 
 const CSS = `
 :root{--bg:#fff;--fg:#12151a;--mut:#5d6672;--line:#e4e7ec;--card:#f7f8fa;
@@ -65,14 +94,104 @@ th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--line)}
 // One distinct defect (rule + selector + normalized `found`, per
 // defectIdentity) with its own found/expected/selector and its own collapsed
 // list of the pages it occurs on.
-function renderDefect(d) {
+//
+// `ctx` carries the two pieces of browser-pass information that live outside
+// rollUp()'s own output (json.js is not modified by this task): `breakpoints`
+// -- every width, across every occurrence of this identity, not just the one
+// `example` finding rollUp happened to keep -- and `suppressedShots`, the set
+// of identities whose screenshot the size budget below decided to drop.
+// Screenshot fields (`shotDataUri`/`shotWidth`) themselves DO come straight
+// off `d.example`: run.js backfills them onto every occurrence of an
+// identity, so the arbitrary "first occurrence" rollUp keeps always carries
+// them when any occurrence does.
+function renderDefect(d, ctx = {}) {
+  const { breakpointsByIdentity = new Map(), suppressedShots = new Set(), candidates = null, severity } = ctx
   const shownPages = d.pages.slice(0, PAGE_LIST_CAP)
   const hiddenCount = d.pages.length - shownPages.length
+
+  // Judgement call: a defect that recurs at more than one breakpoint (the
+  // identity collapses them into one row, same as it already collapses
+  // pages) must still say which widths it was actually seen at -- "360 and
+  // 768 but not 1440" is exactly the kind of thing a developer needs and
+  // that was previously only recoverable by grepping the raw findings.
+  // Sorted ascending and de-duplicated (a Set, keyed by defectIdentity())
+  // rather than read off one example, so every width the identity occurred
+  // at is represented, not just whichever occurrence rollUp kept.
+  const bps = breakpointsByIdentity.get(d.identity)
+  const breakpointsHtml = bps && bps.size
+    ? `<div class="kv">брейкпоинты: <code>${[...bps].sort((a, b) => a - b).map(esc).join(', ')}</code></div>`
+    : ''
+
+  // A `region` is a proved-shared container (regions.js, Tasks 6-7 -- header,
+  // footer, a repeated widget) attached to a finding as a LABEL, not just an
+  // extra key that happens to widen defectIdentity(). json.js's own comment
+  // calls it out explicitly: "this is the footer, fix it once." Rendering it
+  // is the whole payoff of that mechanism actually reaching a human reader --
+  // without it, a defect repeated across every page's shared header shows up
+  // as nothing more than a long, undifferentiated page list, and the reader
+  // has no way to tell "one shared component, fix once" from "N unrelated
+  // instances of the same mistake, fix N times" without already knowing the
+  // site's template structure. Every occurrence of one identity carries the
+  // SAME region (it is part of the identity key), so `d.example.region` is
+  // authoritative here, same as the screenshot fields below.
+  //
+  // A region whose NAME could not be determined is labelled as the container
+  // id it actually is, and said to be unnamed -- not printed in the name slot
+  // as though it were one. On the only real site this has run against, every
+  // label read "регион: 3381" rather than "footer", because that snapshot was
+  // crawled before the parser recorded `locationsById` and nothing detected a
+  // snapshot whose shape predates a parser change. The finding is still
+  // correct and still collapses across pages; only the name is missing, and
+  // re-crawling is what supplies it.
+  const region = d.example?.region ?? null
+  const unnamedRegion = typeof region === 'string' && region.startsWith(UNNAMED_REGION_PREFIX)
+  const regionHtml = region
+    ? (unnamedRegion
+        ? `<div class="kv">регион: общий контейнер Elementor <code>${esc(region.slice(UNNAMED_REGION_PREFIX.length))}</code> (название — header/footer — определить не удалось: снимок сделан до того, как парсер начал сохранять локации; пересоберите его через <code>--fresh</code>) — общий для всех вхождений ниже, исправить нужно один раз</div>`
+        : `<div class="kv">регион: <code>${esc(region)}</code> — общий для всех вхождений ниже, исправить нужно один раз</div>`)
+    : ''
+
+  // Review fix: `shotDataUri` reaches this function from `d.example`, which
+  // for a report built directly against hand-supplied findings (as this
+  // module's own test suite does, and as any future caller is free to do --
+  // renderReport is a public, filesystem-free API, not something only
+  // cli.js's own inlineScreenshots() ever feeds) could be ANY string, not
+  // necessarily one cli.js actually produced. This report's whole premise
+  // is "no external requests" (it is published as a sandboxed Artifact where
+  // those are blocked outright); an `<img src>` pointed at a live
+  // `https://` URL would be escaped (no injection) but would still be a
+  // real external reference sitting in a document that promises there are
+  // none. Only a genuine embedded `data:image/...` URI is accepted --
+  // anything else (an http(s) URL, a bare string, a non-string) is treated
+  // exactly like "no screenshot for this defect" and silently omitted, same
+  // as any finding that never had one.
+  const shotDataUri = (typeof d.example?.shotDataUri === 'string' && d.example.shotDataUri.startsWith('data:image/'))
+    ? d.example.shotDataUri
+    : null
+  const shotWidth = d.example?.shotWidth ?? null
+  if (shotDataUri && candidates) {
+    // First pass only (candidates is null on the second, decided pass): a
+    // shot is a drop candidate exactly when it is not already known-critical
+    // -- see SHOT_DROP_ORDER and the size-budget pass in renderReport.
+    candidates.push({ identity: d.identity, severity, bytes: Buffer.byteLength(shotDataUri, 'utf8') })
+  }
+  const suppressed = shotDataUri && suppressedShots.has(d.identity)
+  const shotHtml = shotDataUri
+    ? (suppressed
+        ? `<div class="kv sub">скриншот скрыт — отчёт превысил лимит размера (см. предупреждение выше)</div>`
+        : `<div class="kv"><img src="${esc(shotDataUri)}" alt="" style="max-width:100%">` +
+          (shotWidth != null ? `<div class="sub">снимок сделан при ширине ${esc(shotWidth)}px</div>` : '') +
+          `</div>`)
+    : ''
+
   return `
       <div class="defect">
         <div class="kv">найдено: <code>${esc(d.found)}</code></div>
         ${d.expected ? `<div class="kv">ожидается: <code>${esc(d.expected)}</code></div>` : ''}
         <div class="kv">селектор: <code>${esc(d.selector)}</code></div>
+        ${breakpointsHtml}
+        ${regionHtml}
+        ${shotHtml}
         <ul class="pages">${shownPages.map(p => `<li>${esc(p)}</li>`).join('')}</ul>
         ${hiddenCount > 0 ? `<p class="kv">…и ещё ${hiddenCount} страниц не показано (ограничение списка)</p>` : ''}
       </div>`
@@ -83,10 +202,10 @@ function renderDefect(d) {
 // to describe 10 of the run's 25 distinct defects while its tiles counted all
 // 25 -- eight different broken links collapsed into whichever one happened to
 // be seen first.
-function renderGroup(g) {
+function renderGroup(g, ctx = {}) {
   const defects = g.identities?.length
     ? g.identities
-    : [{ found: g.example.found, expected: g.example.expected, selector: g.example.selector, pages: g.pages }]
+    : [{ found: g.example.found, expected: g.example.expected, selector: g.example.selector, pages: g.pages, example: g.example }]
   const shown = defects.slice(0, DEFECT_CAP)
   const hiddenDefects = defects.length - shown.length
   return `
@@ -97,7 +216,7 @@ function renderGroup(g) {
       <span class="cnt">${defects.length} дефектов · ${g.pages.length} страниц · ${g.count} находок</span>
     </summary>
     <div class="body">
-      ${shown.map(renderDefect).join('')}
+      ${shown.map(d => renderDefect(d, { ...ctx, severity: g.severity })).join('')}
       ${hiddenDefects > 0 ? `<p class="kv">…и ещё ${hiddenDefects} дефектов не показано (ограничение списка)</p>` : ''}
     </div>
   </details>`
@@ -105,6 +224,7 @@ function renderGroup(g) {
 
 export function renderReport({
   host, env, envReason, pages, findings, diff, snapshotAgeDays, source, sitemapStatus,
+  browserCoverage,
 }) {
   // Fail fast on malformed findings, matching the array contract rollUp/diffRuns
   // already enforce (src/report/json.js). Coercing bad input to [] here would
@@ -148,7 +268,114 @@ export function renderReport({
   // not come from a sitemap at all) says nothing; anything else does.
   const sitemapWarning = sitemapStatus && sitemapStatus !== 'ok'
 
-  return `<!doctype html>
+  // Every occurrence of an identity carries its own `breakpoint` (browser
+  // findings only -- static findings always have breakpoint: null, which is
+  // simply skipped here). Aggregated across ALL occurrences of an identity,
+  // not read off rollUp's single `example`, so a defect seen at both 360 and
+  // 768 renders both, even though rollUp kept only one of those findings as
+  // its representative example.
+  const breakpointsByIdentity = new Map()
+  for (const f of list) {
+    if (f.breakpoint === null || f.breakpoint === undefined) continue
+    const id = defectIdentity(f)
+    if (!breakpointsByIdentity.has(id)) breakpointsByIdentity.set(id, new Set())
+    breakpointsByIdentity.get(id).add(f.breakpoint)
+  }
+
+  // Judgement call: a static-only run (`qc audit` with `qc browse` never run
+  // for this host) must not look like a run that checked visual/interactive
+  // behaviour and found nothing -- that is indistinguishable, to a reader,
+  // from a genuinely clean visual pass. `browserCoverage` is undefined in
+  // exactly that case (cli.js only supplies it when browser.jsonl exists),
+  // so the header states plainly that no browser pass ran at all, rather
+  // than silently omitting any mention of it.
+  //
+  // When it IS present, partial coverage (pagesDone < pagesTotal) gets its
+  // own visible warning -- a browser pass that covered 40 of 348 pages must
+  // never look complete just because SOME findings are shown.
+  let browserCoverageHtml
+  if (!browserCoverage) {
+    browserCoverageHtml = `<div class="note-box">Браузерная проверка не выполнялась — этот отчёт основан только на статическом анализе HTML. Визуальные и интерактивные дефекты (переполнение, наложения элементов, hover/focus, ошибки консоли, скриншоты) не проверялись. Запустите <code>qc browse ${esc(host)}</code>, чтобы дополнить отчёт.</div>`
+  } else {
+    const pagesDone = Number(browserCoverage.pagesDone) || 0
+    const pagesTotal = Number(browserCoverage.pagesTotal) || 0
+    const widths = Array.isArray(browserCoverage.widths) ? browserCoverage.widths : []
+    const complete = pagesTotal > 0 && pagesDone >= pagesTotal
+
+    // Pages that would not open at all. "7 из 31" alone cannot distinguish a
+    // page that FAILED from one that was never attempted, and those call for
+    // opposite reactions: a not-yet-attempted page just needs the pass to be
+    // run again, while a failed page is a page the site itself would not
+    // serve. The spec requires both the count and the list to reach the
+    // header, so a reader is not left inferring it from a bare fraction.
+    const failedUrls = Array.isArray(browserCoverage.failedUrls) ? browserCoverage.failedUrls : []
+    const pagesFailed = Number(browserCoverage.pagesFailed) || failedUrls.length
+    const shownFailed = failedUrls.slice(0, PAGE_LIST_CAP)
+    const hiddenFailed = failedUrls.length - shownFailed.length
+    const failedHtml = pagesFailed
+      ? `<div class="note-box">Не открылись при браузерной проверке: <b>${esc(pagesFailed)}</b> страниц(ы) — они проверены безуспешно, а не пропущены, и визуальные дефекты на них неизвестны.` +
+        (shownFailed.length
+          ? `<ul>${shownFailed.map(x => {
+              const url = typeof x === 'string' ? x : (x && x.url) || ''
+              const err = typeof x === 'string' ? '' : (x && x.error) || ''
+              return `<li><code>${esc(url)}</code>${err ? ` — ${esc(err)}` : ''}</li>`
+            }).join('')}${hiddenFailed > 0 ? `<li>…и ещё ${esc(hiddenFailed)}</li>` : ''}</ul>`
+          : '') +
+        ` Повторный запуск <code>qc browse ${esc(host)}</code> пробует их снова — <code>--force</code> для этого не нужен.</div>`
+      : ''
+
+    // Widths the breakpoint budget excluded. `dropped` already reaches
+    // browse's stdout and the snapshot meta; the spec says explicitly that
+    // excluded widths are listed in the REPORT rather than swallowed, and it
+    // never was -- so a reader could not tell that e.g. 1200 (the Bootstrap
+    // and Elementor desktop boundary) was never measured at all.
+    const droppedWidths = Array.isArray(browserCoverage.droppedWidths) ? browserCoverage.droppedWidths : []
+    const droppedHtml = droppedWidths.length
+      ? `<div class="note-box">Ширины, не вошедшие в проверку из-за лимита (${esc(droppedWidths.length)}): <code>${droppedWidths.map(esc).join(', ')}</code>. Дефекты, которые проявляются только на этих ширинах, не измерялись. Чтобы проверить любую из них, запустите <code>qc browse ${esc(host)} --breakpoints ${esc(droppedWidths.join(','))} --force</code>.</div>`
+      : ''
+
+    browserCoverageHtml = `<p class="sub">браузерная проверка: ${esc(pagesDone)} из ${esc(pagesTotal)} страниц` +
+      (pagesFailed ? ` · не открылись: ${esc(pagesFailed)}` : '') +
+      (widths.length ? ` · ширины: ${widths.map(esc).join(', ')}` : '') +
+      (droppedWidths.length ? ` · исключённые ширины: ${droppedWidths.map(esc).join(', ')}` : '') + `</p>` +
+      (!complete
+        ? `<div class="note-box">Браузерная проверка выполнена частично: проверено ${esc(pagesDone)} из ${esc(pagesTotal)} страниц. Визуальные дефекты на остальных страницах могли остаться незамеченными. Запустите <code>qc browse ${esc(host)}</code> ещё раз, чтобы продолжить — прогон возобновляемый: уже проверенные страницы не начинаются заново, а те, что не открылись, пробуются снова.</div>`
+        : '') +
+      failedHtml + droppedHtml
+  }
+
+  // Screenshots are checked against the SAME publish-size budget as
+  // everything else (see PUBLISH_BYTE_LIMIT above), not a separate one --
+  // built by rendering the full document once, and only if that comes in
+  // over budget, deciding which screenshots to drop and rendering a second,
+  // final time. The common case (no screenshots, or few enough to fit) pays
+  // for exactly one render.
+  //
+  // `oversizeBytes`, when given, forces an UNCONDITIONAL "this document is
+  // still over the publish budget" note -- independent of whether anything
+  // was actually suppressed. Review fix: the note used to only render when
+  // `suppressedShots.size > 0`, so a document with nothing eligible to drop
+  // (every screenshot critical, before critical became a droppable last
+  // resort -- or, still possible today, a document whose TEXT alone exceeds
+  // the budget with no screenshots involved at all) shipped over budget with
+  // no warning anywhere. This note is deliberately a separate condition from
+  // the "N screenshots dropped" one below -- either can be true without the
+  // other (dropping can succeed and clear the budget with no oversize note
+  // needed; or nothing may be droppable/enough may not have been droppable
+  // and the oversize note is the only one that fires).
+  function build(suppressedShots, { oversizeBytes } = {}) {
+    const candidates = suppressedShots ? null : []
+    const ctx = { breakpointsByIdentity, suppressedShots: suppressedShots ?? new Set(), candidates }
+    const groupsHtml = groups.length
+      ? groups.map(g => renderGroup(g, ctx)).join('')
+      : '<p class="sub">Нарушений не найдено — сайт прошёл проверку без замечаний.</p>'
+    const heurHtml = heur.length
+      ? `<h2>Требует взгляда (неподтверждённые эвристики)</h2>
+<div class="note-box heuristic">Ниже — находки эвристических правил: возможны ложные срабатывания, они <b>не учитываются</b> в вердикте и в плитках серьёзности выше. Проверьте вручную перед тем, как заводить задачу.</div>
+${heur.map(g => renderGroup(g, ctx)).join('')}`
+      : ''
+
+    const html = `<!doctype html>
 <html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>QC ${esc(host)}</title><style>${CSS}</style></head><body><div class="wrap">
@@ -157,8 +384,11 @@ export function renderReport({
 страниц: ${esc(pages)} · источник списка: ${esc(source)} ·
 снапшот: ${ageLabel}</p>
 <p><span class="verdict ${vClass}">${esc(v)}</span></p>
-${snapshotAgeDays > 7 ? `<div class="note-box">Снапшот старше 7 дней — данные могли устареть. Перезапустите с <code>--fresh</code>.</div>` : ''}
+${snapshotAgeDays > STALENESS_WARNING_DAYS ? `<div class="note-box">Снапшоту больше ${esc(STALENESS_WARNING_DAYS)} дней — данные могли устареть. Перезапустите с <code>--fresh</code>.</div>` : ''}
 ${sitemapWarning ? `<div class="note-box">Sitemap: <b>${esc(sitemapStatus)}</b> — список страниц мог оказаться неполным, часть страниц сайта в отчёт не попала.</div>` : ''}
+${browserCoverageHtml}
+${suppressedShots && suppressedShots.size ? `<div class="note-box">Часть скриншотов скрыта, чтобы уместиться в лимит размера публикации: ${esc(suppressedShots.size)} скриншот(ов) не показано (порядок удаления: сначала note, затем minor, major и, при необходимости, critical). Сами дефекты и их описания — found/expected/селектор/страницы — остаются ниже полностью, скрыты только изображения.</div>` : ''}
+${oversizeBytes != null ? `<div class="note-box">Отчёт превышает рекомендуемый лимит размера публикации (~${esc((oversizeBytes / (1024 * 1024)).toFixed(1))} МБ из ${esc(PUBLISH_BYTE_LIMIT / (1024 * 1024))} МБ), даже после того как были скрыты все скриншоты, которые можно было скрыть. Публикация как Artifact может не сработать из-за размера файла. Сами находки в этом файле не пострадали — это предупреждение о размере, не о содержимом.</div>` : ''}
 <div class="tiles">
   <div class="tile wide"><b>${distinctTotal} дефектов</b><span>${occurrenceTotal} вхождений на ${uniquePages.length} страницах</span></div>
   <div class="tile"><b>${by('critical')}</b><span>Critical</span></div>
@@ -171,10 +401,8 @@ ${sitemapWarning ? `<div class="note-box">Sitemap: <b>${esc(sitemapStatus)}</b> 
 <p class="sub">Дефектов по серьёзности: ${distinct.critical} critical · ${distinct.major} major · ${distinct.minor} minor · ${distinct.note} note — это число реальных задач на исправление.
 Плитки Critical/Major/Minor выше считают вхождения (одна правка может закрыть сразу несколько).</p>
 <h2>Находки по правилам</h2>
-${groups.length ? groups.map(renderGroup).join('') : '<p class="sub">Нарушений не найдено — сайт прошёл проверку без замечаний.</p>'}
-${heur.length ? `<h2>Требует взгляда (неподтверждённые эвристики)</h2>
-<div class="note-box heuristic">Ниже — находки эвристических правил: возможны ложные срабатывания, они <b>не учитываются</b> в вердикте и в плитках серьёзности выше. Проверьте вручную перед тем, как заводить задачу.</div>
-${heur.map(renderGroup).join('')}` : ''}
+${groupsHtml}
+${heurHtml}
 <h2>Страницы</h2>
 ${uniquePages.length ? `<div class="scroll"><table><tr><th>Страница</th><th>Находок</th></tr>
 ${shownPages.map(p =>
@@ -182,4 +410,50 @@ ${shownPages.map(p =>
 </table></div>
 ${hiddenPageCount > 0 ? `<p class="kv">…и ещё ${hiddenPageCount} страниц не показано (ограничение индекса)</p>` : ''}` : '<p class="sub">Нет страниц с находками.</p>'}
 </div></body></html>`
+    return { html, candidates }
+  }
+
+  const first = build(null)
+  if (Buffer.byteLength(first.html, 'utf8') <= PUBLISH_BYTE_LIMIT) return first.html
+
+  // Over budget: decide which screenshots to drop, lowest severity first,
+  // with critical only as a last resort (see SHOT_DROP_ORDER's own comment
+  // for why critical is droppable at all now). Among candidates that share a
+  // tier, drop the biggest images first, since that recovers the most bytes
+  // per screenshot dropped. `bytesOver` is tracked against the FIRST
+  // render's size -- an approximation (the second render's non-image markup
+  // differs slightly, e.g. the "hidden" placeholder text and the new
+  // warning banners), deliberately conservative in the safe direction: it
+  // keeps dropping until it is confident of clearing the limit rather than
+  // stopping right at the edge and risking a second render that is still
+  // over.
+  const droppable = first.candidates
+    .filter(c => SHOT_DROP_ORDER[c.severity] !== undefined)
+    .sort((a, b) => (SHOT_DROP_ORDER[a.severity] - SHOT_DROP_ORDER[b.severity]) || (b.bytes - a.bytes))
+
+  const suppressed = new Set()
+  let bytesOver = Buffer.byteLength(first.html, 'utf8') - PUBLISH_BYTE_LIMIT
+  for (const c of droppable) {
+    if (bytesOver <= 0) break
+    suppressed.add(c.identity)
+    bytesOver -= c.bytes
+  }
+
+  const second = build(suppressed)
+  const secondBytes = Buffer.byteLength(second.html, 'utf8')
+  if (secondBytes <= PUBLISH_BYTE_LIMIT) return second.html
+
+  // Review fix: even after dropping every screenshot this document had
+  // anything to drop (every candidate, including critical, may already be
+  // in `suppressed` -- or there may have been no screenshots at all, and the
+  // findings' own text is simply too large), the document can still be over
+  // budget. That must never ship silently: a third, final render bakes an
+  // unconditional oversize note into the SAME place a reader already checks
+  // for size-related warnings, using `secondBytes` (measured just before
+  // this call) as the number to report -- the note's own few hundred bytes
+  // shift the true final size negligibly relative to a multi-megabyte
+  // overage, so it is close enough to be useful without needing a fourth
+  // render to chase an exact figure.
+  const third = build(suppressed, { oversizeBytes: secondBytes })
+  return third.html
 }

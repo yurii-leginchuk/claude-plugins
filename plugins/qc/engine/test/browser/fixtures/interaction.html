@@ -1,0 +1,31 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Interaction</title>
+<style>
+body{margin:0;font:16px system-ui}
+#good-link{color:#0b5;transition:color .2s}
+#good-link:hover{color:#083}
+#no-transition{color:#06c}
+#no-transition:hover{color:#039}
+#fake-button{cursor:pointer;padding:8px;background:#eee;display:inline-block}
+#bare-button{padding:6px}
+#broken-native-cursor{cursor:not-allowed}
+#role-no-pointer{padding:6px}
+#link-with-span{color:#333}
+#div-wraps-link{cursor:pointer;padding:12px;display:inline-block}
+#empty-hover{padding:4px}
+#empty-hover:hover{}
+#custom-prop-hover{padding:4px}
+#custom-prop-hover:hover{--x:red}
+</style></head>
+<body><main>
+<a id="good-link" href="/a">good</a>
+<a id="no-transition" href="/b">no transition</a>
+<div id="fake-button">not a button</div>
+<button id="bare-button">plain button, no cursor CSS anywhere</button>
+<button id="broken-native-cursor">native button with an explicit, wrong cursor</button>
+<div id="role-no-pointer" role="button" tabindex="0">role button without pointer</div>
+<a id="link-with-span" href="/c"><span id="inner-span">nested text inherits pointer</span></a>
+<div id="div-wraps-link"><a href="/d">link inside a pointer-styled div</a></div>
+<div id="empty-hover">empty hover rule, nothing changes</div>
+<div id="custom-prop-hover">hover only sets a custom property</div>
+<p id="plain-text">just text</p>
+</main></body></html>

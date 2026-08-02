@@ -1,0 +1,11 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Hover</title>
+<style>body{margin:0}#live-link{color:#06c}#live-link:hover{color:#039;text-decoration:underline}
+#dead-link{color:#06c}
+.card{padding:8px}.card:hover a{color:red}
+.dropdown{padding:4px}.dropdown:hover .menu{display:block}
+</style></head>
+<body><main><a id="live-link" href="/a">has hover</a>
+<a id="dead-link" href="/b">no hover</a>
+<div class="card"><a id="card-link" href="/card">changes via ancestor hover</a></div>
+<button class="dropdown" id="dropdown-toggle">toggle</button><div class="menu">menu content</div>
+</main></body></html>

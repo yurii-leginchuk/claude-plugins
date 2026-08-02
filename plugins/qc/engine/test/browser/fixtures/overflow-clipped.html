@@ -1,0 +1,23 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Clipped overflow</title>
+<style>
+body{margin:0}
+/* A wide child inside an ancestor that HIDES the horizontal overflow, where
+   that ancestor's own box fits inside the viewport: nothing escapes the
+   viewport, nothing is unreachable-by-scroll at the document level. */
+#clipper{width:600px;overflow-x:hidden}
+#clipper-inner{width:3000px;height:40px;background:#bfb}
+
+/* Same shape, but the ancestor offers the overflow as an internal scroller
+   (the carousel / scrollable-table pattern). The content is reachable by
+   design, so this is not "an element escaping the viewport" either. */
+#scroller{width:600px;overflow-x:auto}
+#scroller-inner{width:3000px;height:40px;background:#bbf}
+
+/* No clipping ancestor at all: this one genuinely escapes. */
+#escaping{width:3000px;height:40px;background:#fbb}
+</style>
+</head><body><main><h1>Clipped vs escaping</h1>
+<div id="clipper"><div id="clipper-inner">hidden overflow</div></div>
+<div id="scroller"><div id="scroller-inner">scrollable overflow</div></div>
+<div id="escaping">escapes the viewport</div>
+</main></body></html>

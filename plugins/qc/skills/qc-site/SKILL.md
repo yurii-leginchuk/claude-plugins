@@ -13,6 +13,19 @@ a check, never parse or interpret raw HTML yourself, never eyeball a page and ad
 If a rule looks wrong, say so and propose a fix to the rule file — do not paper over it, silently
 adjust a number, or invent a finding the engine didn't report.
 
+**This command alone never opens a browser.** It fetches and statically parses HTML, so on its own
+it only covers what's inspectable from markup (broken links, meta, headings, forms, alt text, etc).
+Visual and interactive defects — horizontal scroll, overflow, overlapping elements, hover/focus
+behaviour, contrast, console errors, broken images, and per-breakpoint screenshots — only appear
+once `/qc-browse` has been run for the same host at least once: it records to `browser.jsonl`, and
+*every* subsequent `qc audit` on that host reads and merges it into the report automatically, no
+extra flag needed. A report with none of that is a **static-only** report, and the report's own
+header says so plainly ("браузерная проверка не выполнялась") — never read a static-only `Pass` as
+"the site passed its visual checks", it means nothing about them either way. If the user's request
+implies visual/responsive checking ("как сайт выглядит на мобильном", "проверь адаптивность",
+screenshots, overlapping elements), point them at `/qc-browse` instead of, or in addition to, this
+command.
+
 ## Steps
 
 1. Resolve the engine path: `<plugin-root>/engine`. If `node_modules` is missing there, run
@@ -34,9 +47,16 @@ adjust a number, or invent a finding the engine didn't report.
    sheet, an unknown `--only`/`--skip` rule id, zero pages discovered, or every page fetch failing.
 4. On success, the last line of stdout is one JSON object. It carries (at minimum): `host`, `env`,
    `envReason`, `pages`, `pagesRequested`, `pagesFailed`, `failedUrls`, `source`, `sitemapStatus`,
-   `fromCache`, `cacheAgeDays`, `verdict`, `counts`, `distinct`, `heuristics`, `diff`, `runDir`,
-   `reportPath`. Read `reportPath` — the file it points to must exist; if it doesn't, treat the run
-   as failed rather than publishing nothing.
+   `fromCache`, `cacheAgeDays`, `verdict`, `counts`, `distinct`, `heuristics`, `diff`,
+   `browserCoverage`, `runDir`, `reportPath`. Read `reportPath` — the file it points to must exist;
+   if it doesn't, treat the run as failed rather than publishing nothing.
+
+   `browserCoverage` is `null` when `/qc-browse` has never been run for this host — say so if it's
+   null, don't just leave it unmentioned. When it's an object (`{ pagesDone, pagesTotal, widths }`),
+   `counts`/`distinct`/`verdict` above already include whatever browser findings exist, and the
+   report's rule groups include the browser-only rules (horizontal scroll, overflow, overlap,
+   hover/focus, contrast, console errors, broken images) alongside the static ones — mention the
+   coverage numbers, and flag it plainly if `pagesDone < pagesTotal`.
 
    `counts` vs `distinct` vs `heuristics` — read this carefully, it changes what you should lead
    with:
@@ -79,6 +99,11 @@ adjust a number, or invent a finding the engine didn't report.
      not one example repeated.
    - If the report's header carries a `Sitemap: <status>` warning box, say so: the page list may be
      incomplete, so the audit may not have covered the whole site.
+   - Browser coverage (`browserCoverage`): if `null`, say plainly that no browser/visual pass has
+     run for this host and that `/qc-browse` is what adds it. If present, state `pagesDone`/
+     `pagesTotal` and the widths checked, and lead with "частично" language rather than a clean
+     verdict if `pagesDone < pagesTotal` — a partial browser pass must never be presented as if the
+     whole site's visual behaviour was checked.
    - The run directory (`runDir`) and the Artifact link.
 
 ## Rules

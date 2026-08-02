@@ -106,6 +106,16 @@ test('records elementor container ids and locations', () => {
   assert.ok(doc.elementor.locations.includes('footer'))
 })
 
+// The fixture page carries both elementor-location-header and
+// elementor-location-footer, so containerIds/locations alone can't say which
+// id is the header and which is the footer. locationsById pairs them from
+// the same element's class list, which is what proveRegions (Task 6) needs
+// to name shared regions correctly instead of falling back to bare ids.
+test('pairs each container id with its own location class', () => {
+  assert.equal(doc.elementor.locationsById['3374'], 'header')
+  assert.equal(doc.elementor.locationsById['3381'], 'footer')
+})
+
 test('builds a widget skeleton that ignores text', () => {
   assert.match(doc.elementor.skeleton, /heading\.default/)
   assert.doesNotMatch(doc.elementor.skeleton, /Office Cleaning Services/)

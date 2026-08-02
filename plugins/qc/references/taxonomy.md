@@ -266,3 +266,195 @@ groups by `rule + severity + confidence`, so each combination renders as its own
 **Takeaway for anyone consuming this engine's output (including the `/qc-site` skill):** lead with
 `distinct`, use raw `counts` only as a secondary "how many pages does this touch" figure, and always
 surface `heuristics` separately as unconfirmed rather than folding it into either number.
+
+---
+
+## Browser calibration log
+
+Recorded after the first real-site run of the browser pass (`qc browse`, 10 pages of the same
+31-page WordPress/Elementor site, `cleaningny.com`, Task 11). Kept here for the same reason as the
+static-engine log above: so the next tuning pass has actual evidence instead of re-deriving it. Full
+detail: `.superpowers/sdd/2026-08-01-qc-browser-pass/task-11-report.md`.
+
+### The raw numbers before anything was touched
+
+10 pages requested, 7 completed, 3 failed, 1025 browser findings from 4 of the 9 browser rules —
+**C1, X1, X2, F1 and B6 produced nothing at all**:
+
+| rule | severity/conf | raw | pages | distinct | example `found` |
+|---|---|---|---|---|---|
+| F5 | minor | 657 | 7 | 17 | `правило a:active, a:hover меняет стиль без transition` |
+| F4 | minor | 195 | 7 | 39 | `cursor:pointer на неинтерактивном элементе` |
+| J3 | major/heuristic | 148 | 7 | 4 | `контраст 2.25:1 при 16px` |
+| C2 | major | 25 | 4 | 19 | `ширина 2843px при вьюпорте 1440px` |
+
+Every zero and every noise bucket was checked by hand against the live site (a headless run against
+the same 7 pages, calling the rule/bundle code directly — not a second `qc browse`) rather than
+assumed either way, per the brief's own warning that a rule producing nothing is as suspect as one
+producing too much.
+
+### The three failed pages were a real bug, not the site
+
+`about/`, `services/` and `emergency-cleaning/` all failed with the identical Playwright error
+`browser.newContext: Target page, context or browser has been closed`. The page immediately before
+the run of failures (`car-dealership-cleaning/`) already shows the same error as a per-width failure
+at its LAST width (1440) — the single Chromium instance the whole pass shares (by design, for launch
+cost) died mid-pass, and every attempt after that point failed identically and instantly, never
+timing out. Nothing detected the browser itself was gone, so nothing tried to recover: a page that
+fails this way still gets a stored row (so it is never retried without `--force`, which discards
+every already-collected result). Fixed in `src/browser/run.js`: `runBrowserPass` now checks
+`browser.isConnected()` before each page and relaunches a fresh browser if it is not, via a new
+`launchBrowserImpl` injection point (test-only, mirrors `cli.js`'s `fetchImpl`). Two new tests in
+`test/browser/run.test.js` reproduce a real mid-pass crash (closing a real Playwright browser between
+two pages) and pin both the recovery and the case where the relaunch itself fails.
+
+### F4 (39 distinct) — the predicted flood never happened; three different real bugs did
+
+**The one prediction on record was wrong, in an interesting way.** F4 was expected to flood on every
+`<button>` missing `cursor:pointer` (Chrome's native default is `default`). It didn't: Task 4's
+`NATIVE_FORM_TAGS` exclusion, written before any live run existed, correctly prevented exactly that —
+confirmed here by re-checking the actual finding directions on the live data: **135 of 195 raw
+findings were the OTHER direction** (`cursor:pointer` on an element F4 didn't recognise as
+interactive), not the predicted one.
+
+39 distinct was itself mostly an artifact, but not the artifact anyone guessed — three separate,
+unrelated causes, each fixed and tested:
+
+1. **Cursor inheritance across nested decorative markup.** `cursor` is inherited; a real dropdown
+   arrow rendered as `<span><i><svg><path>` reported the SAME defect at 3 nesting levels (39 raw
+   findings from this alone). Fixed: `F4-cursor.js` now skips a candidate whose direct parent already
+   computes the identical cursor and is not itself interactive.
+2. **Machine-generated ids destabilising `defectIdentity`.** A SmartMenus-style nav plugin assigns
+   `id="sm-17856341663330366-3"` fresh on every page render — the SAME toggle link produced a
+   DIFFERENT `defectIdentity` (`report/json.js` keys directly off `selector`, which used to trust any
+   non-empty id) on every page, inflating 13 raw occurrences of one defect into 13 "distinct" ones.
+   Fixed: `_helpers.js`'s `selector()` now falls back to a class/tag-based display when an id contains
+   a run of 10+ digits (both the element's own id and a parent's, in the composite "tag#id > tag"
+   form).
+3. **Two real false-positive gaps in `interactive()`, found only once the ids above stopped churning
+   and the real remaining patterns became visible:** a `<label>` associated with a form control (via
+   `for` or by wrapping it) is genuinely clickable but wasn't recognised (70 raw findings, the largest
+   single bucket — every Gravity Forms radio-option label on the site); and a nav item that is purely
+   an `aria-haspopup="true"` submenu toggle with no `href` at all wasn't either. Both fixed in
+   `interactive()`; `label` was also added to the Direction-B exclusion list (same reasoning as native
+   form controls: no built-in "looks clickable" affordance, but not authoring `cursor:pointer`
+   explicitly is normal) to avoid trading one flood for its mirror image. A fourth, smaller fix
+   followed from the second: the "inherits pointer from a real interactive ancestor" exclusion used a
+   separately hardcoded `closest('a[href], button, [role="button"]')` that had already drifted out of
+   sync with `interactive()` itself — a submenu toggle's inner arrow span was still flagged even after
+   the toggle was fixed. Now walks ancestors via `ctx.helpers.interactive()` directly.
+
+Measured on all 7 successfully-crawled pages at 2 widths (1440, 360 — 14 page/width samples), running
+the pre-fix and post-fix logic side by side against the live site in the same process:
+
+| | raw | distinct |
+|---|---|---|
+| before | 61 | 27 |
+| after | 12 | 3 |
+
+The 3 remaining distinct findings are on `thank-you/` and `contact/thank-you/` — a real
+`cursor:default` on 3 genuinely interactive Elementor CTA links, independently confirmed present
+before AND after every fix above. Nothing here is a "no button lacks pointer" flood; it never was.
+
+### F5 (657 raw / 17 distinct) — a real bug in the matching logic, confirmed on this site to not move the count
+
+`F5`/`F1` both derived their query target by stripping `:hover` from a rule's WHOLE `selectorText`,
+even when that text grouped several comma-separated compounds and only one of them carried `:hover`.
+On a rule seen live —
+`... .elementor-nav-menu--dropdown a, ... a:focus, ... a.elementor-item-active, ... a.highlighted, ... .elementor-menu-toggle, ... .elementor-menu-toggle:focus:hover`
+— the old code folded ALL SIX compounds into one `querySelectorAll` target, matching dropdown nav
+links and a menu-toggle button that have nothing to do with the actual hover rule. Fixed in both
+`F5-transition.js` and `F1-hover.js`: a shared (duplicated, since both files must stay self-contained
+for serialisation — see `_helpers.js`'s own header comment) `splitSelectorGroups()` splits on
+top-level commas only (respecting `[]`/`()`) and keeps only the group(s) that themselves contain
+`:hover`. Pinned with isolated fixtures where the bug is unambiguous: a grouped rule wrongly
+flagging an unrelated sibling link, and `a:active, a:hover` no longer carrying the unrelated
+`:active` compound into the displayed `found` text.
+
+**Measured live, the fix changes nothing on this specific run.** Reconstructing the pre-fix logic and
+running it side by side with the real (fixed) rule against all 7 pages at 2 widths:
+
+| | F5 raw | F5 distinct |
+|---|---|---|
+| before (1440px, 7 pages) | 61 | 12 |
+| after (1440px, 7 pages) | 61 | 12 |
+| before (360px, 7 pages) | 68 | 13 |
+| after (360px, 7 pages) | 68 | 13 |
+
+Two reasons, both verified directly against the live DOM: the dominant bucket (`a:active, a:hover`,
+463 of 657 raw in the original 10-page run) strips to base selector `a` either way — `a:active` is
+already a strict subset of plain `a`, so the old and new query produce the identical element set.
+And the specific mega-selector quoted above, when queried live, turned out to have its "extra"
+non-hover compounds match either zero real elements (an unused Elementor pointer-effect variant) or
+none beyond what the genuine hover compound already matched — this SITE's markup happens not to
+expose the bug's effect, even though the bug itself is real and independently reproduced on
+constructed fixtures. The fix stays: it is the correct algorithm, it is what stops a differently
+structured theme's grouped selector from flooding the way this one didn't, and it produces an
+honest `found` string instead of a misleadingly reconstructed one.
+
+### F1 (0 raw, before and after) — confirmed genuine, not a matching-bug artifact
+
+Same grouped-selector fix as F5 (F1's `targets` list had the identical bug, in the opposite
+direction: an over-broad target marks candidates "covered" and SUPPRESSES a real finding). Applying
+it live, side by side with the pre-fix logic, across all 7 pages at 2 widths: **0 before, 0 after,
+on every single page/width combination.** Checked why directly: of 108 interactive candidates
+(`a[href], button, [role="button"]`) on the homepage, 103–108 already match a broad, genuine
+`:hover`-covering rule (`a:active, a:hover`, `[type="button"]:focus, [type="button"]:hover, ...
+button:hover`, plus 113 total `:hover` selectors in the theme's stylesheets). This is a well-styled
+theme with near-universal hover coverage, not a broken rule — F1's silence on this run is a genuine
+clean result.
+
+### J3 (148 raw / 4 distinct) — verified genuine by hand
+
+Not touched. One occurrence (`li > a.elementor-item`, `контраст 2.25:1 при 16px`, homepage, 1440px)
+was checked directly: the site renders a SECOND, fully visible instance of the main nav (likely a
+sticky/scrolled-header variant) with muted green text `rgb(150,176,151)` over a near-white
+`rgb(250,250,250)` background — computed by hand: **2.2470:1**, matching the reported `2.25:1` to
+four significant figures. A real WCAG contrast failure, not noise.
+
+### C2 (25 raw / 19 distinct) — spot-checked, left as is
+
+19 distinct, stable Elementor element ids (not the churning kind F4 hit), each ~2841–2843px wide at
+a 1440px viewport, on 4 pages. Consistent with a real, per-widget overflow (most likely an
+unconstrained slider/carousel), not noise — raw and distinct are already close to 1:1. Not touched.
+
+### C1, X1, X2, B6 (0 raw) — confirmed genuine, not a broken sink
+
+All four checked directly against the live site rather than assumed clean:
+
+- **X1** (console errors/failed requests) was the one the brief specifically doubted ("a production
+  WordPress site with analytics and a chat widget producing not one console error... is unlikely").
+  An INDEPENDENT Playwright listener (bypassing `preparePage`'s own capture mechanism entirely) on the
+  live homepage also captured zero console errors, zero failed requests, zero 4xx/5xx responses over
+  4 seconds. Running the actual `preparePage` + bundle mechanism against the same URL confirmed
+  `window.__qcConsole` ends empty too, matching. X1's existing positive-control tests already prove
+  the sink itself works on a page WITH errors; this proves it against a live page correctly finds
+  none. Genuinely clean, not silently broken.
+- **C1** (horizontal scroll): `document.documentElement.scrollWidth === clientWidth` confirmed
+  directly at both 1440px and 360px (the width most likely to show an overflow bug).
+- **B6** and **X2**: zero across all 70 (7 page x 10 width) combinations of the original run is
+  consistent with a site with no baked-open modals/drawers (B6) and no unresolved lazy-load
+  placeholders or broken `<img>` tags (X2) at crawl time. No live discrepancy was found in spot checks
+  that would suggest either mechanism is silently failing.
+
+### Two debts closed alongside the calibration
+
+- **E4/E5 doubled-country-code overlap**: `E4` used to stay silent on ANY doubled `tel:` value,
+  deferring entirely to `E5`. When the value was ALSO separator-malformed (`tel:+1-1-718-969-0845`,
+  `tel:+1 1 718 969 0845`), that dropped a certain, directly-observable defect (the value isn't
+  clean) into `E5`'s branch, which is `heuristic` confidence exactly when the doubling itself is the
+  inferred (12-digit, leading "11") kind — a real defect quietly excluded from `counts`/the verdict.
+  `E4` now fires (`expected: null`, its own `high` confidence, `major` severity) whenever the
+  non-doubled form is STILL not clean, leaving the actual correction to `E5`; it stays silent when
+  the doubling is the whole story. `lib/phone.js`'s `doubledCountryCode()` gained a `stillMalformed`
+  flag for this. Tests: both brief-named cases plus a property test that E4/E5 never disagree on a
+  proposed correction for the same href.
+- **7-day staleness banner**: unreachable because `SNAPSHOT_TTL_MS` and the banner's own threshold
+  were BOTH 7 days (commit `dc6889e`'s message claimed this was fixed — it set the reuse TTL to match
+  the banner instead of the other way around, which only swapped which literal was wrong: a reused
+  snapshot is by construction always younger than the TTL, so `snapshotAgeDays > 7` could never be
+  true). Both numbers now live in `src/lib/snapshot-ttl.js`; the banner threshold
+  (`STALENESS_WARNING_DAYS`) is derived from the TTL (`SNAPSHOT_TTL_DAYS - 1`) rather than restated,
+  so they cannot drift apart a third time, and stays strictly below the TTL so it is reachable. Tests
+  pin both the "threshold < TTL" property directly and that a snapshot near the TTL (but still inside
+  the reuse window) renders the banner.

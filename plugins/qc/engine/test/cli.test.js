@@ -146,10 +146,10 @@ test('audit exits zero even when the verdict is Fail', async () => {
 
 // --- Judgement call 2: --fresh vs the snapshot cache -----------------------
 //
-// Without --fresh, a snapshot younger than SNAPSHOT_TTL_MS (7 days, matching
-// the report banner) is reused and no network
-// request is made at all. --fresh always forces a live re-crawl. Either way
-// the summary says which happened via `fromCache`/`cacheAgeDays`.
+// Without --fresh, a snapshot younger than SNAPSHOT_TTL_MS (7 days; see
+// lib/snapshot-ttl.js) is reused and no network request is made at all.
+// --fresh always forces a live re-crawl. Either way the summary says which
+// happened via `fromCache`/`cacheAgeDays`.
 
 test('--fresh forces a re-crawl; without it a young snapshot is reused and reported as such', async () => {
   const cache3 = mkdtempSync(join(tmpdir(), 'qc-cli-fresh-'))

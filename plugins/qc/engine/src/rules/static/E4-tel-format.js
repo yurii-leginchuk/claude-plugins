@@ -23,9 +23,38 @@ export default {
       // "12 digits with a +" as "just strip separators", producing
       // `tel:+117189690845` for `tel:+1+17189690845` -- still doubled, and
       // flatly contradicting the `tel:+17189690845` E5 proposes for the same
-      // href, both at major. E4 emits nothing here rather than emitting a
-      // second, differently-worded finding about the same defect.
-      if (doubledCountryCode(raw)) continue
+      // href, both at major. E4 stays out of proposing a correction here,
+      // rather than emitting a second, differently-worded one about the same
+      // defect.
+      //
+      // But "stays out of proposing a correction" is not the same as "stays
+      // silent": `tel:+1-1-718-969-0845` is doubled AND separator-malformed,
+      // and unconditionally skipping here used to drop the separator defect
+      // entirely -- it is real, directly observable, and independent of
+      // whether the doubling itself is a certain (two literal '+') or
+      // inferred (12 digits starting "11") call, yet the only finding left
+      // standing was E5's, which is 'heuristic' confidence exactly when the
+      // doubling is the inferred kind. A certain defect (the value is not
+      // clean) was quietly downgraded to "needs human review" because it
+      // happened to share an href with an uncertain one. So: when the
+      // doubling is the WHOLE story (`!stillMalformed`, e.g.
+      // `tel:+1+17189690845`), E4 stays fully silent as before. When
+      // something survives beyond the doubling (separators), E4 fires --
+      // `expected: null`, no competing proposal -- confirming "this value is
+      // not clean" at its own high confidence, while leaving the actual
+      // correction to E5.
+      const doubled = doubledCountryCode(raw)
+      if (doubled) {
+        if (doubled.stillMalformed) {
+          out.push(finding(this, page, {
+            selector: link.selector,
+            found: raw,
+            expected: null,
+            confidence: 'high',
+          }))
+        }
+        continue
+      }
 
       // Otherwise, ALWAYS emit a finding
       const digits = digitsOnly(raw)

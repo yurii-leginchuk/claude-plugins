@@ -1,4 +1,6 @@
-import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync, statSync } from 'node:fs'
+import {
+  mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, readdirSync, statSync, appendFileSync,
+} from 'node:fs'
 import { join, resolve, basename, normalize, relative } from 'node:path'
 import { homedir } from 'node:os'
 
@@ -58,7 +60,21 @@ function readJsonl(p) {
   return result
 }
 
-export function saveSnapshot(host, { meta, pages, links = [] }) {
+// `preserveSavedAt`: by default (false, every existing caller) saveSnapshot
+// stamps `savedAt: Date.now()` -- correct for `audit`, where a save always
+// means "a crawl just happened, this snapshot IS fresh now." It is wrong
+// for a caller that reuses an existing snapshot's crawled pages/links
+// unchanged and only adds metadata alongside them (e.g. `browse` persisting
+// discovered breakpoint widths into meta): that caller did not just crawl
+// anything, and unconditionally stamping `savedAt` would make an
+// already-stale snapshot lie about its own age to every later reader of it
+// -- `audit`'s SNAPSHOT_TTL_MS reuse check and the HTML report's staleness
+// banner both key on this exact field, so a false-fresh `savedAt` silently
+// defeats both. When true, the PREVIOUS meta.json's `savedAt` is read back
+// off disk and kept; only a snapshot with no prior meta.json (or one whose
+// meta.json cannot be parsed -- nothing trustworthy to preserve) falls back
+// to stamping a fresh timestamp, same as the default path.
+export function saveSnapshot(host, { meta, pages, links = [], preserveSavedAt = false }) {
   const cacheRoot = root()
   const dir = snapshotDir(host)
 
@@ -70,7 +86,23 @@ export function saveSnapshot(host, { meta, pages, links = [] }) {
   }
 
   mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, 'meta.json'), JSON.stringify({ ...meta, savedAt: Date.now() }, null, 2))
+
+  let savedAt = Date.now()
+  if (preserveSavedAt) {
+    const metaPath = join(dir, 'meta.json')
+    if (existsSync(metaPath)) {
+      try {
+        const existing = JSON.parse(readFileSync(metaPath, 'utf8'))
+        if (typeof existing.savedAt === 'number') savedAt = existing.savedAt
+      } catch {
+        // Corrupted existing meta.json has no trustworthy savedAt to carry
+        // forward -- fall back to stamping a fresh one, same as if this
+        // were a brand-new snapshot.
+      }
+    }
+  }
+
+  writeFileSync(join(dir, 'meta.json'), JSON.stringify({ ...meta, savedAt }, null, 2))
   writeFileSync(join(dir, 'pages.jsonl'), jsonl(pages))
   writeFileSync(join(dir, 'links.jsonl'), jsonl(links))
   return dir
@@ -265,6 +297,65 @@ export function clearAll() {
   }
 
   return hostsToDelete.length
+}
+
+// Browser-pass results (Task 7): one row per page, appended as the pass
+// progresses rather than written once at the end. That is what makes an
+// interrupted run leave a usable partial result -- a crash or a Ctrl-C after
+// page 200 of 348 still leaves 200 rows on disk, and loadBrowserResults()
+// (via runBrowserPass's `already` set) is what makes a rerun resume instead
+// of redoing them. A row is `{ url, widths, findings, error }`; run.js may
+// add extra fields (e.g. widthsFailed for a page that opened but measured
+// incompletely at one width) -- this store treats a row as an opaque object.
+export function appendBrowserResult(host, row) {
+  const dir = snapshotDir(host)
+  mkdirSync(dir, { recursive: true })
+  appendFileSync(join(dir, 'browser.jsonl'), JSON.stringify(row) + '\n')
+}
+
+export function loadBrowserResults(host) {
+  const p = join(snapshotDir(host), 'browser.jsonl')
+  if (!existsSync(p)) return []
+  return readFileSync(p, 'utf8').split('\n').filter(Boolean).map(l => {
+    try { return JSON.parse(l) } catch { return null }
+  }).filter(Boolean)
+}
+
+// The current state of each page, not the raw append log. browser.jsonl is
+// append-only (that is what makes an interrupted run leave a usable partial
+// result), so once a FAILED page becomes retryable -- see runBrowserPass's
+// `already` set, which no longer treats an error row as done -- one url can
+// legitimately carry more than one row: the failure, then the retry's
+// outcome. The last row for a url is the one that describes the page as it
+// stands now; every earlier row is superseded history. Anything answering
+// "was this page checked, and how did it end up" (the resume set, the
+// report's coverage header) must read this rather than counting raw rows,
+// or a page that failed once and then succeeded would be counted as both.
+export function latestBrowserResultsByUrl(host) {
+  const byUrl = new Map()
+  for (const row of loadBrowserResults(host)) {
+    if (row && typeof row.url === 'string') byUrl.set(row.url, row)
+  }
+  return byUrl
+}
+
+// Removes everything `qc browse` recorded for this host: the results file AND
+// the screenshot crops keyed off those results.
+//
+// The crops used to survive --force, while captureDefect() (src/browser/
+// screenshot.js) short-circuits on `existsSync(out)` -- so a --force rerun
+// re-measured every page but silently reused every stale PNG. That is
+// backwards for the one case --force exists for: /qc-browse tells users it
+// "deletes all previously recorded browser findings and screenshots for this
+// host", "e.g. after a site redesign", which is exactly when a crop from
+// the previous design is actively misleading evidence rather than a saved
+// round-trip.
+export function clearBrowserResults(host) {
+  const dir = snapshotDir(host)
+  const p = join(dir, 'browser.jsonl')
+  if (existsSync(p)) rmSync(p, { force: true })
+  const shots = join(dir, 'shots')
+  if (existsSync(shots)) rmSync(shots, { recursive: true, force: true })
 }
 
 export function saveRun(host, findings, reportHtml) {

@@ -6,7 +6,7 @@
 // place in the engine that decides process exit codes, catches module-level
 // throws, and prints anything to stdout/stderr -- every other module stays a
 // pure library.
-import { hostOf } from './lib/url.js'
+import { hostOf, normalizeUrl } from './lib/url.js'
 import { detectEnv } from './lib/env.js'
 import { discoverPages } from './crawl/discover.js'
 import { fetchAll } from './crawl/fetch.js'
@@ -15,30 +15,35 @@ import { loadStrategySheet } from './crawl/sheet.js'
 import { parsePage } from './parse/page.js'
 import { buildIndex } from './parse/index.js'
 import { runStaticRules, allRules } from './rules/index.js'
+import { allBrowserRules } from './rules/browser-index.js'
 import { diffRuns, verdict, countDistinct } from './report/json.js'
 import { renderReport } from './report/html.js'
 import {
   loadSnapshot, listSnapshots, clearSnapshot, clearAll, saveSnapshot, saveRun, previousRun,
+  latestBrowserResultsByUrl,
 } from './crawl/store.js'
+import { resolveBreakpoints } from './browser/breakpoints.js'
+import { proveRegions } from './browser/regions.js'
+import { runBrowserPass } from './browser/run.js'
+import { parse as parseHtml } from 'node-html-parser'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { readFileSync } from 'node:fs'
+import { SNAPSHOT_TTL_MS } from './lib/snapshot-ttl.js'
 
 // How long a saved snapshot is trusted as a stand-in for a live crawl when
 // --fresh is not given. See the `--fresh` section of audit() below for the
-// full rationale; this constant is the one number that decision hinges on.
-//
-// 7 days, deliberately, resolving a contradiction between two halves of this
-// engine: the spec and report/html.js's staleness banner both say 7 days,
-// while this constant said 24h -- which meant a snapshot was refused before it
-// could ever reach 7 days old, `cacheAgeDays` was always < 1, and the banner
-// was unreachable dead code. Of the two definitions, 7 days is the one to keep:
-// the banner exists precisely so a reused-but-aging snapshot announces itself,
-// and --fresh is the override for anyone who wants a live crawl regardless.
-// A 24h TTL with a 7-day banner is the worst of both -- it re-crawls sites
-// needlessly AND never warns.
-const SNAPSHOT_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7d, matching the report's banner
+// full rationale. The constant itself now lives in lib/snapshot-ttl.js,
+// alongside the report's staleness-banner threshold, so the two are derived
+// together and cannot drift apart the way they did before (see that file's
+// header comment for the history -- commit dc6889e's message claimed this
+// was already fixed; it set the reuse TTL to the banner's own 7 days, which
+// made the banner unreachable instead of fixing it).
 
 const USAGE = `qc audit <site-url|sheet-url> [--fresh] [--env dev|prod] [--prod <url>] [--only IDs] [--skip IDs] [--concurrency n]
+qc browse <host|url> [--breakpoints a,b] [--pages n] [--force] [--concurrency n] [--headed] [--only IDs] [--skip IDs]
+  note: in browse, --only/--skip filter only the PRINTED findings (all browser rules still run) --
+  this is NOT the same as audit's --only/--skip, which control which rules execute
 qc cache list
 qc cache clear <host> | --all`
 
@@ -116,6 +121,42 @@ function loadFreshSnapshot(host) {
   if (ageMs >= SNAPSHOT_TTL_MS) return null
   if (!snap.pages.length) return null
   return { snap, ageDays: ageMs / 86400000 }
+}
+
+// Reads each browser finding's `shot` file (a PNG on disk, written by
+// src/browser/screenshot.js) and sets `shotDataUri` on the finding in place
+// -- the base64 data URI renderReport actually embeds. renderReport itself
+// stays filesystem-free (it is exercised directly with hand-built
+// `shotDataUri` values in test/report/html-browser.test.js), so this is the
+// one place in the engine that turns a `shot` path into report-ready bytes.
+//
+// A defect in a shared region occurs on every page it appears on, and
+// run.js's backfill means every one of those occurrences already points at
+// the SAME file path -- so the same path is read at most once per audit run
+// (cached by path in `seen`) rather than once per occurrence.
+//
+// A missing/unreadable file (deleted from the cache after browser.jsonl was
+// written, or a capture that genuinely failed and left `shot` unset) must
+// not fail the whole audit -- the finding is still valid evidence without
+// its crop; it simply renders with no image, same as any finding that never
+// had one.
+function inlineScreenshots(findings) {
+  const seen = new Map()
+  for (const f of findings) {
+    if (!f.shot) continue
+    if (seen.has(f.shot)) {
+      f.shotDataUri = seen.get(f.shot)
+      continue
+    }
+    try {
+      const uri = `data:image/png;base64,${readFileSync(f.shot).toString('base64')}`
+      seen.set(f.shot, uri)
+      f.shotDataUri = uri
+    } catch {
+      seen.set(f.shot, undefined)
+    }
+  }
+  return findings
 }
 
 // `fetchImpl`, when given, is threaded through to loadStrategySheet for a
@@ -318,7 +359,68 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   const { env, reason } = detectEnv({ host, pages, pairedAsDev, pairedAsDevReason, override: envOverride })
 
   const site = { host, env, prodHost, pages, index: buildIndex(pages), linkStatus }
-  const findings = await runStaticRules(pages, site, { only: onlyIds, skip: skipIds })
+  const staticFindings = await runStaticRules(pages, site, { only: onlyIds, skip: skipIds })
+
+  // Task 10: merge in whatever `qc browse` has already recorded for this
+  // host. `latestBrowserResultsByUrl` reads browser.jsonl directly (never re-runs
+  // the browser pass -- `audit` never launches a browser at all) and returns
+  // [] when the file does not exist, which is exactly the "browse was never
+  // run" case `browserCoverage` below distinguishes from "browse ran and
+  // covered N of M pages". --only/--skip above validate against static rule
+  // ids only (see `validIds`) and never touch these -- a browser-pass id
+  // would already have thrown "неизвестные идентификаторы правил" before
+  // reaching here, so browser findings are always included whole.
+  // Latest row per url, not the raw append log: a page that failed and was
+  // then retried successfully legitimately carries two rows (see
+  // store.js/latestBrowserResultsByUrl), and counting both would report it as
+  // simultaneously done and failed.
+  const browserRows = [...latestBrowserResultsByUrl(host).values()]
+  const browserFindings = browserRows.flatMap(r => r.findings || [])
+  inlineScreenshots(browserFindings)
+  const findings = [...staticFindings, ...browserFindings]
+
+  // Coverage is reported only when a browser pass has actually left rows on
+  // disk for this host -- an empty array here (never run) must produce NO
+  // `browserCoverage`, not one claiming 0-of-N, so renderReport's "browser
+  // pass never ran" header (as opposed to its "ran but partial") fires
+  // correctly. `pagesDone` mirrors run.js's own definition (a row with
+  // `error: null` -- a page that was actually opened and measured), not
+  // merely "has a row", so a host with only failed attempts does not read as
+  // partially checked.
+  //
+  // `pagesFailed`/`failedUrls`: the spec requires the count AND the list of
+  // pages that would not open to reach the report header. Without them a
+  // reader sees "7 из 31" and cannot tell a page the site refused to serve
+  // from one the pass has simply not reached yet -- two situations calling
+  // for opposite reactions.
+  //
+  // `droppedWidths`: read from the snapshot meta (where `browse` persists
+  // what resolveBreakpoints excluded) BEFORE the saveSnapshot below can
+  // overwrite it on a fresh crawl. It already reached browse's own stdout;
+  // the spec says excluded widths are listed in the report rather than
+  // swallowed, and until now the report was the one place they never
+  // appeared.
+  const browserFailedRows = browserRows.filter(r => r.error)
+  let droppedWidths = []
+  try {
+    const metaSnap = loadSnapshot(host)
+    if (Array.isArray(metaSnap?.meta?.browserWidthsDropped)) {
+      droppedWidths = metaSnap.meta.browserWidthsDropped
+    }
+  } catch {
+    // A corrupt snapshot is already the caller's problem elsewhere; the list
+    // of excluded widths is not worth failing a whole report over.
+  }
+  const browserCoverage = browserRows.length
+    ? {
+        pagesDone: browserRows.filter(r => !r.error).length,
+        pagesTotal: pages.length,
+        pagesFailed: browserFailedRows.length,
+        failedUrls: browserFailedRows.slice(0, 50).map(r => ({ url: r.url, error: r.error })),
+        widths: [...new Set(browserRows.flatMap(r => r.widths || []))].sort((a, b) => a - b),
+        droppedWidths,
+      }
+    : null
 
   const prev = previousRun(host)
   const diff = diffRuns(findings, prev?.findings || null)
@@ -338,7 +440,7 @@ export async function audit(input, flags, { fetchImpl } = {}) {
 
   const html = renderReport({
     host, env, envReason: reason, pages: pages.length, findings, diff,
-    snapshotAgeDays: cacheAgeDays, source, sitemapStatus,
+    snapshotAgeDays: cacheAgeDays, source, sitemapStatus, browserCoverage,
   })
   const runDir = saveRun(host, findings, html)
 
@@ -387,7 +489,323 @@ export async function audit(input, flags, { fetchImpl } = {}) {
     prodUrl,
     verdict: verdict(findings), counts, distinct, heuristics,
     diff: { added: diff.added.length, fixed: diff.fixed.length, remaining: diff.remaining.length },
+    // null (not omitted) when `qc browse` has never run for this host --
+    // matches renderReport's own "never ran" vs "ran but partial" split, and
+    // a caller reading the JSON summary alone (never opening the HTML) sees
+    // the same distinction the report states in its header.
+    browserCoverage,
     runDir, reportPath: join(runDir, 'report.html'),
+  }
+}
+
+// `browse` accepts <host|url>, unlike `audit` which only ever sees a
+// site-url or sheet-url. hostOf() (lib/url.js) requires a full URL with a
+// scheme and returns null for a bare host string -- `new URL('example.com')`
+// throws. Falling straight through to "не удалось разобрать URL" for the
+// common `qc browse example.com` invocation (no scheme, matching how a
+// human would type a host) would be a worse experience than `qc cache
+// clear <host>` already gets away with by using the raw string directly as
+// the cache key. So: try hostOf() first (handles a full URL, keeping the
+// SAME host string `audit` would have used to save the snapshot), and only
+// fall back to treating the input as a literal bare host when that fails.
+function resolveHostInput(input) {
+  const viaUrl = hostOf(input)
+  if (viaUrl) return viaUrl
+  const bare = String(input || '').trim().toLowerCase()
+  return /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/.test(bare) ? bare : null
+}
+
+// Judgement call 3 (which page's CSS to read for breakpoint discovery): the
+// brief says "the first page", but on a real site the home page routinely
+// loads a different stylesheet set than an inner template -- a slider or
+// hero widget only present there -- so relying on page 1 alone risks
+// missing media queries that only ever appear on inner pages. Sampling the
+// WHOLE site would catch more, but each fetch costs real time against a
+// slow staging server and this cost is paid at most once per host (the
+// result is persisted into snapshot meta below). The compromise: sample at
+// most 2 pages -- the first page and the last page of the snapshot. "Last"
+// is a free, already-available proxy for "a different template than the
+// first" (crawl order is rarely alphabetical-by-template, so the first and
+// last URLs discovered are unlikely to share a template), without needing
+// a third fetch or any content-based heuristic to pick a "representative"
+// inner page.
+function sampleUrlsForCss(pages) {
+  if (!pages.length) return []
+  const first = pages[0].url
+  const last = pages[pages.length - 1].url
+  return last && last !== first ? [first, last] : [first]
+}
+
+// Fetches the raw HTML of each sampled url, extracts inline <style> text and
+// linked stylesheet hrefs (resolved against the page it was found on), then
+// fetches those stylesheets too. Every fetch goes through fetchAll, so the
+// same politeness contract (concurrency, timeout, retry, 429/503 back-off)
+// that governs the rest of this engine's crawling governs this too.
+async function discoverCssTexts(urls, { concurrency }) {
+  if (!urls.length) return []
+  const parseOpts = { blockTextElements: { script: true, style: true } }
+  const pagesFetched = await fetchAll(urls, { concurrency })
+
+  const texts = []
+  const sheetUrls = new Set()
+  for (const url of urls) {
+    const res = pagesFetched.get(url)
+    if (!res || !res.ok || !res.body) continue
+    let root
+    try {
+      root = parseHtml(res.body, parseOpts)
+    } catch {
+      continue
+    }
+    for (const styleEl of root.querySelectorAll('style')) texts.push(styleEl.text || '')
+    for (const linkEl of root.querySelectorAll('link[rel="stylesheet" i]')) {
+      const href = normalizeUrl(linkEl.getAttribute('href') || '', res.finalUrl || url)
+      if (href) sheetUrls.add(href)
+    }
+  }
+
+  if (sheetUrls.size) {
+    const sheetsFetched = await fetchAll([...sheetUrls], { concurrency })
+    for (const res of sheetsFetched.values()) {
+      if (res.ok && res.body) texts.push(res.body)
+    }
+  }
+  return texts
+}
+
+// `browse` never crawls -- it only ever reads the snapshot `audit` already
+// saved (loadSnapshot, imported above; never discoverPages/fetchAll for the
+// site's page list). This is the CLI wiring for the browser subsystem built
+// across Tasks 1-8: resolve breakpoints, prove regions, and hand both to
+// runBrowserPass, which owns the actual page loop.
+export async function browse(input, flags) {
+  if (!input) throw new Error('укажите хост или URL сайта')
+
+  // --- Flag validation up front (matching audit()'s own convention: every
+  // flag is checked before any I/O happens), except --breakpoints, whose
+  // validity can be checked here but whose resolution against the snapshot
+  // happens further down, once the snapshot itself is loaded. ---
+
+  // Judgement call 1 (--concurrency): the browser page loop itself
+  // (src/browser/run.js) is deliberately sequential -- one Chromium
+  // instance, one page at a time -- recorded there as a decision, not an
+  // oversight: parallel contexts against a staging server that already
+  // struggles to answer are likelier to make things worse. Silently
+  // accepting the flag and doing nothing with it would be exactly the kind
+  // of silent misconfiguration this task's brief warns against, so instead
+  // it is honoured for the ONE part of `browse` that actually issues
+  // concurrent network requests -- the CSS-discovery fetches below -- and
+  // explicitly reported as not touching the page loop, via `notes`.
+  let concurrencyValue = null
+  const concurrencyFlag = requireStringFlag(flags, 'concurrency', '--concurrency')
+  if (concurrencyFlag !== null) {
+    const n = Number(concurrencyFlag)
+    if (!Number.isFinite(n) || n <= 0) {
+      throw new Error(`--concurrency должен быть положительным числом, получено: ${concurrencyFlag}`)
+    }
+    concurrencyValue = n
+  }
+  const fetchConcurrency = concurrencyValue ?? 6
+
+  let maxPages = Infinity
+  const pagesFlag = requireStringFlag(flags, 'pages', '--pages')
+  if (pagesFlag !== null) {
+    const n = Number(pagesFlag)
+    if (!Number.isInteger(n) || n <= 0) {
+      throw new Error(`--pages должен быть положительным целым числом, получено: ${pagesFlag}`)
+    }
+    maxPages = n
+  }
+
+  const force = Boolean(flags.force)
+  const headed = Boolean(flags.headed)
+
+  const onlyIds = list(requireStringFlag(flags, 'only', '--only'))
+  const skipIds = list(requireStringFlag(flags, 'skip', '--skip'))
+  if (requireStringFlag(flags, 'only', '--only') !== null && !onlyIds.length) {
+    throw new Error('--only требует список идентификаторов правил')
+  }
+  if (requireStringFlag(flags, 'skip', '--skip') !== null && !skipIds.length) {
+    throw new Error('--skip требует список идентификаторов правил')
+  }
+  const validBrowserIds = (await allBrowserRules()).map(r => r.id).sort()
+  const unknownIds = [...new Set([...onlyIds, ...skipIds])].filter(id => !validBrowserIds.includes(id))
+  if (unknownIds.length) {
+    throw new Error(
+      `неизвестные идентификаторы браузерных правил: ${unknownIds.join(', ')}. ` +
+      `Доступные: ${validBrowserIds.join(', ')}`
+    )
+  }
+
+  let breakpointsOverride = null
+  const breakpointsFlag = requireStringFlag(flags, 'breakpoints', '--breakpoints')
+  if (breakpointsFlag !== null) {
+    const parsed = breakpointsFlag.split(',').map(s => Number(s.trim()))
+    if (!parsed.length || parsed.some(n => !Number.isFinite(n) || n <= 0)) {
+      throw new Error(
+        `--breakpoints должен быть списком положительных чисел через запятую, получено: ${breakpointsFlag}`
+      )
+    }
+    breakpointsOverride = parsed
+  }
+
+  // --- browse refuses to run without a snapshot; it never crawls. ---
+  const host = resolveHostInput(input)
+  if (!host) throw new Error(`не удалось разобрать хост или URL: ${input}`)
+
+  let snap
+  try {
+    snap = loadSnapshot(host)
+  } catch (e) {
+    throw new Error(
+      `снимок для ${host} повреждён (${e.message}); запустите заново: qc audit ${input}`
+    )
+  }
+  if (!snap || !Array.isArray(snap.pages) || !snap.pages.length) {
+    throw new Error(
+      `нет сохранённого снимка для ${host} -- browse не выполняет обход сам, ` +
+      `сначала запустите: qc audit ${input}`
+    )
+  }
+
+  const notes = []
+  if (concurrencyValue !== null) {
+    notes.push(
+      `--concurrency=${concurrencyValue} применён только к загрузке CSS для определения брейкпоинтов; ` +
+      `сам браузерный проход по страницам всегда последовательный (один Chromium, одна страница за раз)`
+    )
+  }
+
+  // Breakpoints: explicit --breakpoints override > previously discovered and
+  // stored in snapshot meta (so a resumed run uses the same set) > freshly
+  // discovered from the sampled pages' CSS.
+  let widths, dropped, unparseable, discoveredNow = false
+  if (breakpointsOverride) {
+    ;({ widths, dropped, unparseable } = resolveBreakpoints({ override: breakpointsOverride }))
+  } else if (Array.isArray(snap.meta.browserWidths) && snap.meta.browserWidths.length) {
+    widths = snap.meta.browserWidths
+    dropped = snap.meta.browserWidthsDropped ?? []
+    unparseable = snap.meta.browserWidthsUnparseable ?? []
+  } else {
+    const cssTexts = await discoverCssTexts(sampleUrlsForCss(snap.pages), { concurrency: fetchConcurrency })
+    ;({ widths, dropped, unparseable } = resolveBreakpoints({ cssTexts }))
+    discoveredNow = true
+  }
+
+  // Judgement call 2 (unparseable media conditions): resolveBreakpoints
+  // surfaces these specifically so they do not silently vanish -- a media
+  // condition in `vw`/`%`/`calc()` etc. is real information ("this theme
+  // has a breakpoint we can't resolve to a pixel width"), not noise. It is
+  // reported twice: structured, in `unparseableWidths` (always present, even
+  // empty), for a caller that wants to act on it programmatically; and in
+  // `notes`, for a human skimming the summary who would otherwise never look
+  // for a field that isn't in the documented minimal contract.
+  if (unparseable.length) {
+    notes.push(
+      `не удалось разобрать ${unparseable.length} медиа-услови(е/й) при определении брейкпоинтов ` +
+      `(неподдерживаемые единицы измерения): ${unparseable.slice(0, 10).join(', ')}` +
+      (unparseable.length > 10 ? ', …' : '')
+    )
+  }
+
+  // Persist ONLY a freshly-discovered set: an override is a one-off,
+  // deterministic operator choice that should not overwrite what a future
+  // plain `qc browse` would reuse, and a set already loaded from meta is
+  // already there. Discovery is the one branch that cost a network round
+  // trip and whose result could differ between runs (a theme deploy
+  // changing its CSS) -- that is exactly the case the brief's "so a resumed
+  // run uses the same set rather than rediscovering a different one" is
+  // about.
+  //
+  // `preserveSavedAt: true` (review fix, Task 9): this write reuses the
+  // EXACT pages/links this snapshot already had -- it did not just crawl
+  // anything, it only adds breakpoint metadata alongside an unchanged crawl.
+  // saveSnapshot() defaults to stamping a fresh `savedAt` because for every
+  // OTHER caller (audit, after an actual crawl) that is correct. Here it
+  // would silently reset the freshness clock that both `audit`'s
+  // SNAPSHOT_TTL_MS reuse check and the HTML report's staleness banner rely
+  // on -- a two-week-old crawl would present itself as freshly crawled to
+  // every later reader, purely because someone ran `browse` on it. See the
+  // "persisting widths does not reset savedAt" tests.
+  if (discoveredNow) {
+    saveSnapshot(host, {
+      meta: {
+        ...snap.meta,
+        browserWidths: widths,
+        browserWidthsDropped: dropped,
+        browserWidthsUnparseable: unparseable,
+      },
+      pages: snap.pages,
+      links: snap.links,
+      preserveSavedAt: true,
+    })
+  }
+
+  // Computed once here (not left to runBrowserPass's own internal fallback)
+  // so the SAME regions Map both drives finding.region tagging inside the
+  // page loop and is available for the summary's own `regions` field below,
+  // without loading and re-proving from the snapshot twice.
+  const regions = proveRegions(snap.pages)
+
+  const result = await runBrowserPass({
+    host,
+    pages: snap.pages.map(p => p.url),
+    widths,
+    opts: { force, maxPages, headed, regions },
+  })
+
+  // Review fix (Task 9): `result.findings` is only what THIS invocation's
+  // page loop just processed -- for a resumed run where every page was
+  // already `already`-marked done (browser.jsonl), that is an empty array,
+  // even though the host has real, previously-recorded findings on disk. A
+  // caller reading `findings` as "the browser findings for this site" would
+  // see a confident, well-formed, empty result on every run after the
+  // first -- a false clean. The full picture lives in browser.jsonl, so it
+  // is read back (now including whatever THIS run just appended) and
+  // flattened, rather than trusting the in-memory result alone.
+  const rows = [...latestBrowserResultsByUrl(host).values()]
+  let findings = rows.flatMap(r => r.findings || [])
+
+  // --only/--skip filter the PRINTED findings, not which rules execute
+  // in-browser: bundle.js/runBrowserPass expose no per-rule selection knob
+  // (extraRules is test-only injection, not a subtraction mechanism), and
+  // adding one is out of scope for this CLI-wiring task. This is a
+  // DIFFERENT meaning than `qc audit`'s --only/--skip, which do control
+  // which rules run at all -- a flag whose behaviour silently changes
+  // between two subcommands of the same tool is a trap, so it is called out
+  // twice: in USAGE (below) and, whenever either flag is actually used, as
+  // a `notes` entry here, not just in this comment.
+  //
+  // A second practical consequence worth knowing: because a page's
+  // "already done" status (browser.jsonl) is recorded regardless of this
+  // run's --only/--skip, a later invocation with a wider --only than a
+  // previous run used will NOT retroactively surface findings for the
+  // newly-included rule unless --force is also given -- the page was
+  // already marked done.
+  if (onlyIds.length || skipIds.length) {
+    notes.push(
+      `--only/--skip здесь фильтруют только напечатанные findings этого резюме -- ` +
+      `в отличие от qc audit, где они определяют, какие правила вообще выполняются, ` +
+      `в browse выполняются ВСЕ браузерные правила, и только вывод сокращается`
+    )
+  }
+  if (onlyIds.length) findings = findings.filter(f => onlyIds.includes(f.rule))
+  if (skipIds.length) findings = findings.filter(f => !skipIds.includes(f.rule))
+
+  return {
+    host,
+    pagesTotal: result.pagesTotal,
+    pagesDone: result.pagesDone,
+    pagesFailed: result.pagesFailed,
+    failedUrls: result.failedUrls,
+    widths,
+    droppedWidths: dropped,
+    unparseableWidths: unparseable,
+    stoppedEarly: result.stoppedEarly,
+    findings,
+    regions: [...regions.entries()].map(([id, r]) => ({ id, ...r })),
+    concurrencyIgnored: concurrencyValue !== null,
+    notes,
   }
 }
 
@@ -403,6 +821,15 @@ async function main() {
       // (below) sets a non-zero code -- that is reserved for "the run could
       // not be completed" (no pages found, sheet unreadable, unknown rule
       // id, or any other unhandled failure), never for "the site failed QC".
+      console.log(JSON.stringify(summary, null, 2))
+      return
+    }
+    if (cmd === 'browse') {
+      const summary = await browse(args[0], flags)
+      // Same contract as audit(): exit zero whenever the pass produced a
+      // result -- even a partial one (pagesFailed > 0, stoppedEarly true) --
+      // and non-zero only when it could not start at all (thrown above:
+      // no snapshot, bad flag, unknown rule id).
       console.log(JSON.stringify(summary, null, 2))
       return
     }

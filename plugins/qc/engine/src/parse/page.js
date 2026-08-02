@@ -69,13 +69,25 @@ function parseForms(root) {
 function parseElementor(root) {
   const containerIds = new Set()
   const locations = new Set()
+  // Elementor puts the id class and the location class on the same element
+  // (class="elementor elementor-3374 elementor-location-header"), so this is
+  // the only place the id-to-name pairing can be recovered. Once
+  // containerIds/locations are flattened per page, a page carrying more than
+  // one named location (header AND footer, which real Elementor pages
+  // always do) contributes two ids and two names with no way to tell which
+  // is which -- see src/browser/regions.js's proveRegions, which prefers
+  // this pairing over the single-location fallback for exactly that reason.
+  const locationsById = {}
   for (const el of root.querySelectorAll('.elementor')) {
+    let elId = null
+    let elLocation = null
     for (const c of (el.getAttribute('class') || '').split(/\s+/)) {
       const id = /^elementor-(\d+)$/.exec(c)
-      if (id) containerIds.add(id[1])
+      if (id) { containerIds.add(id[1]); elId = id[1] }
       const loc = /^elementor-location-(.+)$/.exec(c)
-      if (loc) locations.add(loc[1])
+      if (loc) { locations.add(loc[1]); elLocation = loc[1] }
     }
+    if (elId && elLocation) locationsById[elId] = elLocation
   }
   const postCssIds = [...new Set(
     root.querySelectorAll('link[rel="stylesheet"]')
@@ -90,6 +102,7 @@ function parseElementor(root) {
     locations: [...locations],
     postCssIds,
     skeleton,
+    locationsById,
   }
 }
 
