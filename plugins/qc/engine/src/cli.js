@@ -6,7 +6,7 @@
 // place in the engine that decides process exit codes, catches module-level
 // throws, and prints anything to stdout/stderr -- every other module stays a
 // pure library.
-import { hostOf } from './lib/url.js'
+import { hostOf, normalizeUrl } from './lib/url.js'
 import { detectEnv } from './lib/env.js'
 import { discoverPages } from './crawl/discover.js'
 import { fetchAll } from './crawl/fetch.js'
@@ -15,11 +15,16 @@ import { loadStrategySheet } from './crawl/sheet.js'
 import { parsePage } from './parse/page.js'
 import { buildIndex } from './parse/index.js'
 import { runStaticRules, allRules } from './rules/index.js'
+import { allBrowserRules } from './rules/browser-index.js'
 import { diffRuns, verdict, countDistinct } from './report/json.js'
 import { renderReport } from './report/html.js'
 import {
   loadSnapshot, listSnapshots, clearSnapshot, clearAll, saveSnapshot, saveRun, previousRun,
 } from './crawl/store.js'
+import { resolveBreakpoints } from './browser/breakpoints.js'
+import { proveRegions } from './browser/regions.js'
+import { runBrowserPass } from './browser/run.js'
+import { parse as parseHtml } from 'node-html-parser'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -39,6 +44,7 @@ import { pathToFileURL } from 'node:url'
 const SNAPSHOT_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7d, matching the report's banner
 
 const USAGE = `qc audit <site-url|sheet-url> [--fresh] [--env dev|prod] [--prod <url>] [--only IDs] [--skip IDs] [--concurrency n]
+qc browse <host|url> [--breakpoints a,b] [--pages n] [--force] [--concurrency n] [--headed] [--only IDs] [--skip IDs]
 qc cache list
 qc cache clear <host> | --all`
 
@@ -391,6 +397,280 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   }
 }
 
+// `browse` accepts <host|url>, unlike `audit` which only ever sees a
+// site-url or sheet-url. hostOf() (lib/url.js) requires a full URL with a
+// scheme and returns null for a bare host string -- `new URL('example.com')`
+// throws. Falling straight through to "не удалось разобрать URL" for the
+// common `qc browse example.com` invocation (no scheme, matching how a
+// human would type a host) would be a worse experience than `qc cache
+// clear <host>` already gets away with by using the raw string directly as
+// the cache key. So: try hostOf() first (handles a full URL, keeping the
+// SAME host string `audit` would have used to save the snapshot), and only
+// fall back to treating the input as a literal bare host when that fails.
+function resolveHostInput(input) {
+  const viaUrl = hostOf(input)
+  if (viaUrl) return viaUrl
+  const bare = String(input || '').trim().toLowerCase()
+  return /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/.test(bare) ? bare : null
+}
+
+// Judgement call 3 (which page's CSS to read for breakpoint discovery): the
+// brief says "the first page", but on a real site the home page routinely
+// loads a different stylesheet set than an inner template -- a slider or
+// hero widget only present there -- so relying on page 1 alone risks
+// missing media queries that only ever appear on inner pages. Sampling the
+// WHOLE site would catch more, but each fetch costs real time against a
+// slow staging server and this cost is paid at most once per host (the
+// result is persisted into snapshot meta below). The compromise: sample at
+// most 2 pages -- the first page and the last page of the snapshot. "Last"
+// is a free, already-available proxy for "a different template than the
+// first" (crawl order is rarely alphabetical-by-template, so the first and
+// last URLs discovered are unlikely to share a template), without needing
+// a third fetch or any content-based heuristic to pick a "representative"
+// inner page.
+function sampleUrlsForCss(pages) {
+  if (!pages.length) return []
+  const first = pages[0].url
+  const last = pages[pages.length - 1].url
+  return last && last !== first ? [first, last] : [first]
+}
+
+// Fetches the raw HTML of each sampled url, extracts inline <style> text and
+// linked stylesheet hrefs (resolved against the page it was found on), then
+// fetches those stylesheets too. Every fetch goes through fetchAll, so the
+// same politeness contract (concurrency, timeout, retry, 429/503 back-off)
+// that governs the rest of this engine's crawling governs this too.
+async function discoverCssTexts(urls, { concurrency }) {
+  if (!urls.length) return []
+  const parseOpts = { blockTextElements: { script: true, style: true } }
+  const pagesFetched = await fetchAll(urls, { concurrency })
+
+  const texts = []
+  const sheetUrls = new Set()
+  for (const url of urls) {
+    const res = pagesFetched.get(url)
+    if (!res || !res.ok || !res.body) continue
+    let root
+    try {
+      root = parseHtml(res.body, parseOpts)
+    } catch {
+      continue
+    }
+    for (const styleEl of root.querySelectorAll('style')) texts.push(styleEl.text || '')
+    for (const linkEl of root.querySelectorAll('link[rel="stylesheet" i]')) {
+      const href = normalizeUrl(linkEl.getAttribute('href') || '', res.finalUrl || url)
+      if (href) sheetUrls.add(href)
+    }
+  }
+
+  if (sheetUrls.size) {
+    const sheetsFetched = await fetchAll([...sheetUrls], { concurrency })
+    for (const res of sheetsFetched.values()) {
+      if (res.ok && res.body) texts.push(res.body)
+    }
+  }
+  return texts
+}
+
+// `browse` never crawls -- it only ever reads the snapshot `audit` already
+// saved (loadSnapshot, imported above; never discoverPages/fetchAll for the
+// site's page list). This is the CLI wiring for the browser subsystem built
+// across Tasks 1-8: resolve breakpoints, prove regions, and hand both to
+// runBrowserPass, which owns the actual page loop.
+export async function browse(input, flags) {
+  if (!input) throw new Error('укажите хост или URL сайта')
+
+  // --- Flag validation up front (matching audit()'s own convention: every
+  // flag is checked before any I/O happens), except --breakpoints, whose
+  // validity can be checked here but whose resolution against the snapshot
+  // happens further down, once the snapshot itself is loaded. ---
+
+  // Judgement call 1 (--concurrency): the browser page loop itself
+  // (src/browser/run.js) is deliberately sequential -- one Chromium
+  // instance, one page at a time -- recorded there as a decision, not an
+  // oversight: parallel contexts against a staging server that already
+  // struggles to answer are likelier to make things worse. Silently
+  // accepting the flag and doing nothing with it would be exactly the kind
+  // of silent misconfiguration this task's brief warns against, so instead
+  // it is honoured for the ONE part of `browse` that actually issues
+  // concurrent network requests -- the CSS-discovery fetches below -- and
+  // explicitly reported as not touching the page loop, via `notes`.
+  let concurrencyValue = null
+  const concurrencyFlag = requireStringFlag(flags, 'concurrency', '--concurrency')
+  if (concurrencyFlag !== null) {
+    const n = Number(concurrencyFlag)
+    if (!Number.isFinite(n) || n <= 0) {
+      throw new Error(`--concurrency должен быть положительным числом, получено: ${concurrencyFlag}`)
+    }
+    concurrencyValue = n
+  }
+  const fetchConcurrency = concurrencyValue ?? 6
+
+  let maxPages = Infinity
+  const pagesFlag = requireStringFlag(flags, 'pages', '--pages')
+  if (pagesFlag !== null) {
+    const n = Number(pagesFlag)
+    if (!Number.isInteger(n) || n <= 0) {
+      throw new Error(`--pages должен быть положительным целым числом, получено: ${pagesFlag}`)
+    }
+    maxPages = n
+  }
+
+  const force = Boolean(flags.force)
+  const headed = Boolean(flags.headed)
+
+  const onlyIds = list(requireStringFlag(flags, 'only', '--only'))
+  const skipIds = list(requireStringFlag(flags, 'skip', '--skip'))
+  if (requireStringFlag(flags, 'only', '--only') !== null && !onlyIds.length) {
+    throw new Error('--only требует список идентификаторов правил')
+  }
+  if (requireStringFlag(flags, 'skip', '--skip') !== null && !skipIds.length) {
+    throw new Error('--skip требует список идентификаторов правил')
+  }
+  const validBrowserIds = (await allBrowserRules()).map(r => r.id).sort()
+  const unknownIds = [...new Set([...onlyIds, ...skipIds])].filter(id => !validBrowserIds.includes(id))
+  if (unknownIds.length) {
+    throw new Error(
+      `неизвестные идентификаторы браузерных правил: ${unknownIds.join(', ')}. ` +
+      `Доступные: ${validBrowserIds.join(', ')}`
+    )
+  }
+
+  let breakpointsOverride = null
+  const breakpointsFlag = requireStringFlag(flags, 'breakpoints', '--breakpoints')
+  if (breakpointsFlag !== null) {
+    const parsed = breakpointsFlag.split(',').map(s => Number(s.trim()))
+    if (!parsed.length || parsed.some(n => !Number.isFinite(n) || n <= 0)) {
+      throw new Error(
+        `--breakpoints должен быть списком положительных чисел через запятую, получено: ${breakpointsFlag}`
+      )
+    }
+    breakpointsOverride = parsed
+  }
+
+  // --- browse refuses to run without a snapshot; it never crawls. ---
+  const host = resolveHostInput(input)
+  if (!host) throw new Error(`не удалось разобрать хост или URL: ${input}`)
+
+  let snap
+  try {
+    snap = loadSnapshot(host)
+  } catch (e) {
+    throw new Error(
+      `снимок для ${host} повреждён (${e.message}); запустите заново: qc audit ${input}`
+    )
+  }
+  if (!snap || !Array.isArray(snap.pages) || !snap.pages.length) {
+    throw new Error(
+      `нет сохранённого снимка для ${host} -- browse не выполняет обход сам, ` +
+      `сначала запустите: qc audit ${input}`
+    )
+  }
+
+  const notes = []
+  if (concurrencyValue !== null) {
+    notes.push(
+      `--concurrency=${concurrencyValue} применён только к загрузке CSS для определения брейкпоинтов; ` +
+      `сам браузерный проход по страницам всегда последовательный (один Chromium, одна страница за раз)`
+    )
+  }
+
+  // Breakpoints: explicit --breakpoints override > previously discovered and
+  // stored in snapshot meta (so a resumed run uses the same set) > freshly
+  // discovered from the sampled pages' CSS.
+  let widths, dropped, unparseable, discoveredNow = false
+  if (breakpointsOverride) {
+    ;({ widths, dropped, unparseable } = resolveBreakpoints({ override: breakpointsOverride }))
+  } else if (Array.isArray(snap.meta.browserWidths) && snap.meta.browserWidths.length) {
+    widths = snap.meta.browserWidths
+    dropped = snap.meta.browserWidthsDropped ?? []
+    unparseable = snap.meta.browserWidthsUnparseable ?? []
+  } else {
+    const cssTexts = await discoverCssTexts(sampleUrlsForCss(snap.pages), { concurrency: fetchConcurrency })
+    ;({ widths, dropped, unparseable } = resolveBreakpoints({ cssTexts }))
+    discoveredNow = true
+  }
+
+  // Judgement call 2 (unparseable media conditions): resolveBreakpoints
+  // surfaces these specifically so they do not silently vanish -- a media
+  // condition in `vw`/`%`/`calc()` etc. is real information ("this theme
+  // has a breakpoint we can't resolve to a pixel width"), not noise. It is
+  // reported twice: structured, in `unparseableWidths` (always present, even
+  // empty), for a caller that wants to act on it programmatically; and in
+  // `notes`, for a human skimming the summary who would otherwise never look
+  // for a field that isn't in the documented minimal contract.
+  if (unparseable.length) {
+    notes.push(
+      `не удалось разобрать ${unparseable.length} медиа-услови(е/й) при определении брейкпоинтов ` +
+      `(неподдерживаемые единицы измерения): ${unparseable.slice(0, 10).join(', ')}` +
+      (unparseable.length > 10 ? ', …' : '')
+    )
+  }
+
+  // Persist ONLY a freshly-discovered set: an override is a one-off,
+  // deterministic operator choice that should not overwrite what a future
+  // plain `qc browse` would reuse, and a set already loaded from meta is
+  // already there. Discovery is the one branch that cost a network round
+  // trip and whose result could differ between runs (a theme deploy
+  // changing its CSS) -- that is exactly the case the brief's "so a resumed
+  // run uses the same set rather than rediscovering a different one" is
+  // about.
+  if (discoveredNow) {
+    saveSnapshot(host, {
+      meta: {
+        ...snap.meta,
+        browserWidths: widths,
+        browserWidthsDropped: dropped,
+        browserWidthsUnparseable: unparseable,
+      },
+      pages: snap.pages,
+      links: snap.links,
+    })
+  }
+
+  // Computed once here (not left to runBrowserPass's own internal fallback)
+  // so the SAME regions Map both drives finding.region tagging inside the
+  // page loop and is available for the summary's own `regions` field below,
+  // without loading and re-proving from the snapshot twice.
+  const regions = proveRegions(snap.pages)
+
+  const result = await runBrowserPass({
+    host,
+    pages: snap.pages.map(p => p.url),
+    widths,
+    opts: { force, maxPages, headed, regions },
+  })
+
+  // --only/--skip filter the PRINTED findings, not which rules execute
+  // in-browser: bundle.js/runBrowserPass expose no per-rule selection knob
+  // (extraRules is test-only injection, not a subtraction mechanism), and
+  // adding one is out of scope for this CLI-wiring task. The practical
+  // consequence worth knowing: because a page's "already done" status
+  // (browser.jsonl) is recorded regardless of this run's --only/--skip, a
+  // later invocation with a wider --only than a previous run used will NOT
+  // retroactively surface findings for the newly-included rule unless
+  // --force is also given -- the page was already marked done.
+  let findings = result.findings
+  if (onlyIds.length) findings = findings.filter(f => onlyIds.includes(f.rule))
+  if (skipIds.length) findings = findings.filter(f => !skipIds.includes(f.rule))
+
+  return {
+    host,
+    pagesTotal: result.pagesTotal,
+    pagesDone: result.pagesDone,
+    pagesFailed: result.pagesFailed,
+    failedUrls: result.failedUrls,
+    widths,
+    droppedWidths: dropped,
+    unparseableWidths: unparseable,
+    stoppedEarly: result.stoppedEarly,
+    findings,
+    regions: [...regions.entries()].map(([id, r]) => ({ id, ...r })),
+    concurrencyIgnored: concurrencyValue !== null,
+    notes,
+  }
+}
+
 async function main() {
   const { flags, rest } = parseArgs(process.argv.slice(2))
   const [cmd, ...args] = rest
@@ -403,6 +683,15 @@ async function main() {
       // (below) sets a non-zero code -- that is reserved for "the run could
       // not be completed" (no pages found, sheet unreadable, unknown rule
       // id, or any other unhandled failure), never for "the site failed QC".
+      console.log(JSON.stringify(summary, null, 2))
+      return
+    }
+    if (cmd === 'browse') {
+      const summary = await browse(args[0], flags)
+      // Same contract as audit(): exit zero whenever the pass produced a
+      // result -- even a partial one (pagesFailed > 0, stoppedEarly true) --
+      // and non-zero only when it could not start at all (thrown above:
+      // no snapshot, bad flag, unknown rule id).
       console.log(JSON.stringify(summary, null, 2))
       return
     }
