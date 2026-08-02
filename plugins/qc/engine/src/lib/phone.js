@@ -20,10 +20,22 @@ export function doubledCountryCode(raw) {
   // A US number written with its leading 1 twice: 12 digits starting "11".
   const doubledOne = digits.length === 12 && digits.startsWith('11')
   if (!doubledPlus && !doubledOne) return null
+
+  // Whether the value carries a SECOND defect beyond the doubling itself: any
+  // character other than a digit or '+' -- a hyphen, space, dot, parenthesis
+  // -- surviving in the raw markup. Separator characters are untouched by
+  // undoing the doubling (`expected` below is built straight off
+  // `digitsOnly`, which strips them regardless), so their presence in the
+  // ORIGINAL value already answers "is the non-doubled form still not
+  // clean?" without needing to construct that corrected string first.
+  const body = value.replace(/^tel:/, '')
+  const stillMalformed = /[^\d+]/.test(body)
+
   return {
     doubledPlus,
     doubledOne,
     digits,
+    stillMalformed,
     expected: `tel:+${digits.replace(/^11/, '1')}`,
     // doubledPlus is read straight off the markup -- two '+' characters in one
     // href is not a judgement call. doubledOne *infers* the defect from a
