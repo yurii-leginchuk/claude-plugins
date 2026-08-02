@@ -271,25 +271,39 @@ test('an interrupted pass leaves a usable partial result', async () => {
 
 // --- Judgement call: browser reuse across pages -----------------------------
 //
-// Not directly observable from the Summary alone, but the whole point of
-// reusing one browser is that a multi-page, multi-width run doesn't pay a
-// fresh Chromium launch per page. This pins the OBSERVABLE consequence: a
-// run over several pages at several widths completes well under what N
-// separate cold launches would cost. See the report for the actual
-// before/after measurement; this is a smoke-level regression guard, not the
-// benchmark itself (CI machines vary too much for a tight bound).
-test('a multi-page multi-width run completes without a per-page browser launch', async () => {
+// The claim in this test's own name is "no per-page browser launch". A
+// wall-clock bound is only an indirect proxy for that claim, and it turned
+// out to be the tightest-margin assertion in the whole suite (10.4s idle
+// against a 20s bound -- under 2x headroom), which made it fail
+// reproducibly under concurrent load (28.7s, 38.0s observed) despite the
+// behaviour it was meant to guard being perfectly correct both times. Using
+// the injectable `launchBrowserImpl` seam (the same one the crash-recovery
+// tests above use) counts actual launches directly instead of inferring
+// them from elapsed time, so the assertion is immune to machine load.
+test('a multi-page multi-width run launches the browser exactly once, not once per page', async () => {
   const pages = [`${base}/w1`, `${base}/w2`, `${base}/w3`]
   const widths = [360, 768, 1024, 1440]
+  let launches = 0
+  const launchBrowserImpl = async (opts) => {
+    launches++
+    return launchBrowser(opts)
+  }
   const t0 = Date.now()
-  const s = await runBrowserPass({ host: 'run-perf', pages, widths })
+  const s = await runBrowserPass({
+    host: 'run-perf', pages, widths, opts: { launchBrowserImpl },
+  })
   const elapsed = Date.now() - t0
   assert.equal(s.pagesDone, 3)
-  // A single Chromium launch is the dominant one-time cost (~1s, per Task
-  // 1's measurement); 3 pages x 4 widths of local, instant-responding
-  // fixtures should not come anywhere near 3 launches' worth of overhead.
-  // Generous bound to stay stable on a loaded CI box.
-  assert.ok(elapsed < 20_000, `expected well under 20s for 3 pages x 4 widths, got ${elapsed}ms`)
+  // The load-bearing assertion: one launch for the whole pass, not one per
+  // page (which would be 3) or per page-width (which would be 12).
+  assert.equal(launches, 1,
+    `expected exactly one browser launch for 3 pages x 4 widths, got ${launches}`)
+  // Kept only as a loose secondary smoke check, not the thing that proves
+  // the claim -- `launches` above does that. 60s gives it the margin its own
+  // intent implies (catching a catastrophic regression, e.g. a launch that
+  // hangs or a pass that never terminates) without being tight enough to
+  // flake under ordinary CI load the way the old 20s bound did.
+  assert.ok(elapsed < 60_000, `expected well under 60s for 3 pages x 4 widths, got ${elapsed}ms`)
 })
 
 // --- Judgement call: console state must not leak between pages -------------
