@@ -210,6 +210,12 @@ export async function runBrowserPass({ host, pages, widths, opts = {} }) {
     // supply regions directly instead of having this module derive them
     // from a stored snapshot.
     regions: regionsOverride = null,
+    // Test-only injection point (same pattern as cli.js's `fetchImpl`): lets
+    // a test stand in a fake browser factory to simulate a mid-pass crash
+    // and its recovery without needing a REAL Chromium process to die on
+    // command. Every normal caller gets the real launchBrowser (imported
+    // above) by not passing this at all.
+    launchBrowserImpl = launchBrowser,
   } = opts
 
   if (force) clearBrowserResults(host)
@@ -235,7 +241,11 @@ export async function runBrowserPass({ host, pages, widths, opts = {} }) {
   }
 
   const bundle = await buildBundle({ extraRules })
-  const { browser, newPage } = await launchBrowser({ headed })
+  // `browser`/`newPage` are reassigned (not `const`) -- see the
+  // isConnected() recovery check inside the loop below, added after a live
+  // run against cleaningny.com (task 11) showed the browser process itself
+  // can die partway through a real pass.
+  let { browser, newPage } = await launchBrowserImpl({ headed })
   let consecutive = 0
   // Bounds screenshot capture to at most one ATTEMPT per distinct defect for
   // the whole pass, while still letting every later occurrence of the same
@@ -254,6 +264,43 @@ export async function runBrowserPass({ host, pages, widths, opts = {} }) {
         // human discover it 300 timeouts later.
         summary.stoppedEarly = true
         break
+      }
+
+      // The whole pass shares ONE Chromium instance across every page (see
+      // this module's header comment) for the launch-cost win that gives --
+      // but a long enough real run can outlive the process itself. Measured
+      // live (task 11, cleaningny.com, 10 pages x 10 widths): the browser
+      // died partway through page 8, and every subsequent newPage() call
+      // failed with the SAME generic "Target page, context or browser has
+      // been closed" error -- indistinguishable at a glance from the page
+      // itself being broken. Nothing here used to relaunch a dead browser,
+      // so a crash midway through a real 300-page run would have doomed
+      // every remaining page. Worse: a failed page still gets a stored row
+      // (so a rerun does not retry it forever, see `already` above), so
+      // those pages could never recover short of --force, which discards
+      // every already-collected result to start completely over. Checking
+      // connectivity right before each attempt turns "the browser process
+      // crashed once" into "one wasted iteration, then a fresh browser
+      // carries the rest of the pass."
+      if (!browser.isConnected()) {
+        await browser.close().catch(() => {})
+        try {
+          ;({ browser, newPage } = await launchBrowserImpl({ headed }))
+        } catch (e) {
+          // The environment cannot launch a browser right now (e.g.
+          // genuinely out of memory) -- record THIS page as failed with the
+          // relaunch's own error and move on, rather than let the loop spin
+          // attempting a relaunch on every remaining page. This still counts
+          // toward `consecutive`, so MAX_CONSECUTIVE_FAILURES above bounds
+          // how long a truly broken environment is allowed to burn through
+          // the remaining page list.
+          consecutive++
+          summary.pagesFailed++
+          const error = errorText(e)
+          summary.failedUrls.push({ url, error })
+          appendBrowserResult(host, { url, widths, findings: [], error })
+          continue
+        }
       }
 
       const pageArgs = { newPage, url, widths, timeout, bundle, regions, host, capturedIdentities }

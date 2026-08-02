@@ -22,6 +22,34 @@ export function check(ctx) {
   let sheets
   try { sheets = document.styleSheets } catch (e) { return [] }
 
+  // Splits a (possibly grouped) selectorText on its TOP-LEVEL commas only --
+  // a comma inside `[]` (an attribute value) or `()` (a functional
+  // pseudo-class like :not(a, b)) does not start a new compound. Needed
+  // because naively stripping ':hover' from the WHOLE selectorText of a
+  // grouped rule mixes UNRELATED sibling compounds into the derived base.
+  // Measured live (task 11, cleaningny.com): a real rule grouped a genuine
+  // `...elementor-menu-toggle:focus:hover` compound alongside five sibling
+  // compounds that never mention ':hover' at all (a dropdown menu's plain
+  // `a`, `a:focus`, `a.elementor-item-active`, `a.highlighted`, and the bare
+  // `.elementor-menu-toggle`) -- the old whole-string strip turned all six
+  // into one `document.querySelectorAll()` target, flagging nav menu links
+  // and a menu-toggle button that have nothing to do with the actual hover
+  // rule. Splitting into groups first and keeping only the group(s) that
+  // themselves contain ':hover' fixes that at the source.
+  const splitSelectorGroups = function (sel) {
+    const parts = []
+    let depth = 0
+    let cur = ''
+    for (let i = 0; i < sel.length; i++) {
+      const c = sel[i]
+      if (c === '[' || c === '(') depth++
+      else if (c === ']' || c === ')') depth--
+      if (c === ',' && depth <= 0) { parts.push(cur); cur = '' } else cur += c
+    }
+    if (cur.trim()) parts.push(cur)
+    return parts.map(function (s) { return s.trim() }).filter(Boolean)
+  }
+
   // Full selectorText (possibly grouped, e.g. "a, button" or a class like
   // ".btn") of every non-hover rule that declares a real transition.
   // Matched against elements individually below via el.matches() rather than
@@ -56,7 +84,18 @@ export function check(ctx) {
           if (rule.style[p].indexOf('--') !== 0) { hasVisibleChange = true; break }
         }
         if (!hasVisibleChange) continue
-        hoverRules.push({ base: rule.selectorText.replace(/:hover\b/g, ''), text: rule.cssText })
+        // Only the individual comma-separated group(s) that actually carry
+        // ':hover' become a base -- a sibling compound in the same group
+        // without ':hover' (e.g. "a:active" beside "a:hover", or the whole
+        // menu-toggle case above) describes something else entirely and
+        // must not be folded into this rule's target. See
+        // splitSelectorGroups' comment above.
+        const groups = splitSelectorGroups(rule.selectorText)
+        for (let g = 0; g < groups.length; g++) {
+          if (!/:hover\b/.test(groups[g])) continue
+          const base = groups[g].replace(/:hover\b/g, '').trim()
+          if (base) hoverRules.push({ base: base, text: rule.cssText })
+        }
       } else {
         // "Declares a transition" means a real one -- preparePage (Task 1)
         // injects `*,*::before,*::after{transition:none!important}` on

@@ -48,6 +48,35 @@ export function check(ctx) {
   const triggers = []
   let sheets
   try { sheets = document.styleSheets } catch (e) { return [] }
+
+  // Splits a (possibly grouped) selectorText on its TOP-LEVEL commas only --
+  // a comma inside `[]`/`()` does not start a new compound. Shared reasoning
+  // with F5 (see that rule's own copy of this function for the live example
+  // that proved it matters): naively stripping ':hover' from the WHOLE
+  // selectorText of a grouped rule folds in sibling compounds that never
+  // carry ':hover' at all. For F5 that inflated its target set (noise); for
+  // F1 the SAME bug under-reports instead -- an over-broad `target` marks
+  // candidates as "covered by a hover rule" that the actual :hover compound
+  // never touches, hiding a genuine "no hover reaction" finding. Measured
+  // live (task 11, cleaningny.com): F1 produced zero findings across 7
+  // successful pages, and this is why -- a handful of real, large grouped
+  // selectors (nav dropdowns, Elementor pointer-effect classes) were wide
+  // enough, once every sibling compound was folded in, to mark most of a
+  // page's interactive candidates "covered".
+  const splitSelectorGroups = function (sel) {
+    const parts = []
+    let depth = 0
+    let cur = ''
+    for (let i = 0; i < sel.length; i++) {
+      const c = sel[i]
+      if (c === '[' || c === '(') depth++
+      else if (c === ']' || c === ')') depth--
+      if (c === ',' && depth <= 0) { parts.push(cur); cur = '' } else cur += c
+    }
+    if (cur.trim()) parts.push(cur)
+    return parts.map(function (s) { return s.trim() }).filter(Boolean)
+  }
+
   for (let s = 0; s < sheets.length; s++) {
     let rules
     try { rules = sheets[s].cssRules } catch (e) { continue }
@@ -55,13 +84,23 @@ export function check(ctx) {
     for (let r = 0; r < rules.length; r++) {
       const sel = rules[r].selectorText
       if (!sel || !/:hover\b/.test(sel)) continue
-      const target = sel.replace(/:hover\b/g, '').trim()
-      if (target) targets.push(target)
+
+      // Only the individual comma-separated group(s) that actually carry
+      // ':hover' become a target -- see splitSelectorGroups' comment above.
+      const groups = splitSelectorGroups(sel)
+      for (let g = 0; g < groups.length; g++) {
+        if (!/:hover\b/.test(groups[g])) continue
+        const target = groups[g].replace(/:hover\b/g, '').trim()
+        if (target) targets.push(target)
+      }
+
       // Split on combinators/commas into individual compounds and keep only
       // the ones that actually carry :hover -- this is a light heuristic
       // tokeniser (it does not special-case spaces inside attribute-selector
-      // brackets), acceptable for a heuristic rule and consistent with how
-      // F5 already reads selectorText.
+      // brackets), acceptable for a heuristic rule. Unlike `targets` above,
+      // this one is not vulnerable to the grouped-selector bug: it already
+      // extracts individual compounds (splitting on combinators AND commas
+      // alike), so a non-hover sibling compound was never folded in here.
       const tokens = sel.match(/[^\s,>+~]+/g) || []
       for (let t = 0; t < tokens.length; t++) {
         if (!/:hover\b/.test(tokens[t])) continue

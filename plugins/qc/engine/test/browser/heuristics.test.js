@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { findingsFor } from './harness.js'
+import { findingsFor, findingsForContent } from './harness.js'
 
 test('F1 flags a link with no declared hover state', async () => {
   const f = await findingsFor('hover.html', { only: ['F1'] })
@@ -172,4 +172,33 @@ test('F1 accepts a toggle button whose hover only changes a sibling/descendant e
   // hover reaction just because the change lands elsewhere.
   const f = await findingsFor('hover.html', { only: ['F1'] })
   assert.ok(!f.some(x => /dropdown-toggle/.test(x.selector)))
+})
+
+// --- Fix (task 11, live-run calibration): grouped selectors with a non-hover
+// sibling compound ----------------------------------------------------------
+//
+// Same bug shape as F5's grouped-selector fix (see F4-F5.test.js), opposite
+// symptom: F1's `targets` used to strip ':hover' from the WHOLE selectorText
+// of a rule, so a sibling compound that never carries ':hover' at all (here,
+// the plain ".menu a") got folded into the target and marked every matching
+// candidate "covered by a hover rule" -- hiding a genuine "no hover
+// reaction" finding. Measured live against cleaningny.com: F1 produced ZERO
+// findings across 7 successfully-checked pages, and grouped selectors this
+// shape (real ones, not contrived) are why.
+test('F1 does not treat an unrelated sibling compound in a grouped selector as "covered"', async () => {
+  const html = `<!doctype html><html><head><style>
+    .menu a, .menu a:focus, .menu-toggle:hover { color: red }
+  </style></head><body>
+    <div class="menu"><a id="menu-link" href="/x">menu link</a></div>
+    <button class="menu-toggle" id="toggle">menu</button>
+  </body></html>`
+  const f = await findingsForContent(html, { only: ['F1'] })
+  assert.ok(
+    f.some(x => /menu-link/.test(x.selector)),
+    'the plain ".menu a" link has no real hover rule of its own and must be flagged'
+  )
+  assert.ok(
+    !f.some(x => /toggle/.test(x.selector)),
+    'the button genuinely covered by ".menu-toggle:hover" must stay accepted'
+  )
 })

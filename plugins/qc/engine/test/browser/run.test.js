@@ -5,6 +5,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runBrowserPass } from '../../src/browser/run.js'
+import { launchBrowser } from '../../src/browser/launch.js'
 import { saveSnapshot, loadBrowserResults } from '../../src/crawl/store.js'
 import { rollUp } from '../../src/report/json.js'
 import { serveContent } from './harness.js'
@@ -110,6 +111,84 @@ test('stops itself after ten consecutive failures', async () => {
   assert.equal(s.stoppedEarly, true)
   assert.ok(s.pagesFailed <= 12, `expected an early stop, got ${s.pagesFailed} failures`)
   assert.ok(s.pagesFailed >= MAX_CONSECUTIVE_FAILURES_HINT, 'must actually have tried ten pages before stopping')
+})
+
+// --- Judgement call: a mid-pass browser process crash must be recovered ----
+//
+// Live evidence (task 11's cleaningny.com run): a single Chromium instance
+// drives the WHOLE pass (see this module's header comment), and on a real
+// 10-page x 10-width run that process died partway through page 8 -- every
+// subsequent newPage() call then failed with the same generic "Target page,
+// context or browser has been closed" error, indistinguishable from the
+// page itself being broken, and because a failed page still gets a stored
+// row, those pages could never be retried short of --force (which throws
+// away every already-collected result). `launchBrowserImpl` is the
+// test-only injection point that lets this be reproduced deterministically
+// -- a REAL browser is still used underneath (via the real `launchBrowser`),
+// just wrapped so the SECOND page's newPage() call closes it first,
+// simulating the crash exactly as Playwright itself would surface it.
+test('recovers from a mid-pass browser crash by relaunching for the remaining pages', async () => {
+  let launches = 0
+  const launchBrowserImpl = async (opts) => {
+    launches++
+    const real = await launchBrowser(opts)
+    if (launches > 1) return real
+    let calls = 0
+    const crashingNewPage = async () => {
+      calls++
+      if (calls === 2) await real.browser.close()   // kill it right before page 2 opens
+      return real.newPage()
+    }
+    return { browser: real.browser, newPage: crashingNewPage }
+  }
+
+  const s = await runBrowserPass({
+    host: 'run-crash-recover', pages: [`${base}/1`, `${base}/2`, `${base}/3`], widths: [1440],
+    opts: { launchBrowserImpl },
+  })
+
+  assert.ok(launches >= 2, 'the dead browser must be relaunched, not just retried against nothing')
+  // Page 2 IS the crash instant -- both its attempts (attemptPage's own
+  // retry) hit the already-closed browser and fail. Page 3 is where recovery
+  // is proved: the isConnected() check at the top of ITS iteration sees the
+  // dead browser and relaunches before trying to open it.
+  assert.equal(s.pagesDone, 2, 'pages 1 and 3 complete; only page 2 (the crash instant) is lost')
+  assert.equal(s.pagesFailed, 1)
+  assert.equal(s.stoppedEarly, false, 'one crash must not look like a dead site')
+
+  const rows = loadBrowserResults('run-crash-recover')
+  const row1 = rows.find(r => r.url.endsWith('/1'))
+  const row2 = rows.find(r => r.url.endsWith('/2'))
+  const row3 = rows.find(r => r.url.endsWith('/3'))
+  assert.equal(row1.error, null)
+  assert.ok(row2.error, 'the crashed page records why, same as any other failure')
+  assert.equal(row3.error, null, 'the page AFTER the crash succeeds -- proof the relaunch actually worked')
+})
+
+test('a browser that cannot be relaunched fails just that page, not the whole pass', async () => {
+  let launches = 0
+  const launchBrowserImpl = async (opts) => {
+    launches++
+    if (launches > 1) throw new Error('simulated: environment cannot launch a browser right now')
+    const real = await launchBrowser(opts)
+    let calls = 0
+    const crashingNewPage = async () => {
+      calls++
+      if (calls === 2) await real.browser.close()
+      return real.newPage()
+    }
+    return { browser: real.browser, newPage: crashingNewPage }
+  }
+
+  const s = await runBrowserPass({
+    host: 'run-crash-fatal', pages: [`${base}/1`, `${base}/2`, `${base}/3`], widths: [1440],
+    opts: { launchBrowserImpl },
+  })
+
+  assert.ok(launches >= 2, 'a relaunch must actually have been attempted')
+  assert.equal(s.pagesDone, 1, 'only the page before the crash completes')
+  assert.equal(s.pagesFailed, 2, 'the crashed page AND the page a failed relaunch could not reach are both recorded, not dropped')
+  assert.equal(s.stoppedEarly, false, 'two failures must not trip the ten-consecutive stop')
 })
 
 test('an interrupted pass leaves a usable partial result', async () => {
