@@ -1,5 +1,6 @@
 import { rollUp, verdict, countDistinct, defectIdentity } from './json.js'
 import { STALENESS_WARNING_DAYS } from '../lib/snapshot-ttl.js'
+import { UNNAMED_REGION_PREFIX } from '../browser/regions.js'
 
 // Escaping is the security boundary of this module: every interpolated value
 // originates from a crawled third-party page (found/expected/page/selector)
@@ -133,9 +134,21 @@ function renderDefect(d, ctx = {}) {
   // site's template structure. Every occurrence of one identity carries the
   // SAME region (it is part of the identity key), so `d.example.region` is
   // authoritative here, same as the screenshot fields below.
+  //
+  // A region whose NAME could not be determined is labelled as the container
+  // id it actually is, and said to be unnamed -- not printed in the name slot
+  // as though it were one. On the only real site this has run against, every
+  // label read "регион: 3381" rather than "footer", because that snapshot was
+  // crawled before the parser recorded `locationsById` and nothing detected a
+  // snapshot whose shape predates a parser change. The finding is still
+  // correct and still collapses across pages; only the name is missing, and
+  // re-crawling is what supplies it.
   const region = d.example?.region ?? null
+  const unnamedRegion = typeof region === 'string' && region.startsWith(UNNAMED_REGION_PREFIX)
   const regionHtml = region
-    ? `<div class="kv">регион: <code>${esc(region)}</code> — общий для всех вхождений ниже, исправить нужно один раз</div>`
+    ? (unnamedRegion
+        ? `<div class="kv">регион: общий контейнер Elementor <code>${esc(region.slice(UNNAMED_REGION_PREFIX.length))}</code> (название — header/footer — определить не удалось: снимок сделан до того, как парсер начал сохранять локации; пересоберите его через <code>--fresh</code>) — общий для всех вхождений ниже, исправить нужно один раз</div>`
+        : `<div class="kv">регион: <code>${esc(region)}</code> — общий для всех вхождений ниже, исправить нужно один раз</div>`)
     : ''
 
   // Review fix: `shotDataUri` reaches this function from `d.example`, which

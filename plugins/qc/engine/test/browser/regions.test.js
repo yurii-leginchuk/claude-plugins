@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { proveRegions, regionOf } from '../../src/browser/regions.js'
+import { proveRegions, regionOf, UNNAMED_REGION_PREFIX } from '../../src/browser/regions.js'
 import { defectIdentity } from '../../src/report/json.js'
 
 const page = (url, ids, locations = []) =>
@@ -51,9 +51,45 @@ test('region names come from elementor-location classes when present', () => {
   assert.equal(r.get('3374').name, 'header')
 })
 
-test('a region falls back to its id when no location class exists', () => {
+// A container proved shared but never NAMED is still a region -- it is just a
+// region whose name is unknown. It used to be given its own id as a name,
+// which is how every region label on the one real site this has run against
+// came out reading "регион: 3381" instead of "footer": that snapshot predates
+// `locationsById`, so no name was available, and the bare id flowed straight
+// into the name slot. `name` is null now, and the id stays available under
+// `id`, so a reader-facing layer can say the name is missing rather than
+// print an id as though it were one.
+test('a region with no location class has no name, and keeps its id', () => {
   const r = proveRegions([page('https://ex.com/a', ['9001']), page('https://ex.com/b', ['9001'])])
-  assert.equal(r.get('9001').name, '9001')
+  assert.equal(r.get('9001').name, null, 'an id is not a name')
+  assert.equal(r.get('9001').id, '9001')
+  assert.equal(r.get('9001').pageCount, 2)
+})
+
+test('regionOf marks an unnamed region as an id rather than passing it off as a name', () => {
+  const r = proveRegions([page('https://ex.com/a', ['9001']), page('https://ex.com/b', ['9001'])])
+  const label = regionOf({ containerId: '9001' }, r)
+  assert.equal(label, '#9001')
+  assert.ok(label.startsWith(UNNAMED_REGION_PREFIX))
+})
+
+// The unnamed label must still be a stable, discriminating string: `region`
+// is part of defectIdentity, so dropping it would un-collapse a genuine
+// shared-region defect back into one finding per page -- exactly the
+// collapsing that proving regions exists to achieve.
+test('an unnamed region still collapses the same defect across pages into one identity', () => {
+  const r = proveRegions([page('https://ex.com/a', ['9001']), page('https://ex.com/b', ['9001'])])
+  const mk = (url) => {
+    const f = { rule: 'F1', page: url, selector: 'a.soc', found: 'x', containerId: '9001' }
+    f.region = regionOf(f, r)
+    return f
+  }
+  assert.equal(defectIdentity(mk('https://ex.com/a')), defectIdentity(mk('https://ex.com/b')))
+  assert.notEqual(
+    defectIdentity(mk('https://ex.com/a')),
+    defectIdentity({ rule: 'F1', page: 'https://ex.com/a', selector: 'a.soc', found: 'x' }),
+    'an unnamed region still discriminates from no region at all',
+  )
 })
 
 test('an empty page list yields no regions', () => {

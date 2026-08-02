@@ -63,10 +63,29 @@ export function proveRegions(pages) {
   const out = new Map()
   for (const [id, pageCount] of counts) {
     if (pageCount < need) continue
-    out.set(id, { name: names.get(id) || fallbackNames.get(id) || id, pageCount })
+    // `name` is null, not the id, when nothing named this container. The id
+    // IS still how the region is identified (see regionOf below) -- but it is
+    // an id, and a report that prints it in the place a name goes says
+    // something false. Measured live (task 11, cleaningny.com): every region
+    // label in the merged report read "регион: 3381" rather than "footer",
+    // because that snapshot was crawled before `locationsById` existed and
+    // nothing anywhere detected a snapshot whose shape predates a parser
+    // change -- the bare id simply flowed into the name slot and rendered as
+    // though it were one.
+    out.set(id, { id, name: names.get(id) || fallbackNames.get(id) || null, pageCount })
   }
   return out
 }
+
+// Marks a region label as "this is a container id, not a name". regionOf()
+// must keep returning a stable, discriminating string even when the name is
+// unknown -- `region` is part of defectIdentity (src/report/json.js), so
+// returning undefined for an unnamed region would silently un-collapse a
+// real shared-region defect back into one finding per page, which is the
+// entire payoff of proving regions in the first place. The prefix is what
+// lets a reader-facing layer tell the two cases apart and say so; see
+// renderDefect() in src/report/html.js.
+export const UNNAMED_REGION_PREFIX = '#'
 
 // Judgement call 3 (how a finding gets its region): proveRegions proves
 // which *container ids* are shared, but a browser finding carries a CSS
@@ -91,5 +110,6 @@ export function regionOf(finding, regions) {
   const id = finding.containerId
   if (id == null) return undefined
   const region = regions.get(String(id))
-  return region ? region.name : undefined
+  if (!region) return undefined
+  return region.name || (UNNAMED_REGION_PREFIX + region.id)
 }

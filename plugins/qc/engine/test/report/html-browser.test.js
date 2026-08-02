@@ -341,3 +341,18 @@ test('a defect with no region renders no region line at all', () => {
   const html = renderReport({ ...base, findings: [f()] })
   assert.doesNotMatch(html, /регион:/)
 })
+
+// On the only real site this has run against, every region label read
+// "регион: 3381" rather than "footer" -- the snapshot predated
+// `locationsById`, no name was available, and the bare container id flowed
+// into the name slot and rendered as though it were one. An unnamed region is
+// labelled as the container id it is, and says the name is missing.
+test('an unnamed region is labelled as a container id, not passed off as a name', () => {
+  const html = renderReport({ ...base, findings: [f({ region: '#3381' })] })
+  assert.doesNotMatch(html, /регион: <code>#?3381<\/code>/,
+    'a bare id must not sit where a name goes')
+  assert.match(html, /контейнер/i, 'it is named as a container')
+  assert.match(html, /3381/, 'the id itself is still shown')
+  assert.match(html, /определить не удалось|не удалось/i, 'and the missing name is stated')
+  assert.match(html, /один раз/i, 'the fix-once reading survives')
+})
