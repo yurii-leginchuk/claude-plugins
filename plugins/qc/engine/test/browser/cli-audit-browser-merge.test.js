@@ -119,3 +119,81 @@ test('a partial browser pass (fewer pagesDone than pagesTotal) is stated as part
   const html = readFileSync(summary.reportPath, 'utf8')
   assert.match(html, /частично/i, 'a partial browser pass must be visibly flagged as partial in the report')
 })
+
+// A page that FAILED and a page that was never attempted both leave
+// `pagesDone < pagesTotal`, and the report used to say the same thing about
+// both -- "остальные ещё не проверены" -- which is simply false for a page
+// the site refused to serve. The spec requires the count and the list of
+// pages that would not open to reach the report header.
+test('pages that would not open reach the report header, named, with their reason', async () => {
+  const host = 'failed-pages.example.com'
+  const urlA = `https://${host}/a`
+  const urlB = `https://${host}/b`
+  const urlC = `https://${host}/c`
+  const mk = (u, t) => parsePage({ url: u, html: CLEAN_HTML(t), status: 200, headers: { 'content-type': 'text/html' } })
+  seedStaticSnapshot(host, [mk(urlA, 'a'), mk(urlB, 'b'), mk(urlC, 'c')])
+
+  appendBrowserResult(host, { url: urlA, widths: [360], error: null, findings: [] })
+  appendBrowserResult(host, { url: urlB, widths: [360], error: 'Timeout 45000ms exceeded', findings: [] })
+
+  const summary = await audit(`https://${host}`, {})
+  assert.equal(summary.browserCoverage.pagesDone, 1, 'a failed page is not done')
+  assert.equal(summary.browserCoverage.pagesFailed, 1)
+  assert.deepEqual(
+    summary.browserCoverage.failedUrls,
+    [{ url: urlB, error: 'Timeout 45000ms exceeded' }],
+  )
+
+  const html = readFileSync(summary.reportPath, 'utf8')
+  assert.match(html, /не открылись/i)
+  assert.match(html, new RegExp(urlB.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  assert.match(html, /Timeout 45000ms exceeded/)
+})
+
+// A page retried after a failure leaves BOTH rows in the append-only log.
+// Counting raw rows would report it as done AND failed at the same time.
+test('a page that failed and was then retried successfully counts once, as done', async () => {
+  const host = 'retried-page.example.com'
+  const url = `https://${host}/a`
+  const page = parsePage({ url, html: CLEAN_HTML('a'), status: 200, headers: { 'content-type': 'text/html' } })
+  seedStaticSnapshot(host, [page])
+
+  appendBrowserResult(host, { url, widths: [360], error: 'net::ERR_CONNECTION_REFUSED', findings: [] })
+  appendBrowserResult(host, { url, widths: [360], error: null, findings: [] })
+
+  const summary = await audit(`https://${host}`, {})
+  assert.equal(summary.browserCoverage.pagesDone, 1)
+  assert.equal(summary.browserCoverage.pagesFailed, 0, 'the superseded failure must not still count')
+
+  const html = readFileSync(summary.reportPath, 'utf8')
+  assert.doesNotMatch(html, /не открылись/i)
+})
+
+// `dropped` reached browse's stdout and the snapshot meta and stopped there.
+// The spec says excluded widths are listed in the report rather than
+// swallowed -- otherwise a reader has no way to know that e.g. 1200 was
+// never measured at all.
+test('widths the breakpoint budget excluded reach the report', async () => {
+  const host = 'dropped-widths.example.com'
+  const url = `https://${host}/a`
+  const page = parsePage({ url, html: CLEAN_HTML('a'), status: 200, headers: { 'content-type': 'text/html' } })
+  saveSnapshot(host, {
+    meta: {
+      host, env: 'prod', envReason: 'боевой хост', source: 'sitemap', sitemapStatus: 'ok',
+      pairedAsDev: false, pairedAsDevReason: null, prodHost: null,
+      pageCount: 1, pagesRequested: 1, pagesFailed: 0, failedUrls: [],
+      browserWidths: [360, 768, 1024, 1440],
+      browserWidthsDropped: [639, 1199, 1200],
+    },
+    pages: [page],
+    links: [],
+  })
+  appendBrowserResult(host, { url, widths: [360, 768, 1024, 1440], error: null, findings: [] })
+
+  const summary = await audit(`https://${host}`, {})
+  assert.deepEqual(summary.browserCoverage.droppedWidths, [639, 1199, 1200])
+
+  const html = readFileSync(summary.reportPath, 'utf8')
+  assert.match(html, /исключённые ширины/i)
+  assert.match(html, /1200/)
+})

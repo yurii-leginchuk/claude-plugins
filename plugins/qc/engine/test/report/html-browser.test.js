@@ -77,6 +77,76 @@ test('a complete browser pass (pagesDone === pagesTotal) shows no partial warnin
 })
 
 // ---------------------------------------------------------------------------
+// The spec requires the report header to carry the count AND the list of
+// pages that would not open, and to list the widths the breakpoint budget
+// excluded. Neither reached the report: `browserCoverage` carried only
+// {pagesDone, pagesTotal, widths}, so a reader saw "7 из 31" with no way to
+// tell a failed page from a not-yet-attempted one, and `dropped` reached
+// browse's stdout and the snapshot meta and then stopped.
+// ---------------------------------------------------------------------------
+
+test('the header states how many pages would not open, and names them', () => {
+  const html = renderReport({
+    ...base, findings: [f()],
+    browserCoverage: {
+      pagesDone: 7, pagesTotal: 10, widths: [360, 1440],
+      pagesFailed: 2,
+      failedUrls: [
+        { url: 'https://ex.com/about', error: 'Timeout 45000ms exceeded' },
+        { url: 'https://ex.com/services', error: 'net::ERR_CONNECTION_REFUSED' },
+      ],
+    },
+  })
+  assert.match(html, /не открылись/i, 'the count of failed pages is stated')
+  assert.match(html, /https:\/\/ex\.com\/about/, 'the failed page is named')
+  assert.match(html, /https:\/\/ex\.com\/services/)
+  assert.match(html, /Timeout 45000ms exceeded/, 'with the reason it failed')
+})
+
+test('a pass with no failed pages says nothing about failures', () => {
+  const html = renderReport({
+    ...base, findings: [f()],
+    browserCoverage: { pagesDone: 10, pagesTotal: 10, widths: [360], pagesFailed: 0, failedUrls: [] },
+  })
+  assert.doesNotMatch(html, /не открылись/i)
+})
+
+test('the header lists the widths the breakpoint budget excluded', () => {
+  const html = renderReport({
+    ...base, findings: [f()],
+    browserCoverage: {
+      pagesDone: 10, pagesTotal: 10,
+      widths: [360, 640, 641, 766, 767, 768, 1023, 1024, 1025, 1440],
+      droppedWidths: [639, 1199, 1200],
+    },
+  })
+  assert.match(html, /исключённые ширины/i, 'excluded widths are named as such')
+  assert.match(html, /1200/, 'and the actual widths are listed, not just counted')
+  assert.match(html, /639/)
+})
+
+test('no dropped widths means no note about them', () => {
+  const html = renderReport({
+    ...base, findings: [f()],
+    browserCoverage: { pagesDone: 10, pagesTotal: 10, widths: [360], droppedWidths: [] },
+  })
+  assert.doesNotMatch(html, /исключённые ширины/i)
+})
+
+test('a failed url and its error are escaped like everything else', () => {
+  const html = renderReport({
+    ...base, findings: [f()],
+    browserCoverage: {
+      pagesDone: 1, pagesTotal: 2, widths: [360], pagesFailed: 1,
+      failedUrls: [{ url: 'https://ex.com/<script>alert(1)</script>', error: '<img onerror=x>' }],
+    },
+  })
+  assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/)
+  assert.doesNotMatch(html, /<img onerror=x>/)
+  assert.match(html, /&lt;script&gt;/)
+})
+
+// ---------------------------------------------------------------------------
 // Judgement call: a defect identity that recurs at more than one breakpoint
 // collapses to one row (same identity), but which widths it was actually
 // seen at is real diagnostic information -- "looks broken at 360 and 768,

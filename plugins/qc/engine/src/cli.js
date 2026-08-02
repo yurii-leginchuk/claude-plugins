@@ -20,7 +20,7 @@ import { diffRuns, verdict, countDistinct } from './report/json.js'
 import { renderReport } from './report/html.js'
 import {
   loadSnapshot, listSnapshots, clearSnapshot, clearAll, saveSnapshot, saveRun, previousRun,
-  loadBrowserResults,
+  latestBrowserResultsByUrl,
 } from './crawl/store.js'
 import { resolveBreakpoints } from './browser/breakpoints.js'
 import { proveRegions } from './browser/regions.js'
@@ -362,7 +362,7 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   const staticFindings = await runStaticRules(pages, site, { only: onlyIds, skip: skipIds })
 
   // Task 10: merge in whatever `qc browse` has already recorded for this
-  // host. `loadBrowserResults` reads browser.jsonl directly (never re-runs
+  // host. `latestBrowserResultsByUrl` reads browser.jsonl directly (never re-runs
   // the browser pass -- `audit` never launches a browser at all) and returns
   // [] when the file does not exist, which is exactly the "browse was never
   // run" case `browserCoverage` below distinguishes from "browse ran and
@@ -370,7 +370,11 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   // ids only (see `validIds`) and never touch these -- a browser-pass id
   // would already have thrown "неизвестные идентификаторы правил" before
   // reaching here, so browser findings are always included whole.
-  const browserRows = loadBrowserResults(host)
+  // Latest row per url, not the raw append log: a page that failed and was
+  // then retried successfully legitimately carries two rows (see
+  // store.js/latestBrowserResultsByUrl), and counting both would report it as
+  // simultaneously done and failed.
+  const browserRows = [...latestBrowserResultsByUrl(host).values()]
   const browserFindings = browserRows.flatMap(r => r.findings || [])
   inlineScreenshots(browserFindings)
   const findings = [...staticFindings, ...browserFindings]
@@ -383,11 +387,38 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   // `error: null` -- a page that was actually opened and measured), not
   // merely "has a row", so a host with only failed attempts does not read as
   // partially checked.
+  //
+  // `pagesFailed`/`failedUrls`: the spec requires the count AND the list of
+  // pages that would not open to reach the report header. Without them a
+  // reader sees "7 из 31" and cannot tell a page the site refused to serve
+  // from one the pass has simply not reached yet -- two situations calling
+  // for opposite reactions.
+  //
+  // `droppedWidths`: read from the snapshot meta (where `browse` persists
+  // what resolveBreakpoints excluded) BEFORE the saveSnapshot below can
+  // overwrite it on a fresh crawl. It already reached browse's own stdout;
+  // the spec says excluded widths are listed in the report rather than
+  // swallowed, and until now the report was the one place they never
+  // appeared.
+  const browserFailedRows = browserRows.filter(r => r.error)
+  let droppedWidths = []
+  try {
+    const metaSnap = loadSnapshot(host)
+    if (Array.isArray(metaSnap?.meta?.browserWidthsDropped)) {
+      droppedWidths = metaSnap.meta.browserWidthsDropped
+    }
+  } catch {
+    // A corrupt snapshot is already the caller's problem elsewhere; the list
+    // of excluded widths is not worth failing a whole report over.
+  }
   const browserCoverage = browserRows.length
     ? {
         pagesDone: browserRows.filter(r => !r.error).length,
         pagesTotal: pages.length,
+        pagesFailed: browserFailedRows.length,
+        failedUrls: browserFailedRows.slice(0, 50).map(r => ({ url: r.url, error: r.error })),
         widths: [...new Set(browserRows.flatMap(r => r.widths || []))].sort((a, b) => a - b),
+        droppedWidths,
       }
     : null
 
@@ -732,7 +763,7 @@ export async function browse(input, flags) {
   // first -- a false clean. The full picture lives in browser.jsonl, so it
   // is read back (now including whatever THIS run just appended) and
   // flattened, rather than trusting the in-memory result alone.
-  const rows = loadBrowserResults(host)
+  const rows = [...latestBrowserResultsByUrl(host).values()]
   let findings = rows.flatMap(r => r.findings || [])
 
   // --only/--skip filter the PRINTED findings, not which rules execute

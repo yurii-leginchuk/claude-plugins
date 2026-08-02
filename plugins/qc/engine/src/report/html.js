@@ -288,11 +288,47 @@ export function renderReport({
     const pagesTotal = Number(browserCoverage.pagesTotal) || 0
     const widths = Array.isArray(browserCoverage.widths) ? browserCoverage.widths : []
     const complete = pagesTotal > 0 && pagesDone >= pagesTotal
+
+    // Pages that would not open at all. "7 из 31" alone cannot distinguish a
+    // page that FAILED from one that was never attempted, and those call for
+    // opposite reactions: a not-yet-attempted page just needs the pass to be
+    // run again, while a failed page is a page the site itself would not
+    // serve. The spec requires both the count and the list to reach the
+    // header, so a reader is not left inferring it from a bare fraction.
+    const failedUrls = Array.isArray(browserCoverage.failedUrls) ? browserCoverage.failedUrls : []
+    const pagesFailed = Number(browserCoverage.pagesFailed) || failedUrls.length
+    const shownFailed = failedUrls.slice(0, PAGE_LIST_CAP)
+    const hiddenFailed = failedUrls.length - shownFailed.length
+    const failedHtml = pagesFailed
+      ? `<div class="note-box">Не открылись при браузерной проверке: <b>${esc(pagesFailed)}</b> страниц(ы) — они проверены безуспешно, а не пропущены, и визуальные дефекты на них неизвестны.` +
+        (shownFailed.length
+          ? `<ul>${shownFailed.map(x => {
+              const url = typeof x === 'string' ? x : (x && x.url) || ''
+              const err = typeof x === 'string' ? '' : (x && x.error) || ''
+              return `<li><code>${esc(url)}</code>${err ? ` — ${esc(err)}` : ''}</li>`
+            }).join('')}${hiddenFailed > 0 ? `<li>…и ещё ${esc(hiddenFailed)}</li>` : ''}</ul>`
+          : '') +
+        ` Повторный запуск <code>qc browse ${esc(host)}</code> пробует их снова — <code>--force</code> для этого не нужен.</div>`
+      : ''
+
+    // Widths the breakpoint budget excluded. `dropped` already reaches
+    // browse's stdout and the snapshot meta; the spec says explicitly that
+    // excluded widths are listed in the REPORT rather than swallowed, and it
+    // never was -- so a reader could not tell that e.g. 1200 (the Bootstrap
+    // and Elementor desktop boundary) was never measured at all.
+    const droppedWidths = Array.isArray(browserCoverage.droppedWidths) ? browserCoverage.droppedWidths : []
+    const droppedHtml = droppedWidths.length
+      ? `<div class="note-box">Ширины, не вошедшие в проверку из-за лимита (${esc(droppedWidths.length)}): <code>${droppedWidths.map(esc).join(', ')}</code>. Дефекты, которые проявляются только на этих ширинах, не измерялись. Чтобы проверить любую из них, запустите <code>qc browse ${esc(host)} --breakpoints ${esc(droppedWidths.join(','))} --force</code>.</div>`
+      : ''
+
     browserCoverageHtml = `<p class="sub">браузерная проверка: ${esc(pagesDone)} из ${esc(pagesTotal)} страниц` +
-      (widths.length ? ` · ширины: ${widths.map(esc).join(', ')}` : '') + `</p>` +
+      (pagesFailed ? ` · не открылись: ${esc(pagesFailed)}` : '') +
+      (widths.length ? ` · ширины: ${widths.map(esc).join(', ')}` : '') +
+      (droppedWidths.length ? ` · исключённые ширины: ${droppedWidths.map(esc).join(', ')}` : '') + `</p>` +
       (!complete
-        ? `<div class="note-box">Браузерная проверка выполнена частично: проверено ${esc(pagesDone)} из ${esc(pagesTotal)} страниц, остальные ещё не проверены. Визуальные дефекты на непроверенных страницах могли остаться незамеченными. Запустите <code>qc browse ${esc(host)}</code> ещё раз, чтобы продолжить — прогон возобновляемый и не начинает заново уже проверенные страницы.</div>`
-        : '')
+        ? `<div class="note-box">Браузерная проверка выполнена частично: проверено ${esc(pagesDone)} из ${esc(pagesTotal)} страниц. Визуальные дефекты на остальных страницах могли остаться незамеченными. Запустите <code>qc browse ${esc(host)}</code> ещё раз, чтобы продолжить — прогон возобновляемый: уже проверенные страницы не начинаются заново, а те, что не открылись, пробуются снова.</div>`
+        : '') +
+      failedHtml + droppedHtml
   }
 
   // Screenshots are checked against the SAME publish-size budget as
