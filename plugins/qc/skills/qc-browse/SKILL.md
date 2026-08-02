@@ -30,7 +30,9 @@ refuses to run and says so; tell the user to run `/qc-site` first, don't try to 
   Results are written to `browser.jsonl` one page at a time as the pass progresses, so a crash, a
   Ctrl-C, or a killed background process still leaves every page checked so far on disk. Running the
   *exact same command again* (same host, no `--force`) picks up where it left off — pages already
-  recorded are skipped, not redone. `--force` **deletes all previously recorded browser findings and
+  checked **successfully** are skipped, not redone, and pages that **would not open** are tried
+  again. A failed page is recorded as checked unsuccessfully, never as done, so `--force` is never
+  the way to retry one. `--force` **deletes all previously recorded browser findings and
   screenshots for this host and starts over from page one** — only use it when the user explicitly
   wants a full fresh browser pass (e.g. after a site redesign), never as a reflex fix for an
   interrupted run.
@@ -87,7 +89,8 @@ refuses to run and says so; tell the user to run `/qc-site` first, don't try to 
    - `widths` actually used, and whether they were discovered from the site's own CSS or given via
      `--breakpoints`; mention `droppedWidths`/`unparseableWidths` if either is non-empty — a media
      condition the engine couldn't resolve to a pixel width is real information, not noise.
-   - `pagesFailed` and a sample of `failedUrls`, if any — pages that would not open at all.
+   - `pagesFailed` and a sample of `failedUrls`, if any — pages that would not open at all. Say
+     that re-running the same command retries exactly those pages; do not suggest `--force`.
    - Once the report is republished (step 6): the same distinct-vs-occurrences framing `/qc-site`
      uses (lead with `distinct`, not raw `counts`), now including browser-only rules (C1/C2, overlap,
      hover/focus/cursor/transition, contrast, console errors, broken images). The report shows each
