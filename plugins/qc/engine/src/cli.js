@@ -20,6 +20,7 @@ import { diffRuns, verdict, countDistinct } from './report/json.js'
 import { renderReport } from './report/html.js'
 import {
   loadSnapshot, listSnapshots, clearSnapshot, clearAll, saveSnapshot, saveRun, previousRun,
+  loadBrowserResults,
 } from './crawl/store.js'
 import { resolveBreakpoints } from './browser/breakpoints.js'
 import { proveRegions } from './browser/regions.js'
@@ -45,6 +46,8 @@ const SNAPSHOT_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7d, matching the report's ban
 
 const USAGE = `qc audit <site-url|sheet-url> [--fresh] [--env dev|prod] [--prod <url>] [--only IDs] [--skip IDs] [--concurrency n]
 qc browse <host|url> [--breakpoints a,b] [--pages n] [--force] [--concurrency n] [--headed] [--only IDs] [--skip IDs]
+  note: in browse, --only/--skip filter only the PRINTED findings (all browser rules still run) --
+  this is NOT the same as audit's --only/--skip, which control which rules execute
 qc cache list
 qc cache clear <host> | --all`
 
@@ -615,6 +618,17 @@ export async function browse(input, flags) {
   // changing its CSS) -- that is exactly the case the brief's "so a resumed
   // run uses the same set rather than rediscovering a different one" is
   // about.
+  //
+  // `preserveSavedAt: true` (review fix, Task 9): this write reuses the
+  // EXACT pages/links this snapshot already had -- it did not just crawl
+  // anything, it only adds breakpoint metadata alongside an unchanged crawl.
+  // saveSnapshot() defaults to stamping a fresh `savedAt` because for every
+  // OTHER caller (audit, after an actual crawl) that is correct. Here it
+  // would silently reset the freshness clock that both `audit`'s
+  // SNAPSHOT_TTL_MS reuse check and the HTML report's staleness banner rely
+  // on -- a two-week-old crawl would present itself as freshly crawled to
+  // every later reader, purely because someone ran `browse` on it. See the
+  // "persisting widths does not reset savedAt" tests.
   if (discoveredNow) {
     saveSnapshot(host, {
       meta: {
@@ -625,6 +639,7 @@ export async function browse(input, flags) {
       },
       pages: snap.pages,
       links: snap.links,
+      preserveSavedAt: true,
     })
   }
 
@@ -641,16 +656,41 @@ export async function browse(input, flags) {
     opts: { force, maxPages, headed, regions },
   })
 
+  // Review fix (Task 9): `result.findings` is only what THIS invocation's
+  // page loop just processed -- for a resumed run where every page was
+  // already `already`-marked done (browser.jsonl), that is an empty array,
+  // even though the host has real, previously-recorded findings on disk. A
+  // caller reading `findings` as "the browser findings for this site" would
+  // see a confident, well-formed, empty result on every run after the
+  // first -- a false clean. The full picture lives in browser.jsonl, so it
+  // is read back (now including whatever THIS run just appended) and
+  // flattened, rather than trusting the in-memory result alone.
+  const rows = loadBrowserResults(host)
+  let findings = rows.flatMap(r => r.findings || [])
+
   // --only/--skip filter the PRINTED findings, not which rules execute
   // in-browser: bundle.js/runBrowserPass expose no per-rule selection knob
   // (extraRules is test-only injection, not a subtraction mechanism), and
-  // adding one is out of scope for this CLI-wiring task. The practical
-  // consequence worth knowing: because a page's "already done" status
-  // (browser.jsonl) is recorded regardless of this run's --only/--skip, a
-  // later invocation with a wider --only than a previous run used will NOT
-  // retroactively surface findings for the newly-included rule unless
-  // --force is also given -- the page was already marked done.
-  let findings = result.findings
+  // adding one is out of scope for this CLI-wiring task. This is a
+  // DIFFERENT meaning than `qc audit`'s --only/--skip, which do control
+  // which rules run at all -- a flag whose behaviour silently changes
+  // between two subcommands of the same tool is a trap, so it is called out
+  // twice: in USAGE (below) and, whenever either flag is actually used, as
+  // a `notes` entry here, not just in this comment.
+  //
+  // A second practical consequence worth knowing: because a page's
+  // "already done" status (browser.jsonl) is recorded regardless of this
+  // run's --only/--skip, a later invocation with a wider --only than a
+  // previous run used will NOT retroactively surface findings for the
+  // newly-included rule unless --force is also given -- the page was
+  // already marked done.
+  if (onlyIds.length || skipIds.length) {
+    notes.push(
+      `--only/--skip здесь фильтруют только напечатанные findings этого резюме -- ` +
+      `в отличие от qc audit, где они определяют, какие правила вообще выполняются, ` +
+      `в browse выполняются ВСЕ браузерные правила, и только вывод сокращается`
+    )
+  }
   if (onlyIds.length) findings = findings.filter(f => onlyIds.includes(f.rule))
   if (skipIds.length) findings = findings.filter(f => !skipIds.includes(f.rule))
 

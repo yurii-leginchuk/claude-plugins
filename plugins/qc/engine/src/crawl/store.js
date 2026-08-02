@@ -60,7 +60,21 @@ function readJsonl(p) {
   return result
 }
 
-export function saveSnapshot(host, { meta, pages, links = [] }) {
+// `preserveSavedAt`: by default (false, every existing caller) saveSnapshot
+// stamps `savedAt: Date.now()` -- correct for `audit`, where a save always
+// means "a crawl just happened, this snapshot IS fresh now." It is wrong
+// for a caller that reuses an existing snapshot's crawled pages/links
+// unchanged and only adds metadata alongside them (e.g. `browse` persisting
+// discovered breakpoint widths into meta): that caller did not just crawl
+// anything, and unconditionally stamping `savedAt` would make an
+// already-stale snapshot lie about its own age to every later reader of it
+// -- `audit`'s SNAPSHOT_TTL_MS reuse check and the HTML report's staleness
+// banner both key on this exact field, so a false-fresh `savedAt` silently
+// defeats both. When true, the PREVIOUS meta.json's `savedAt` is read back
+// off disk and kept; only a snapshot with no prior meta.json (or one whose
+// meta.json cannot be parsed -- nothing trustworthy to preserve) falls back
+// to stamping a fresh timestamp, same as the default path.
+export function saveSnapshot(host, { meta, pages, links = [], preserveSavedAt = false }) {
   const cacheRoot = root()
   const dir = snapshotDir(host)
 
@@ -72,7 +86,23 @@ export function saveSnapshot(host, { meta, pages, links = [] }) {
   }
 
   mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, 'meta.json'), JSON.stringify({ ...meta, savedAt: Date.now() }, null, 2))
+
+  let savedAt = Date.now()
+  if (preserveSavedAt) {
+    const metaPath = join(dir, 'meta.json')
+    if (existsSync(metaPath)) {
+      try {
+        const existing = JSON.parse(readFileSync(metaPath, 'utf8'))
+        if (typeof existing.savedAt === 'number') savedAt = existing.savedAt
+      } catch {
+        // Corrupted existing meta.json has no trustworthy savedAt to carry
+        // forward -- fall back to stamping a fresh one, same as if this
+        // were a brand-new snapshot.
+      }
+    }
+  }
+
+  writeFileSync(join(dir, 'meta.json'), JSON.stringify({ ...meta, savedAt }, null, 2))
   writeFileSync(join(dir, 'pages.jsonl'), jsonl(pages))
   writeFileSync(join(dir, 'links.jsonl'), jsonl(links))
   return dir
