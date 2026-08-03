@@ -1,0 +1,24 @@
+{
+  "name": "leginchuk-plugins",
+  "owner": {
+    "name": "Yurii Leginchuk",
+    "email": "yurij.leginchuk.dev@gmail.com"
+  },
+  "metadata": {
+    "description": "Claude Code plugins by Yurii Leginchuk",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "qc",
+      "source": "./plugins/qc",
+      "description": "QC engine for WordPress + Elementor + Gravity Forms sites: static audit (/qc-site), browser pass with screenshots and visual checks (/qc-browse), and cache management (/qc-cache). Publishes rule-grouped HTML reports.",
+      "author": {
+        "name": "Yurii Leginchuk",
+        "email": "yurij.leginchuk.dev@gmail.com"
+      },
+      "keywords": ["qc", "audit", "wordpress", "elementor", "gravity-forms", "playwright", "testing"],
+      "category": "testing"
+    }
+  ]
+}

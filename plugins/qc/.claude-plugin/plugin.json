@@ -1,5 +1,12 @@
 {
   "name": "qc",
   "version": "0.1.0",
-  "description": "QC of WordPress + Elementor + Gravity Forms sites: static bucket-1 checks with a rule-grouped report"
+  "description": "QC of WordPress + Elementor + Gravity Forms sites: static audit (/qc-site), browser pass with screenshots and visual checks (/qc-browse), and cache management (/qc-cache). Publishes rule-grouped HTML reports.",
+  "author": {
+    "name": "Yurii Leginchuk",
+    "email": "yurij.leginchuk.dev@gmail.com"
+  },
+  "repository": "https://github.com/yurii-leginchuk/claude-plugins",
+  "license": "MIT",
+  "keywords": ["qc", "audit", "wordpress", "elementor", "gravity-forms", "playwright", "testing"]
 }
