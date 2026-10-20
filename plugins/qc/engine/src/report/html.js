@@ -114,6 +114,13 @@ border-radius:0 8px 8px 0;font-size:13px;color:var(--mut);margin:12px 0}
 table{width:100%;border-collapse:collapse;font-size:13px}
 .scroll{overflow-x:auto}
 th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--line)}
+.did{font:600 12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;padding:1px 6px;border:1px solid var(--line);border-radius:5px;text-decoration:none!important;background:var(--bg)}
+.flash{outline:2px solid var(--maj);outline-offset:6px;border-radius:4px}
+.find{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0 4px;font-size:13px}
+.find input{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);width:12em;max-width:100%}
+.find button{font:inherit;padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg);cursor:pointer}
+.find input:focus-visible,.find button:focus-visible{outline:2px solid var(--maj);outline-offset:1px}
+.find .sub{margin:0}
 .wrap a{color:inherit;text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1px}
 .wrap a:hover{text-decoration-thickness:2px}
 .vis-page{border-top:1px solid var(--line);padding:12px 0}
@@ -167,7 +174,10 @@ function renderManual(manualChecks, claudeFindings) {
   const missing = MANUAL_SECTIONS.filter(([k]) => !checks.some(c => c.check === k))
   const head = `<h2>Ручные проверки Claude (Playwright и чтение страниц)</h2>
 <div class="note-box heuristic">Это то, что движок не умеет: нажать, навести, пройти Tab, понять смысл текста. Claude проверил вручную; найденные дефекты учтены в вердикте.</div>`
-  const body = done.map(([k, title, what]) => `<h3>${esc(title)}</h3><p class="sub">${esc(what)}</p>${checks.filter(c => c.check === k).map(m => {
+  const body = done.map(([k, title, what]) => {
+    const rows = checks.filter(c => c.check === k)
+    const nDefects = new Set(claudeFindings.filter(f => f.check === k).map(f => f.id || `${f.rule}|${f.found}`)).size
+    return `<details class="rule"><summary><span class="chip ${nDefects ? 'crit' : 'ok'}">${nDefects ? 'есть дефекты' : 'в порядке'}</span> <b>${esc(title)}</b><span class="cnt">${rows.length} проверок · ${nDefects} дефектов</span></summary><div class="body"><p class="sub">${esc(what)}</p>${rows.map(m => {
     const [cls, label] = MANUAL_STATUS[m.status] || MANUAL_STATUS.skipped
     // One block per defect, with every page it names (a content defect spans several).
     const defs = []
@@ -178,12 +188,24 @@ function renderManual(manualChecks, claudeFindings) {
     }
     return `<div class="menu-row"><p class="kv"><span class="chip ${cls}">${esc(label)}</span>${m.width != null ? ` <b>${esc(m.width)} px</b> ·` : ''} ${rich(m.page)}</p>
 ${m.checked ? `<p class="kv">${rich(m.checked)}</p>` : ''}
-${defs.map(f => `<div class="defect"><p class="kv"><span class="chip ${CHIP[f.severity] || 'note'}">${esc(f.severity)}</span> ${esc(f.rule)} · ${esc(f.title)}</p><p class="kv">найдено: ${rich(f.found)}</p>${f.where ? `<p class="kv">где: ${rich(f.where)}</p>` : ''}<p class="kv">ожидается: ${rich(f.expected)}</p>${f.pages.length > 1 ? `<ul class="pages">${f.pages.map(p => `<li>${rich(p)}</li>`).join('')}</ul>` : ''}</div>`).join('')}
+${defs.map(f => `<div class="defect"${f.id ? ` id="${esc(f.id)}"` : ''}><p class="kv">${f.id ? `<a class="did" href="#${esc(f.id)}">${esc(f.id)}</a> ` : ''}<span class="chip ${CHIP[f.severity] || 'note'}">${esc(f.severity)}</span> ${esc(f.rule)} · ${esc(f.title)}</p><p class="kv">найдено: ${rich(f.found)}</p>${f.where ? `<p class="kv">где: ${rich(f.where)}</p>` : ''}<p class="kv">ожидается: ${rich(f.expected)}</p>${f.pages.length > 1 ? `<ul class="pages">${f.pages.map(p => `<li>${rich(p)}</li>`).join('')}</ul>` : ''}</div>`).join('')}
 ${(m.shots || []).length ? `<div class="strip">${m.shots.map((src, i) => thumb(src, `${m.width != null ? `${m.width} px · ` : ''}${i + 1}`, m.width || 768)).join('')}</div>` : ''}</div>`
-  }).join('')}`).join('')
+  }).join('')}</div></details>`
+  }).join('')
   const rest = missing.length ? `<p class="sub">Не проверялось вручную: ${missing.map(([, t]) => esc(t)).join(', ')}.</p>` : ''
   return head + body + rest
 }
+
+// Find a defect by its id: opens the collapsed groups around it and scrolls to it;
+// a link to «#D12» does the same on load.
+const FIND = `<script>(()=>{const msg=document.getElementById('qc-find-msg');
+function go(raw,quiet){const id=String(raw||'').trim().toUpperCase().replace(/^#/,'');if(!id)return;const el=document.getElementById(id);
+if(!el||!/^[DM]\\d+$/.test(id)){if(!quiet&&msg)msg.textContent='Дефекта '+id+' нет в отчёте';return}
+for(let p=el.parentElement;p;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true;
+el.scrollIntoView({block:'center'});el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');if(msg)msg.textContent=''}
+const f=document.getElementById('qc-find-form');if(f)f.addEventListener('submit',e=>{e.preventDefault();go(document.getElementById('qc-find').value)});
+document.addEventListener('click',e=>{const a=e.target.closest('a.did');if(a){e.preventDefault();go(a.getAttribute('href'),true)}});
+if(location.hash)go(location.hash,true)})()</script>`
 
 const LIGHTBOX = `<dialog class="lb" id="qc-lb"><div class="bar"><span id="qc-lb-t"></span><button type="button" id="qc-lb-x">Закрыть</button></div><img id="qc-lb-i" alt=""></dialog>
 <script>(()=>{const d=document.getElementById('qc-lb');if(!d||!d.showModal)return;const i=document.getElementById('qc-lb-i'),t=document.getElementById('qc-lb-t');
@@ -283,8 +305,10 @@ function renderDefect(d, ctx = {}) {
           `</div>`)
     : ''
 
+  const did = ctx.ids?.[d.identity]
   return `
-      <div class="defect">
+      <div class="defect"${did ? ` id="${esc(did)}"` : ''}>
+        ${did ? `<div class="kv"><a class="did" href="#${esc(did)}">${esc(did)}</a></div>` : ''}
         ${d.example?.review ? `<div class="kv review review-${esc(d.example.review.verdict)}">Claude: ${esc(REVIEW_LABEL[d.example.review.verdict] || d.example.review.verdict)}${d.example.review.note ? ` — ${rich(d.example.review.note)}` : ''}</div>` : ''}
         ${String(d.scope || '').startsWith('template:') ? `<div class="kv">раздел: <code>${esc(d.scope.slice(9))}</code></div>` : ''}
         <div class="kv">найдено: <code>${rich(d.found)}</code></div>
@@ -381,6 +405,8 @@ export function renderReport({
   siteSummary = null,
   visual = [],
   manualChecks = [],
+  // identity -> «D12», the same ids `qc findings` prints
+  ids = null,
 }) {
   // Fail fast on malformed findings, matching the array contract rollUp/diffRuns
   // already enforce (src/report/json.js). Coercing bad input to [] here would
@@ -536,7 +562,7 @@ export function renderReport({
   // and the oversize note is the only one that fires).
   function build(suppressedShots, { oversizeBytes } = {}) {
     const candidates = suppressedShots ? null : []
-    const ctx = { breakpointsByIdentity, suppressedShots: suppressedShots ?? new Set(), candidates }
+    const ctx = { breakpointsByIdentity, suppressedShots: suppressedShots ?? new Set(), candidates, ids }
     const groupsHtml = groups.length
       ? renderScoped(groups, pages, ctx)
       : '<p class="sub">Нарушений не найдено — сайт прошёл проверку без замечаний.</p>'
@@ -582,6 +608,9 @@ ${oversizeBytes != null ? `<div class="note-box">Отчёт превышает �
   <div class="tile"><b>${diff?.fixed?.length ?? 0}</b><span>починено</span></div>
   <div class="tile"><b>${diff?.remaining?.length ?? 0}</b><span>осталось</span></div>
 </div>
+<form class="find" id="qc-find-form" role="search"><label for="qc-find">Найти дефект по id</label>
+<input id="qc-find" name="qc-find" placeholder="D12 или M3" autocomplete="off" spellcheck="false">
+<button type="submit">Найти</button><span id="qc-find-msg" class="sub" aria-live="polite"></span></form>
 <p class="sub">Дефектов по серьёзности: ${distinct.critical} critical · ${distinct.major} major · ${distinct.minor} minor · ${distinct.note} note — это число реальных задач на исправление.
 Плитки Critical/Major/Minor выше считают вхождения (одна правка может закрыть сразу несколько).</p>
 <h2>Статическая проверка (HTML, ссылки, SEO, контент)</h2>
@@ -597,7 +626,7 @@ ${shownPages.map(p =>
   `<tr><td>${rich(p)}</td><td>${list.filter(f => f.page === p).length}</td></tr>`).join('')}
 </table></div>
 ${hiddenPageCount > 0 ? `<p class="kv">…и ещё ${hiddenPageCount} страниц не показано (ограничение индекса)</p>` : ''}` : '<p class="sub">Нет страниц с находками.</p>'}
-</div>${hasShots ? LIGHTBOX : ''}</body></html>`
+</div>${hasShots ? LIGHTBOX : ''}${FIND}</body></html>`
     return { html, candidates }
   }
 

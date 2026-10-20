@@ -44,6 +44,7 @@ export const MANUAL_TITLES = {
 function manualOf(review, dir) {
   const checks = []
   const findings = []
+  const manualIds = new Map()
   const entries = [...(review.manual || []), ...(review.menu || []).map(m => ({ check: 'menu', ...m }))]
   entries.forEach((m, i) => {
     const at = `ревью manual[${i}]`
@@ -63,8 +64,11 @@ function manualOf(review, dir) {
       if (!MANUAL_CHECKS[m.check].includes(d.rule)) throw new Error(`${at}: rule для ${m.check} должен быть одним из ${MANUAL_CHECKS[m.check].join(', ')}`)
       if (!SEVERITIES.has(d.severity)) throw new Error(`${at}: severity должен быть critical, major, minor или note`)
       if (!d.found || !d.expected) throw new Error(`${at}: у дефекта нужны found и expected`)
+      const key = `${i}|${d.rule}|${d.found}`
+      if (!manualIds.has(key)) manualIds.set(key, `M${manualIds.size + 1}`)
       for (const page of d.pages?.length ? d.pages : [m.page]) {
         findings.push({
+          id: manualIds.get(key),
           rule: d.rule, title: d.title || MANUAL_TITLES[d.rule], severity: d.severity, confidence: 'high', engine: 'claude',
           check: m.check, manual: i, page, breakpoint: width, selector: d.selector || null, found: d.found, expected: d.expected,
           where: d.where || null, zone: m.check === 'menu' ? 'header' : null,
@@ -123,6 +127,11 @@ export function distinctDefects(findings, totalPages) {
     .map((d, i) => ({ id: `D${i + 1}`, ...d, scope: scopeOf({ zones: d.zones, pages: d.pages, region: null }, totalPages), zones: [...d.zones], pageCount: d.pages.length, pages: d.pages.slice(0, 20) }))
 }
 
+// identity -> «D12» for the report, the same numbering `qc findings` prints.
+export function idsFor(findings, totalPages) {
+  return Object.fromEntries(distinctDefects(findings, totalPages).map(d => [d.identity, d.id]))
+}
+
 export function listFindings(host) {
   const { dir, findings, input, profile } = runOf(host)
   const defects = distinctDefects(findings, input.pages)
@@ -151,7 +160,7 @@ export function applyReview(host, reviewPath) {
   }
   const manual = manualOf(review, dir)
   kept.push(...manual.findings)
-  const html = renderReport({ ...input, findings: kept, rejected, siteSummary: review.summary || null, manualChecks: manual.checks })
+  const html = renderReport({ ...input, findings: kept, rejected, siteSummary: review.summary || null, manualChecks: manual.checks, ids: idsFor(findings, input.pages) })
   writeFileSync(join(dir, 'report.html'), html)
   writeFileSync(join(dir, 'review.json'), JSON.stringify(review, null, 2))
   const count = (v) => [...byIdentity.values()].filter(r => r.verdict === v).length

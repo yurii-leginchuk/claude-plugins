@@ -18,7 +18,7 @@ import { loadFacts } from './lib/facts.js'
 import { resolveGbpLinks, gbpTargets } from './lib/gbp.js'
 import { buildProfile } from './lib/profile.js'
 import { SWEEP } from './browser/sweep.js'
-import { listFindings, applyReview } from './review.js'
+import { listFindings, applyReview, idsFor } from './review.js'
 import { buildProdCompare, loadProdCompare, saveProdCompare } from './crawl/prod.js'
 import { listWpContent } from './crawl/wp.js'
 import { runStaticRules, allRules } from './rules/index.js'
@@ -561,7 +561,7 @@ export async function audit(input, flags, { fetchImpl } = {}) {
     host, env, envReason: reason, pages: pages.length, diff,
     snapshotAgeDays: cacheAgeDays, source, sitemapStatus, browserCoverage, visual,
   }
-  const html = renderReport({ ...reportInput, findings })
+  const html = renderReport({ ...reportInput, findings, ids: idsFor(findings, pages.length) })
   const runDir = saveRun(host, findings, html, ranNow)
   let visualBytes = 0
   if (visualFiles.length) {
