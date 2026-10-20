@@ -1,0 +1,117 @@
+// `qc push <host>`: the latest run's results -- not its HTML -- to the QC
+// Reports site (a WordPress plugin, qc-reports.poirier.agency), where they
+// become a public report people mark fixed. One POST for the run, then one
+// per evidence picture (defect crops, manual-check screenshots); the
+// full-page screenshots stay in the HTML report.
+//
+// Credentials: ~/.config/qc/reports.json {url, user, appPassword} or
+// QC_REPORTS_URL / QC_REPORTS_USER / QC_REPORTS_APP_PASSWORD.
+import { readFileSync, existsSync } from 'node:fs'
+import { join, basename } from 'node:path'
+import { homedir } from 'node:os'
+import { reviewedRun } from './review.js'
+import { defectIdentity, verdict, countDistinct } from './report/json.js'
+import { scopeOf } from './report/html.js'
+
+const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
+
+export function reportsConfig(env = process.env) {
+  const file = join(homedir(), '.config', 'qc', 'reports.json')
+  const fromFile = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {}
+  const cfg = {
+    url: env.QC_REPORTS_URL || fromFile.url,
+    user: env.QC_REPORTS_USER || fromFile.user,
+    appPassword: env.QC_REPORTS_APP_PASSWORD || fromFile.appPassword,
+  }
+  if (!cfg.url || !cfg.user || !cfg.appPassword) {
+    throw new Error(`нет доступа к сайту отчётов: заполните ${file} ({"url","user","appPassword"}) или QC_REPORTS_URL/USER/APP_PASSWORD`)
+  }
+  return { ...cfg, url: cfg.url.replace(/\/+$/, '') }
+}
+
+// One entry per distinct defect, every page it is on with its `where`.
+export function buildPayload(run) {
+  const { input, kept, rejected, manual, ids, review, dir } = run
+  const groups = new Map()
+  for (const f of [...kept, ...rejected]) {
+    const identity = defectIdentity(f)
+    if (!groups.has(identity)) {
+      groups.set(identity, {
+        code: f.engine === 'claude' ? f.id : ids[identity], identity, rule: f.rule, title: f.title,
+        severity: f.severity, confidence: f.confidence || 'high', engine: f.engine || 'static', check: f.check || '',
+        found: f.found ?? '', expected: f.expected ?? '', selector: f.selector ?? '', review: f.review || null,
+        zones: new Set(), region: f.region || null, pages: new Map(), breakpoints: new Set(), shots: new Set(),
+      })
+    }
+    const g = groups.get(identity)
+    if (f.zone) g.zones.add(f.zone)
+    if (f.page && !g.pages.has(f.page)) g.pages.set(f.page, f.where || null)
+    if (f.breakpoint != null) g.breakpoints.add(f.breakpoint)
+    if (f.shot && existsSync(f.shot)) g.shots.add(f.shot)
+  }
+  const files = new Map()
+  const defects = [...groups.values()].filter(g => g.code).map(g => {
+    const pages = [...g.pages.keys()]
+    for (const s of g.shots) files.set(basename(s), s)
+    return {
+      code: g.code, identity: g.identity, rule: g.rule, title: g.title, severity: g.severity, confidence: g.confidence,
+      engine: g.engine, check: g.check, found: g.found, expected: g.expected, selector: g.selector, review: g.review,
+      scope: scopeOf({ zones: g.zones, pages, region: g.region }, input.pages),
+      pages: pages.map(url => ({ url, where: g.pages.get(url) })), page_count: pages.length,
+      breakpoints: [...g.breakpoints].sort((a, b) => a - b), evidence: [...g.shots].map(s => basename(s)),
+    }
+  })
+  const checks = manual.checks.map(c => {
+    const evidence = (c.shots || []).map(src => basename(src))
+    for (const name of evidence) files.set(name, join(dir, 'visual', name))
+    return { check: c.check, page: c.page, width: c.width, status: c.status, checked: c.checked, evidence }
+  })
+  const solid = kept.filter(f => f.confidence !== 'heuristic')
+  return {
+    payload: {
+      host: input.host, ran_at: input.ranAt || Date.now(), env: input.env, env_reason: input.envReason,
+      pages: input.pages, verdict: verdict(kept), about: review.summary || '', engine_version: VERSION,
+      stats: {
+        distinct: countDistinct(solid), heuristics: countDistinct(kept.filter(f => f.confidence === 'heuristic')),
+        diff: input.diff ? { added: input.diff.added?.length ?? 0, fixed: input.diff.fixed?.length ?? 0, remaining: input.diff.remaining?.length ?? 0 } : null,
+        browserCoverage: input.browserCoverage || null, rejected: new Set(rejected.map(defectIdentity)).size,
+      },
+      defects, manual: checks,
+    },
+    files,
+  }
+}
+
+async function call(cfg, method, path, body, fetchImpl) {
+  const res = await fetchImpl(`${cfg.url}/wp-json/qc-reports/v1${path}`, {
+    method,
+    headers: {
+      Authorization: 'Basic ' + Buffer.from(`${cfg.user}:${cfg.appPassword}`).toString('base64'),
+      'Content-Type': 'application/json',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  const text = await res.text()
+  let json = null
+  try { json = JSON.parse(text) } catch { /* not JSON: an error page */ }
+  if (!res.ok) throw new Error(`${method} ${path}: HTTP ${res.status} ${json?.message || text.slice(0, 160)}`)
+  return json
+}
+
+export async function push(host, { fetchImpl = fetch, env = process.env } = {}) {
+  const cfg = reportsConfig(env)
+  const { payload, files } = buildPayload(reviewedRun(host))
+  const saved = await call(cfg, 'POST', '/runs', payload, fetchImpl)
+  const failed = []
+  for (const [name, path] of files) {
+    try {
+      await call(cfg, 'POST', `/runs/${saved.run_key}/evidence`, { name, data: readFileSync(path).toString('base64') }, fetchImpl)
+    } catch (e) {
+      failed.push({ name, error: e.message })
+    }
+  }
+  return {
+    host, url: saved.url, runKey: saved.run_key, defects: saved.defects, manual: saved.manual,
+    evidence: files.size - failed.length, evidenceFailed: failed,
+  }
+}

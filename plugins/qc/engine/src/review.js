@@ -139,9 +139,9 @@ export function listFindings(host) {
   return { runDir: dir, profile, defects: defects.map(({ identity, ...d }) => (VERIFY[d.rule] && d.confidence === 'heuristic' ? { ...d, verify: VERIFY[d.rule] } : d)) }
 }
 
-export function applyReview(host, reviewPath) {
-  const { dir, findings, input } = runOf(host)
-  const review = JSON.parse(readFileSync(reviewPath, 'utf8'))
+// The run's findings split by Claude's verdicts: kept (with notes, plus the
+// manual-check findings), rejected (false positives), and the manual checks.
+function sortByReview(dir, findings, review) {
   const ids = existsSync(join(dir, 'distinct.json')) ? JSON.parse(readFileSync(join(dir, 'distinct.json'), 'utf8')) : []
   const identityOf = new Map(ids.map(x => [x.id, x.identity]))
   const byIdentity = new Map()
@@ -160,6 +160,20 @@ export function applyReview(host, reviewPath) {
   }
   const manual = manualOf(review, dir)
   kept.push(...manual.findings)
+  return { kept, rejected, manual, byIdentity }
+}
+
+// The latest run as Claude left it (review.json, if `qc review` ran), for `qc push`.
+export function reviewedRun(host) {
+  const { dir, findings, input } = runOf(host)
+  const review = existsSync(join(dir, 'review.json')) ? JSON.parse(readFileSync(join(dir, 'review.json'), 'utf8')) : { items: [] }
+  return { dir, input, findings, review, ids: idsFor(findings, input.pages), ...sortByReview(dir, findings, review) }
+}
+
+export function applyReview(host, reviewPath) {
+  const { dir, findings, input } = runOf(host)
+  const review = JSON.parse(readFileSync(reviewPath, 'utf8'))
+  const { kept, rejected, manual, byIdentity } = sortByReview(dir, findings, review)
   const html = renderReport({ ...input, findings: kept, rejected, siteSummary: review.summary || null, manualChecks: manual.checks, ids: idsFor(findings, input.pages) })
   writeFileSync(join(dir, 'report.html'), html)
   writeFileSync(join(dir, 'review.json'), JSON.stringify(review, null, 2))

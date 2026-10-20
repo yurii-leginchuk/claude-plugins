@@ -178,6 +178,13 @@ the pages; no width; a defect may name several `pages`). Each check allows its o
 verdict and render in the «Ручные проверки Claude» block. `qc findings` adds a `verify` line to
 heuristics a real browser settles (E1, F12, J3, F1, F4, X1, B6, C2).
 
+## QC Reports site
+
+`qc push <host>` sends the latest run's reviewed results (defects with ids, pages and `where`,
+Claude's verdicts, manual checks, evidence pictures) to the QC Reports WordPress plugin over its
+REST API (`/wp-json/qc-reports/v1/runs`, Application Password from `~/.config/qc/reports.json` or
+`QC_REPORTS_URL/USER/APP_PASSWORD`) and prints the public report URL.
+
 ## Cache
 
 ```bash

@@ -54,6 +54,7 @@ qc browse <host|url> [--breakpoints a,b] [--sweep step|0] [--pages n] [--force] 
   this is NOT the same as audit's --only/--skip, which control which rules execute
 qc findings <host>                 distinct defects of the latest run with ids, for review
 qc review <host> <review.json>     re-render the latest report with Claude's verdicts
+qc push <host>                     send the latest run's results to the QC Reports site (~/.config/qc/reports.json)
 qc cache list
 qc cache clear <host> | --all`
 
@@ -1003,6 +1004,12 @@ async function main() {
     if (cmd === 'review') {
       if (!args[0] || !args[1]) throw new Error('укажите хост и файл ревью: qc review <host> <review.json>')
       console.log(JSON.stringify(applyReview(resolveHostInput(args[0]), args[1]), null, 2))
+      return
+    }
+    if (cmd === 'push') {
+      if (!args[0]) throw new Error('укажите хост: qc push <host>')
+      const { push } = await import('./push.js')
+      console.log(JSON.stringify(await push(resolveHostInput(args[0])), null, 2))
       return
     }
     if (cmd === 'cache') {
