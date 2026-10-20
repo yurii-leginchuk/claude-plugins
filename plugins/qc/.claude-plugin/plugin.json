@@ -1,6 +1,6 @@
 {
   "name": "qc",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "QC of WordPress + Elementor + Gravity Forms sites: static audit (/qc-site), browser pass with screenshots and visual checks (/qc-browse), and cache management (/qc-cache). Publishes rule-grouped HTML reports.",
   "author": {
     "name": "Yurii Leginchuk",
