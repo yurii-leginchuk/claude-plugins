@@ -185,6 +185,9 @@ const MUST_BE_SILENT = {
   H17: 'not the homepage, and the brand has no other spellings here',
   H16: 'one page cannot contradict another',
   E17: 'every CTA leads where its text says',
+  H6: 'no placeholder image, copy-doc marker or schema placeholder on a finished page',
+  K17: 'a service page, not a post signed by a service account',
+  I22: 'no link to a working copy, and the fixture is not the home page',
 }
 
 for (const [id, why] of Object.entries(MUST_BE_SILENT)) {

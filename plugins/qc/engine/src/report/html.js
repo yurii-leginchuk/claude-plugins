@@ -92,7 +92,79 @@ border-radius:0 8px 8px 0;font-size:13px;color:var(--mut);margin:12px 0}
 table{width:100%;border-collapse:collapse;font-size:13px}
 .scroll{overflow-x:auto}
 th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--line)}
+.vis-page{border-top:1px solid var(--line);padding:12px 0}
+.vis-page .kv{margin:0 0 8px}
+.strip{display:flex;gap:12px;overflow-x:auto;padding-bottom:6px;align-items:flex-start}
+.thumb{flex:none;margin:0;font-size:12px;color:var(--mut);text-align:center}
+.thumb button{display:block;padding:0;border:1px solid var(--line);border-radius:6px;background:var(--card);
+cursor:zoom-in;overflow:hidden;height:280px}
+.thumb button:focus-visible{outline:2px solid var(--maj);outline-offset:2px}
+.thumb img{display:block;width:100%;height:100%;object-fit:cover;object-position:top}
+.menu-row{border-top:1px solid var(--line);padding:12px 0}
+.chip.ok{color:#2e7d4f}
+dialog.lb{max-width:96vw;max-height:94vh;padding:0;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+dialog.lb::backdrop{background:rgba(0,0,0,.6)}
+dialog.lb .bar{position:sticky;top:0;display:flex;justify-content:space-between;gap:12px;padding:8px 12px;
+background:var(--card);border-bottom:1px solid var(--line);font-size:13px}
+dialog.lb img{display:block;max-width:100%;margin:0 auto}
 `
+
+// Thumbnail width per viewport width: a phone shot stays narrow, a desktop
+// one wide, all at the same height so a row reads as one strip.
+const thumbWidth = (w) => Math.round(Math.min(320, Math.max(110, Number(w) / 4.5)))
+const thumb = (src, label, w) => `<figure class="thumb"><button type="button" data-full="${esc(src)}" data-label="${esc(label)}" style="width:${thumbWidth(w)}px" aria-label="Открыть ${esc(label)}"><img loading="lazy" src="${esc(src)}" alt="${esc(label)}"></button><figcaption>${esc(label)}</figcaption></figure>`
+
+// Every page at every width, defects or not -- what QA scrolls through by eye.
+function renderVisual(visual) {
+  if (!Array.isArray(visual) || !visual.length) {
+    return '<h2>Визуальная проверка</h2><p class="sub">Скриншотов страниц нет — браузерная проверка не снимала страницы (запустите <code>qc browse</code> этой версией).</p>'
+  }
+  return `<h2>Визуальная проверка — все страницы на всех ширинах</h2>
+<div class="note-box heuristic">Скриншоты всей страницы на каждой ширине, даже там, где дефектов не найдено, — чтобы глазами пролистать сайт. Нажмите на миниатюру, чтобы открыть в полный размер.</div>
+${visual.map(v => `<div class="vis-page"><p class="kv"><code>${esc(v.url)}</code></p><div class="strip">${v.shots.map(s =>
+    thumb(s.src, `${s.width} px${s.cut ? ' (обрезано)' : ''}`, s.width)).join('')}</div></div>`).join('')}`
+}
+
+const MANUAL_STATUS = { ok: ['ok', 'в порядке'], defect: ['crit', 'есть дефекты'], skipped: ['note', 'не проверено'] }
+const MANUAL_SECTIONS = [
+  ['menu', 'Мобильное меню', 'открывается ли бургер, на всю ли ширину, не выходит ли за край, видны ли все пункты, раскрываются ли подменю, закрывается ли, совпадают ли ссылки с десктопным меню'],
+  ['popup', 'Попапы', 'открывается ли по кнопке, помещается ли в экран, закрывается ли крестиком, кликом мимо и Esc'],
+  ['form', 'Формы', 'обязательные поля и *, тексты ошибок, маска телефона, кнопка после ошибки, раскладка на мобильном (без отправки)'],
+  ['faq', 'FAQ и аккордеоны', 'открывается ли нужный пункт, не ломается ли вёрстка'],
+  ['focus', 'Фокус с клавиатуры', 'виден ли фокус при переходе по Tab, доходит ли он до меню, кнопок и форм, нет ли ловушек'],
+  ['content', 'Противоречия в тексте', 'сроки, цифры, часы, цены и обещания, которые расходятся между страницами'],
+]
+
+// What Claude checked by hand (Playwright, or reading the pages for
+// `content`); the engine only renders what Claude recorded.
+function renderManual(manualChecks, claudeFindings) {
+  const checks = Array.isArray(manualChecks) ? manualChecks : []
+  const done = MANUAL_SECTIONS.filter(([k]) => checks.some(c => c.check === k))
+  const missing = MANUAL_SECTIONS.filter(([k]) => !checks.some(c => c.check === k))
+  const head = `<h2>Ручные проверки Claude (Playwright и чтение страниц)</h2>
+<div class="note-box heuristic">Это то, что движок не умеет: нажать, навести, пройти Tab, понять смысл текста. Claude проверил вручную; найденные дефекты учтены в вердикте.</div>`
+  const body = done.map(([k, title, what]) => `<h3>${esc(title)}</h3><p class="sub">${esc(what)}</p>${checks.filter(c => c.check === k).map(m => {
+    const [cls, label] = MANUAL_STATUS[m.status] || MANUAL_STATUS.skipped
+    // One block per defect, with every page it names (a content defect spans several).
+    const defs = []
+    for (const f of claudeFindings.filter(f => (m.index != null ? f.manual === m.index : f.check === k && f.page === m.page && (f.breakpoint ?? null) === (m.width ?? null)))) {
+      const d = defs.find(x => x.rule === f.rule && x.found === f.found)
+      if (d) d.pages.push(f.page)
+      else defs.push({ ...f, pages: [f.page] })
+    }
+    return `<div class="menu-row"><p class="kv"><span class="chip ${cls}">${esc(label)}</span>${m.width != null ? ` <b>${esc(m.width)} px</b> ·` : ''} <code>${esc(m.page)}</code></p>
+${m.checked ? `<p class="kv">${esc(m.checked)}</p>` : ''}
+${defs.map(f => `<div class="defect"><p class="kv"><span class="chip ${CHIP[f.severity] || 'note'}">${esc(f.severity)}</span> ${esc(f.rule)} · ${esc(f.title)}</p><p class="kv">найдено: ${esc(f.found)}</p>${f.where ? `<p class="kv">где: ${esc(f.where)}</p>` : ''}<p class="kv">ожидается: ${esc(f.expected)}</p>${f.pages.length > 1 ? `<ul class="pages">${f.pages.map(p => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}</div>`).join('')}
+${(m.shots || []).length ? `<div class="strip">${m.shots.map((src, i) => thumb(src, `${m.width != null ? `${m.width} px · ` : ''}${i + 1}`, m.width || 768)).join('')}</div>` : ''}</div>`
+  }).join('')}`).join('')
+  const rest = missing.length ? `<p class="sub">Не проверялось вручную: ${missing.map(([, t]) => esc(t)).join(', ')}.</p>` : ''
+  return head + body + rest
+}
+
+const LIGHTBOX = `<dialog class="lb" id="qc-lb"><div class="bar"><span id="qc-lb-t"></span><button type="button" id="qc-lb-x">Закрыть</button></div><img id="qc-lb-i" alt=""></dialog>
+<script>(()=>{const d=document.getElementById('qc-lb');if(!d||!d.showModal)return;const i=document.getElementById('qc-lb-i'),t=document.getElementById('qc-lb-t');
+document.addEventListener('click',e=>{const b=e.target.closest('[data-full]');if(!b)return;i.src=b.dataset.full;i.alt=b.dataset.label;t.textContent=b.dataset.label;d.showModal()});
+document.getElementById('qc-lb-x').onclick=()=>d.close();d.addEventListener('click',e=>{if(e.target===d)d.close()})})()</script>`
 
 // One distinct defect (rule + selector + normalized `found`, per
 // defectIdentity) with its own found/expected/selector and its own collapsed
@@ -283,6 +355,8 @@ export function renderReport({
   browserCoverage,
   rejected = [],
   siteSummary = null,
+  visual = [],
+  manualChecks = [],
 }) {
   // Fail fast on malformed findings, matching the array contract rollUp/diffRuns
   // already enforce (src/report/json.js). Coercing bad input to [] here would
@@ -300,8 +374,12 @@ export function renderReport({
   // Static (markup) and browser (rendered page) findings are fixed by
   // different people and checked differently, so each gets its own part.
   const isBrowser = (f) => f.engine === 'browser'
-  const groups = rollUp(solid.filter(f => !isBrowser(f)))
-  const heur = rollUp(list.filter(f => f.confidence === 'heuristic' && !isBrowser(f)))
+  // Claude's own Playwright findings (the mobile menu) render in their block.
+  const isClaude = (f) => f.engine === 'claude'
+  const claudeFindings = list.filter(isClaude)
+  const hasShots = (Array.isArray(visual) && visual.length > 0) || (Array.isArray(manualChecks) && manualChecks.some(m => (m.shots || []).length))
+  const groups = rollUp(solid.filter(f => !isBrowser(f) && !isClaude(f)))
+  const heur = rollUp(list.filter(f => f.confidence === 'heuristic' && !isBrowser(f) && !isClaude(f)))
   const bGroups = rollUp(solid.filter(isBrowser))
   const bHeur = rollUp(list.filter(f => f.confidence === 'heuristic' && isBrowser(f)))
   const v = verdict(list)
@@ -485,6 +563,8 @@ ${oversizeBytes != null ? `<div class="note-box">Отчёт превышает �
 ${groupsHtml}
 ${heurHtml}
 ${browserHtml}
+${renderManual(manualChecks, claudeFindings)}
+${renderVisual(visual)}
 ${rejectedHtml}
 <h2>Страницы</h2>
 ${uniquePages.length ? `<div class="scroll"><table><tr><th>Страница</th><th>Находок</th></tr>
@@ -492,7 +572,7 @@ ${shownPages.map(p =>
   `<tr><td>${esc(p)}</td><td>${list.filter(f => f.page === p).length}</td></tr>`).join('')}
 </table></div>
 ${hiddenPageCount > 0 ? `<p class="kv">…и ещё ${hiddenPageCount} страниц не показано (ограничение индекса)</p>` : ''}` : '<p class="sub">Нет страниц с находками.</p>'}
-</div></body></html>`
+</div>${hasShots ? LIGHTBOX : ''}</body></html>`
     return { html, candidates }
   }
 

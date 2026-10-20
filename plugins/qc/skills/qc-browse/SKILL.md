@@ -1,6 +1,6 @@
 ---
 name: qc-browse
-description: Run the browser QC pass (visual/interactive checks — horizontal scroll, overflow, overlapping elements, hover/focus, cursor, contrast, a 1920→320 resize sweep, console errors, broken images) over a site that `/qc-site` has already audited, then republish the report with browser findings, breakpoints, and screenshots merged in. Use when the user says "qc browse", "проверь визуально", "прогони браузерную проверку", "сделай скриншоты дефектов", "проверь адаптивность", "browser pass", or asks for visual/responsive checks on top of an existing QC audit.
+description: Run the browser QC pass (visual/interactive checks — horizontal scroll, overflow, overlapping elements, hover/focus, cursor, contrast, a 1920→320 resize sweep, console errors, broken images, full-page screenshots of every page at every width, and hand checks in Playwright of the mobile menu, popups, forms, FAQ and keyboard focus) over a site that `/qc-site` has already audited, then republish the report with browser findings, breakpoints, and screenshots merged in. Use when the user says "qc browse", "проверь визуально", "прогони браузерную проверку", "сделай скриншоты дефектов", "проверь адаптивность", "browser pass", or asks for visual/responsive checks on top of an existing QC audit.
 argument-hint: <host|site-url> [--breakpoints a,b,c] [--pages n] [--force] [--headed]
 ---
 
@@ -70,7 +70,10 @@ refuses to run and says so; tell the user to run `/qc-site` first, don't try to 
      *printed in this command's own summary*. They do **not** control what gets recorded to
      `browser.jsonl` or what a later `/qc-site` report will include. If the user passed either flag,
      say this explicitly so they don't assume a rule was skipped entirely.
-6. **A successful browser pass does not itself update the report.** `qc browse` only records
+6. **Do the manual checks yourself, in Playwright.** The engine never clicks, hovers or tabs, so
+   the mobile menu, popups, forms, FAQ accordions and keyboard focus are yours — follow «Manual
+   checks» below and keep each result for the review file (`manual`), screenshots included.
+7. **A successful browser pass does not itself update the report.** `qc browse` only records
    findings to `browser.jsonl` — it does not render or publish HTML. To see the merged report, run
    `/qc-site`'s audit command again on the same host (no need for `--fresh`; the browser findings
    come from `browser.jsonl`, independent of the static snapshot's cache age):
@@ -79,10 +82,11 @@ refuses to run and says so; tell the user to run `/qc-site` first, don't try to 
    node <plugin-root>/engine/src/cli.js audit "<site-url>"
    ```
 
-   Read `reportPath` from that summary and publish it with the Artifact tool (favicon `✅`, title
-   `QC · <host>`), same as `/qc-site` does. **Load the `artifact-design` skill first** — mandatory
+   Then run `qc findings` / `qc review` as `/qc-site` step 5 describes, with your `manual` entries in
+   the review file — that is what puts the manual-checks block and its screenshots into the report. Publish
+   it as «Publishing the report» below says. **Load the `artifact-design` skill first** — mandatory
    before publishing artifact HTML.
-7. Summarise in chat, in Russian:
+8. Summarise in chat, in Russian:
    - Coverage first, plainly: "проверено N из M страниц" — and if `pagesDone < pagesTotal` or
      `stoppedEarly`, lead with that, not with the findings. A partial pass must never be presented
      as if it covered the whole site.
@@ -98,12 +102,118 @@ refuses to run and says so; tell the user to run `/qc-site` first, don't try to 
      only captured once per distinct defect (at the first breakpoint it was seen), so a crop showing
      360px doesn't mean the defect is absent at 1440px if the row also lists 1440 among its
      breakpoints.
+   - The manual checks: for each (menu, popup, form, FAQ, focus) the pages × widths you checked,
+     what was fine, the defects you recorded; name the ones you did not get to.
+   - The visual block: `visual.pages` pages with `visual.files` full-page screenshots (every page
+     at every width, defects or not) — say they are in the report for a look by eye.
    - The Artifact link and the run directory (`runDir`, from the republished audit).
+
+## Manual checks (Claude, Playwright MCP)
+
+The engine records full-page screenshots of every page at every width, but it never clicks, hovers
+or presses a key. You do, with the `mcp__playwright__*` tools (load them with ToolSearch in one
+call: navigate, resize, snapshot, click, hover, type, fill_form, evaluate, take_screenshot,
+press_key). These are template checks: one page per template, not every page.
+
+Screenshots: give `browser_take_screenshot` an absolute `filename` under `~/.qc-cache/<host>/manual/`
+(the Playwright MCP refuses paths outside the home directory, the scratchpad included) and list
+the same absolute paths in `shots`. Add `?qc=<random>` to every URL so a cached HTML does not
+answer.
+
+Every check is recorded as one entry per page × width in the review file's `manual` array:
+
+```json
+{ "check": "menu|popup|form|faq|focus|content", "page": "https://site/", "width": 360,
+  "status": "ok|defect|skipped", "checked": "что проверено, с цифрами",
+  "shots": ["/Users/…/.qc-cache/site/manual/menu-360-open.png"],
+  "defects": [{ "rule": "D2", "severity": "major", "found": "…", "expected": "…", "selector": "…" }] }
+```
+
+`ok` entries go in too — the report shows what was looked at, not only what broke. A check you
+could not do is `skipped` with the reason in `checked`. Each check allows only its own rule codes
+(the engine refuses others): menu D1 C6 C9 D9 D2 B6 · popup K4 C6 D9 J2 B6 · form G2 G3 G5 G6 G7 G11
+G12 G14 J5 · faq F9 C2 J2 · focus J2 J5 · content H16 H8 H3 H12 E17.
+
+### Popups
+
+Every button that opens a popup on the checked pages («Get a Quote Now», a quiz, a booking window),
+at 360 and 1440: it opens (K4 critical if not); fits the screen with its close button visible, no
+horizontal scroll (C6); closes by the cross, by a click outside and by Esc (D9; Esc missing is J2
+minor); the page behind does not scroll while open and comes back after; nothing sticky covers it
+(B6). Screenshot it open at both widths.
+
+### Forms (no submission)
+
+Every distinct form (the popup's, contact, any other), at 360 and 1440, **never submitting real
+data** — the client gets every lead. Submit it empty: every required field shows an error and has
+a `*` (G3); the consent checkbox is required (G2); the email is required (G6); the submit button is
+still visible after the error (G7). Type letters into the phone: they must not stay (G5). A focused
+field is highlighted (G12). On 360 fields are one column and not cut off (G11). If a test
+submission is the only way to check G14, ask the user first. Screenshot the error state.
+
+### FAQ and accordions
+
+One page per template that has them, at 360: open the second item — it opens the second, not
+another (F9); the open item's text fits (C2); it opens by Enter/Space from the keyboard (J2 minor).
+
+### Keyboard focus
+
+One page (home), at 1440 and 360: press Tab from the top through header, the first CTA, one form —
+focus is always visible (J5 major if it disappears), reaches the menu and the burger (J2), opens
+the menu with Enter, and is not trapped. Screenshot a focused element.
+
+### Mobile menu
+
+- **Pages:** the home page plus one page of every other template the profile shows (a service, a
+  location, a post, contact). When the audit summary's browser `regions` show the header container
+  on every page, the home page alone is enough — say so in `checked`; if headers differ (another
+  header template, a landing page), check each.
+- **Locating things:** several `.elementor-menu-toggle` usually exist (footer menus have them too);
+  scope selectors to the header widget, and add `>> nth=0` where Elementor/ECM renders two
+  `.sub-arrow` in one item.
+- **Widths:** every browse width at which the header shows a burger instead of the menu (usually
+  360 and 768, often 1024). Add `?qc=<random>` to the URL so a cached HTML does not answer.
+- **First, the desktop menu** (widest width): one `browser_evaluate` collecting every `href` and
+  text inside the header navigation, submenus included (hidden ones too) — that is the list to
+  compare with.
+- **At each mobile width:**
+  1. `browser_resize` (width × 900), navigate, `browser_take_screenshot` of the closed header.
+  2. Tap the burger (`browser_snapshot` → `browser_click` on its ref). Screenshot the open menu.
+  3. One `browser_evaluate` on the open panel: its box against `innerWidth` (full width? past the
+     left/right edge, by how many px?), `documentElement.scrollWidth` against `clientWidth`, the
+     panel's links (href + text), the last item's bottom against `innerHeight` and whether the panel
+     or the page can scroll to it. If the last item is below the screen, scroll the panel and
+     screenshot its bottom.
+  4. Open every submenu (its arrow, or the parent item): it must expand and not navigate away.
+     Screenshot one expanded submenu.
+  5. Close it (burger again, or the close button): the menu must disappear.
+  6. Compare the panel's links with the desktop list: missing pages and extra ones. A mobile menu
+     built as a separate widget is where items go missing.
+- **Record** `check: "menu"`, e.g. `checked`: «открывается по тапу; 360 из 360 px; за край не
+  выходит; 9 пунктов, последний виден; подменю Services раскрывается; закрывается крестиком;
+  ссылки совпадают с десктопом (11 из 11)». Rules and severities: **D1** the burger opens nothing (critical) or a submenu does not open /
+  taps navigate away (major); **C6** the open menu sticks out of the screen (major); **C9** the last
+  items cannot be reached (major); **D9** the menu does not close (major); **D2** a desktop item is
+  missing on mobile (major), an extra mobile item (minor — skip phone/CTA buttons the desktop header
+  also has). A menu narrower than the screen is not a defect by itself: say it in `checked`, and
+  record it as C6 only when it looks broken (cut text, a strip stuck to the toggle). A sticky bar or
+  widget lying over the open menu is **B6**.
+
+## Publishing the report
+
+The report links its screenshots by relative path (`visual/<file>`), so they are published with it:
+`Artifact` with `file_path` = `reportPath` and `files` = one entry per file in `<runDir>/visual/`
+(`{"visual/<file>": "<runDir>/visual/<file>"}`). Limits per publish: 255 files and 64 MB — over that,
+publish the report with the first batch, then publish the rest to the same `url` in further calls
+(files left out are kept). Sources must sit under the working directory or the scratchpad; if the
+run dir does not, copy `report.html` and `visual/` into the scratchpad first.
 
 ## Rules
 
 - Never re-implement a check yourself, and never look at a screenshot and add your own finding — the
-  engine already decided what counts as a defect. If a rule seems wrong, say so and propose a fix to
+  engine already decided what counts as a defect. The exception is the manual checks above (menu,
+  popups, forms, FAQ, focus), which you do by hand and record only through the review file's
+  `manual`. If a rule seems wrong, say so and propose a fix to
   the rule file; do not paper over it in the summary.
 - Never suggest `--force` to "fix" an interrupted or slow run — that discards real, already-captured
   results (findings and screenshots) for every page already checked. `--force` is only for a

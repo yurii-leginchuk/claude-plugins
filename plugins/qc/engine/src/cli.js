@@ -20,6 +20,7 @@ import { buildProfile } from './lib/profile.js'
 import { SWEEP } from './browser/sweep.js'
 import { listFindings, applyReview } from './review.js'
 import { buildProdCompare, loadProdCompare, saveProdCompare } from './crawl/prod.js'
+import { listWpContent } from './crawl/wp.js'
 import { runStaticRules, allRules } from './rules/index.js'
 import { allBrowserRules } from './rules/browser-index.js'
 import { diffRuns, verdict, countDistinct } from './report/json.js'
@@ -32,9 +33,9 @@ import { resolveBreakpoints } from './browser/breakpoints.js'
 import { proveRegions } from './browser/regions.js'
 import { runBrowserPass } from './browser/run.js'
 import { parse as parseHtml } from 'node-html-parser'
-import { join } from 'node:path'
+import { join, basename } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, copyFileSync, mkdirSync, existsSync, statSync } from 'node:fs'
 import { SNAPSHOT_TTL_MS } from './lib/snapshot-ttl.js'
 
 // How long a saved snapshot is trusted as a stand-in for a live crawl when
@@ -412,6 +413,13 @@ export async function audit(input, flags, { fetchImpl } = {}) {
     known: gbpKnown, ...(fetchImpl ? { fetchImpl } : {}),
   })
 
+  // What WordPress lists as published (I22: working copies outside the
+  // sitemap). Kept in the snapshot meta, so a cached run asks once.
+  let wpContent = cached ? cached.snap.meta.wpContent : undefined
+  if (wpContent === undefined) {
+    wpContent = await listWpContent(new URL(pages[0].url).origin).catch(() => null)
+  }
+
   // Dev vs live (K13): only for a dev audit that knows production. Cached
   // next to the snapshot on its own clock, so a cached dev run does not
   // re-fetch the live site every time; --fresh rebuilds it.
@@ -427,7 +435,7 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   }
 
   const site = {
-    host, env, prodHost, pages, index: buildIndex(pages), linkStatus, facts, gbp, source, prod,
+    host, env, prodHost, pages, index: buildIndex(pages), linkStatus, facts, gbp, source, prod, wpContent,
   }
   const staticFindings = await runStaticRules(pages, site, { only: onlyIds, skip: skipIds })
 
@@ -526,6 +534,7 @@ export async function audit(input, flags, { fetchImpl } = {}) {
         // Network errors are not kept: a timeout must be retried next run,
         // not remembered as "this link opens nothing".
         gbp: [...gbp.values()].filter(g => g.status !== 0),
+        wpContent,
         pageCount: pages.length, pagesRequested, pagesFailed,
         failedUrls: failedUrls.slice(0, 50),
       },
@@ -534,12 +543,34 @@ export async function audit(input, flags, { fetchImpl } = {}) {
     })
   }
 
+  // Full-page screenshots of every page (browse, pageshot.js), in crawl
+  // order; copied next to the report so it and its pictures publish together.
+  const rowByUrl = new Map(browserRows.filter(r => !r.error).map(r => [r.url, r]))
+  const visualFiles = []
+  const visual = pages.map(p => rowByUrl.get(p.url)).filter(r => r && Array.isArray(r.shots) && r.shots.length)
+    .map(r => ({
+      url: r.url,
+      shots: r.shots.filter(s => s.path && existsSync(s.path)).map(s => {
+        visualFiles.push(s.path)
+        return { width: s.width, src: `visual/${basename(s.path)}`, cut: Boolean(s.cut) }
+      }),
+    }))
+    .filter(v => v.shots.length)
+
   const reportInput = {
     host, env, envReason: reason, pages: pages.length, diff,
-    snapshotAgeDays: cacheAgeDays, source, sitemapStatus, browserCoverage,
+    snapshotAgeDays: cacheAgeDays, source, sitemapStatus, browserCoverage, visual,
   }
   const html = renderReport({ ...reportInput, findings })
   const runDir = saveRun(host, findings, html, ranNow)
+  let visualBytes = 0
+  if (visualFiles.length) {
+    mkdirSync(join(runDir, 'visual'), { recursive: true })
+    for (const f of visualFiles) {
+      copyFileSync(f, join(runDir, 'visual', basename(f)))
+      visualBytes += statSync(f).size
+    }
+  }
   // For `qc review`, which re-renders this run with Claude's verdicts, and
   // for Claude, who reads the profile to describe the site.
   const profile = buildProfile(site)
@@ -614,6 +645,9 @@ export async function audit(input, flags, { fetchImpl } = {}) {
     // a caller reading the JSON summary alone (never opening the HTML) sees
     // the same distinction the report states in its header.
     browserCoverage,
+    // Page screenshots sit in <runDir>/visual/ and the report links them by
+    // relative path: publish them alongside report.html.
+    visual: { pages: visual.length, files: visualFiles.length, bytes: visualBytes, dir: visualFiles.length ? join(runDir, 'visual') : null },
     runDir, reportPath: join(runDir, 'report.html'),
   }
 }

@@ -129,6 +129,10 @@ Cross-page checks that need no reference data (most are heuristic, see each rule
 | H16 | contradictions across pages: years in business, "N services/locations" vs real counts, 24/7 vs stated hours, prices, staff roles |
 | E17 | a CTA whose text and target disagree (Call without tel:, Book to a page without a form, Directions not to Maps); "see our X page" with no such page |
 | K13 | dev vs live (dev audits with `--prod` or a sheet's Dev Link): menu and footer items, live pages that 404 on dev, lost schema types, headings, title/description, logo |
+| H6 | a placeholder that reached the page: a stand-in image (alt or file name), a copy-doc marker («[LINK PLACEHOLDER]», «Insert … Here»), the same in title, description or schema |
+| K17 | a post signed by a service account («PA Dev», admin, test) in the byline, the author archive link or the schema |
+| I22 | a working copy (`-dev`, `-test`, `-copy`, `-old`, `elementor-123`) published: from WordPress's REST list of pages and posts (`wp-json/wp/v2`, kept in the snapshot meta as `wpContent`, `null` when closed), the crawl, and links to one |
+| E13 | (also) a site path or own URL typed into the copy instead of linked; worse when no such page exists |
 
 The profile (`profile.json` in the run directory: brand, services and locations — from fixed
 section roots and from header-menu groups with ≥3 children — phones, emails, forms with their
@@ -158,6 +162,21 @@ facts" from "had no facts". Schema checks need `jsonLdRaw`, which pages cached b
 existed do not have: run with `--fresh` once after upgrading (the same holds for E9's map
 iframes, `mapEmbeds`). Resolved GBP short links are kept in the snapshot's `meta.gbp`; a cached
 run only resolves links it has not seen, such as new entries in the facts file.
+
+## Screenshots and Claude's manual checks
+
+`qc browse` saves a full-page JPEG of every page at every width (`~/.qc-cache/<host>/pages/`,
+cut at 12000 px). `qc audit` copies them into `<runDir>/visual/` and the report's «Визуальная
+проверка» block links them by relative path — publish them with `report.html`. The summary's
+`visual` says how many pages and files.
+
+The engine does not click. `qc review` accepts Claude's manual checks in the review file:
+`manual: [{ check, page, width, status, checked, shots, defects }]`, where `check` is `menu`,
+`popup`, `form`, `faq`, `focus` (done in Playwright) or `content` (contradictions found by reading
+the pages; no width; a defect may name several `pages`). Each check allows its own taxonomy codes
+(`MANUAL_CHECKS` in `review.js`); shots are copied next to the report, defects count toward the
+verdict and render in the «Ручные проверки Claude» block. `qc findings` adds a `verify` line to
+heuristics a real browser settles (E1, F12, J3, F1, F4, X1, B6, C2).
 
 ## Cache
 

@@ -23,6 +23,7 @@
 // and re-registers its console/pageerror/request listeners on every call,
 // so re-navigating the same page to the same url for a new width is safe.
 import { sweepPage } from './sweep.js'
+import { capturePage } from './pageshot.js'
 import { launchBrowser, preparePage, PAGE_TIMEOUT_MS } from './launch.js'
 import { buildBundle } from './bundle.js'
 import { proveRegions, regionOf } from './regions.js'
@@ -89,7 +90,7 @@ const errorText = (e) => {
 // separately-reported outcomes instead of collapsing a minor gap into a
 // full-page failure that would trigger a wasted retry, or hiding it inside
 // a silently-incomplete success.
-async function attemptPage({ newPage, url, widths, timeout, bundle, regions, host, capturedIdentities, sweep }) {
+async function attemptPage({ newPage, url, widths, timeout, bundle, regions, host, capturedIdentities, sweep, pageShots = true }) {
   let page
   try {
     page = await newPage()
@@ -99,6 +100,7 @@ async function attemptPage({ newPage, url, widths, timeout, bundle, regions, hos
 
   const findings = []
   const widthsFailed = []
+  const shots = []
   try {
     for (let i = 0; i < widths.length; i++) {
       const width = widths[i]
@@ -180,6 +182,11 @@ async function attemptPage({ newPage, url, widths, timeout, bundle, regions, hos
 
           findings.push(f)
         }
+        // A picture of every page at every width, defects or not, for the
+        // report's visual block.
+        if (pageShots) {
+          try { shots.push({ width, ...await capturePage(page, { host, url, width }) }) } catch { /* never fails the page */ }
+        }
       } catch (e) {
         if (i === 0) return { ok: false, error: errorText(e) }
         widthsFailed.push({ width, error: errorText(e) })
@@ -196,7 +203,7 @@ async function attemptPage({ newPage, url, widths, timeout, bundle, regions, hos
   } finally {
     await page.close().catch(() => {})
   }
-  return { ok: true, findings, widthsFailed }
+  return { ok: true, findings, widthsFailed, shots }
 }
 
 export async function runBrowserPass({ host, pages, widths, opts = {} }) {
@@ -227,6 +234,8 @@ export async function runBrowserPass({ host, pages, widths, opts = {} }) {
     launchBrowserImpl = launchBrowser,
     // Resize sweep (sweep.js): {from, to, step} or null to skip it.
     sweep = null,
+    // Full-page screenshot per page and width (pageshot.js).
+    pageShots = true,
   } = opts
 
   if (force) clearBrowserResults(host)
@@ -328,7 +337,7 @@ export async function runBrowserPass({ host, pages, widths, opts = {} }) {
         }
       }
 
-      const pageArgs = { newPage, url, widths, timeout, bundle, regions, host, capturedIdentities, sweep }
+      const pageArgs = { newPage, url, widths, timeout, bundle, regions, host, capturedIdentities, sweep, pageShots }
       let result = await attemptPage(pageArgs)
       if (!result.ok) {
         // Failure policy: 45s per page, one retry. A dead-on-arrival
@@ -341,7 +350,7 @@ export async function runBrowserPass({ host, pages, widths, opts = {} }) {
       if (result.ok) {
         consecutive = 0
         summary.pagesDone++
-        row = { url, at: Date.now(), widths, findings: result.findings, error: null, widthsFailed: result.widthsFailed }
+        row = { url, at: Date.now(), widths, findings: result.findings, error: null, widthsFailed: result.widthsFailed, shots: result.shots }
         if (result.widthsFailed.length) {
           summary.pagesPartial++
           summary.partialUrls.push({ url, widthsFailed: result.widthsFailed })

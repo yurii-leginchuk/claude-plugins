@@ -366,3 +366,39 @@ test('stale browser rows are called out as stale, not as a partial pass to resum
   assert.match(html, /Браузерная проверка устарела для 2 стр\./)
   assert.doesNotMatch(html, /выполнена частично/)
 })
+
+test('the visual block shows every page at every width, defects or not, with a lightbox', () => {
+  const html = renderReport({
+    ...base, findings: [],
+    visual: [{ url: 'https://ex.com/clean/', shots: [{ width: 360, src: 'visual/a.jpg' }, { width: 1440, src: 'visual/b.jpg', cut: true }] }],
+  })
+  assert.match(html, /Визуальная проверка/)
+  assert.match(html, /https:\/\/ex\.com\/clean\//)
+  assert.match(html, /data-full="visual\/a\.jpg"/)
+  assert.match(html, /1440 px \(обрезано\)/)
+  assert.match(html, /id="qc-lb"/)
+})
+
+test('without page screenshots or a menu check the report says so', () => {
+  const html = renderReport({ ...base, findings: [] })
+  assert.match(html, /Скриншотов страниц нет/)
+  assert.match(html, /Не проверялось вручную: Мобильное меню, Попапы, Формы, FAQ и аккордеоны, Фокус с клавиатуры, Противоречия в тексте/)
+})
+
+test("Claude's menu defects render in the menu block and count toward the verdict", () => {
+  const d = {
+    rule: 'D2', title: 'Мобильное и десктопное меню расходятся', severity: 'major', confidence: 'high', engine: 'claude', check: 'menu',
+    page: 'https://ex.com/', breakpoint: 360, selector: null, found: 'нет пункта «Blog»', expected: 'тот же набор ссылок',
+  }
+  const html = renderReport({
+    ...base, findings: [d],
+    manualChecks: [{ check: 'menu', page: 'https://ex.com/', width: 360, status: 'defect', checked: 'открывается, на всю ширину', shots: ['visual/menu-0-0.png'] },
+      { check: 'menu', page: 'https://ex.com/', width: 768, status: 'ok', checked: 'всё в порядке', shots: [] }],
+  })
+  assert.doesNotMatch(html, /verdict v-Pass/, 'a menu defect counts')
+  assert.match(html, /нет пункта «Blog»/)
+  assert.match(html, /data-full="visual\/menu-0-0\.png"/)
+  assert.match(html, /в порядке/)
+  assert.doesNotMatch(html.split('Ручные проверки Claude')[0], /нет пункта «Blog»/, 'not repeated in the static groups')
+  assert.match(html, /Не проверялось вручную: Попапы/)
+})

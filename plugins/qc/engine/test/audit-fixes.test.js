@@ -152,6 +152,27 @@ test('qc findings lists distinct defects with ids, qc review moves false positiv
   assert.match(html, /номер верный/)
   assert.match(html, /О сайте:/)
   assert.throws(() => { write(file, JSON.stringify({ items: [{ id: 'D999', verdict: 'confirmed' }] })); applyReview(host, file) }, /нет дефекта D999/)
+
+  // The mobile menu, checked by Claude in Playwright: screenshots are copied
+  // next to the report, a defect counts, a bad rule id is refused.
+  const shot = join(out.runDir, 'menu.png')
+  write(shot, 'png')
+  write(file, JSON.stringify({ items: [], manual: [
+    { check: 'menu', page: 'https://ex.com/', width: 360, status: 'defect', checked: 'открывается', shots: [shot],
+      defects: [{ rule: 'C6', severity: 'major', found: 'меню вылезает справа на 40 px', expected: 'в пределах экрана' }] },
+    { check: 'content', page: 'https://ex.com/', status: 'defect', checked: 'прочитаны 2 страницы',
+      defects: [{ rule: 'H16', severity: 'major', found: 'срок квоты: «under an hour» и «within 48 hours»', expected: 'один срок', pages: ['https://ex.com/', 'https://ex.com/b/'] }] },
+  ], menu: [{ page: 'https://ex.com/', width: 768, status: 'ok', checked: 'в порядке' }] }))
+  const withManual = applyReview(host, file)
+  assert.equal(withManual.manualChecked, 3, 'the older `menu` field is read too')
+  assert.equal(withManual.manualDefects, 3, 'a content defect counts once per page it names')
+  assert.ok(readFileSync(join(out.runDir, 'visual', 'manual-0-0.png')))
+  const manualHtml = readFileSync(withManual.reportPath, 'utf8')
+  assert.match(manualHtml, /меню вылезает справа на 40 px/)
+  assert.match(manualHtml, /Противоречия в тексте/)
+  assert.match(manualHtml, /<li>https:\/\/ex\.com\/b\/<\/li>/, 'a content defect lists every page it names')
+  assert.throws(() => { write(file, JSON.stringify({ manual: [{ check: 'menu', page: 'https://ex.com/', width: 360, status: 'defect', defects: [{ rule: 'H16', severity: 'major', found: 'a', expected: 'b' }] }] })); applyReview(host, file) }, /rule для menu должен быть/)
+  assert.throws(() => { write(file, JSON.stringify({ manual: [{ check: 'popup', page: 'https://ex.com/', status: 'ok' }] })); applyReview(host, file) }, /нужен width/)
 }))
 
 test('scopeOf files chrome and near-every-page defects as global, one section as template', async () => {
