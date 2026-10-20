@@ -72,7 +72,7 @@ test('H14 flags an item most pages list and this one misses, and an item only th
   assert.deepEqual(H14.check(pages[0], { pages }), [])
 })
 
-test('H17 flags a placeholder og:site_name on the homepage and brand variants once each', () => {
+test('H17 flags a placeholder og:site_name on the homepage and an ALL-CAPS brand once', () => {
   const home = page('/', { siteName: 'Site', title: 'Home | Opura', text: 'Why Choose Opura For Office Cleaning. OPURA is here.' })
   const a = page('/a/', { title: 'A | Opura', text: 'Opura Professional Cleaning Services. OPURA again. liberty. Opura’s team. Opura Opura' })
   const site = { pages: [home, a] }
@@ -80,9 +80,8 @@ test('H17 flags a placeholder og:site_name on the homepage and brand variants on
     'og:site_name = “Site”',
     'brand is written as “OPURA”, the main spelling is “Opura”',
   ])
-  assert.deepEqual(H17.check(a, site).map(f => f.found), [
-    'brand is written as “Opura Professional Cleaning Services”, the main spelling is “Opura”',
-  ])
+  // The brand plus what the business does is the same name.
+  assert.deepEqual(H17.check(a, site).map(f => f.found), [])
 })
 
 test('on the real fixture page (a single service page) the four rules stay silent', () => {

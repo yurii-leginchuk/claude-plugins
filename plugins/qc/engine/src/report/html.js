@@ -235,7 +235,6 @@ el.scrollIntoView({block:'center'});el.classList.remove('flash');void el.offsetW
 const f=document.getElementById('qc-find-form');if(f)f.addEventListener('submit',e=>{e.preventDefault();go(document.getElementById('qc-find').value)});
 document.addEventListener('click',e=>{const a=e.target.closest('a.did');if(a){e.preventDefault();go(a.getAttribute('href'),true)}});
 if(location.hash)go(location.hash,true);
-document.querySelectorAll('[data-cat-filter]').forEach(b=>{const c=b.dataset.catFilter;b.querySelector('.n').textContent=document.querySelectorAll('.defect[data-cat'+(c==='all'?'':'="'+c+'"')+']').length});
 document.querySelectorAll('[data-cat-filter]').forEach(b=>b.addEventListener('click',()=>{const c=b.dataset.catFilter;
 document.querySelectorAll('[data-cat-filter]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));
 document.querySelectorAll('.defect[data-cat]').forEach(d=>{d.hidden=c!=='all'&&d.dataset.cat!==c});
@@ -499,7 +498,9 @@ export function renderReport({
   // never rendered, so the word never appeared in the HTML at all. It leads the
   // tile row now, with occurrences kept beside it as blast radius.
   const distinct = countDistinct(solid)
-  // Distinct counted defects per team, for the filter bar.
+  // Distinct counted defects per team, for the filter bar; they add up to the headline.
+  const byCat = { dev: 0, seo: 0, copy: 0 }
+  for (const id of new Set(solid.map(f => defectIdentity(f) + '|' + categoryOf(f)))) byCat[id.split('|').pop()]++
   const distinctTotal = distinct.critical + distinct.major + distinct.minor + distinct.note
   const occurrenceTotal = solid.length
 
@@ -660,7 +661,7 @@ ${oversizeBytes != null ? `<div class="note-box">The report is over the recommen
 <form class="find" id="qc-find-form" role="search"><label for="qc-find">Find a defect by id</label>
 <input id="qc-find" name="qc-find" placeholder="D12 or M3" autocomplete="off" spellcheck="false">
 <button type="submit">Find</button><span id="qc-find-msg" class="sub" aria-live="polite"></span></form>
-<div class="catbar" role="group" aria-label="Who fixes it">${['all', 'dev', 'seo', 'copy'].map(c => `<button type="button" data-cat-filter="${c}" aria-pressed="${c === 'all'}">${c === 'all' ? 'All' : c} <span class="n"></span></button>`).join('')}<span class="sub">dev — a developer fixes it alone · seo — needs the SEO team · copy — needs the copy team</span></div>
+<div class="catbar" role="group" aria-label="Who fixes it">${['all', 'dev', 'seo', 'copy'].map(c => `<button type="button" data-cat-filter="${c}" aria-pressed="${c === 'all'}">${c === 'all' ? 'All' : c} <span class="n">${c === 'all' ? byCat.dev + byCat.seo + byCat.copy : byCat[c]}</span></button>`).join('')}<span class="sub">dev — a developer fixes it alone · seo — needs the SEO team · copy — needs the copy team</span></div>
 <p class="sub">Defects by severity: ${distinct.critical} critical · ${distinct.major} major · ${distinct.minor} minor · ${distinct.note} note. This is the number of real tasks to fix.
 The Critical/Major/Minor tiles above count occurrences (one fix can close several at once).</p>
 <h2>Static check (HTML, links, SEO, content)</h2>
