@@ -140,7 +140,7 @@ test('loadFacts: missing default file is null, missing explicit file throws, bad
   const dir = mkdtempSync(join(tmpdir(), 'qc-facts-'))
   process.env.QC_FACTS_DIR = dir
   assert.equal(loadFacts('ex.com'), null)
-  assert.throws(() => loadFacts('ex.com', join(dir, 'nope.json')), /не найден/)
+  assert.throws(() => loadFacts('ex.com', join(dir, 'nope.json')), /not found/)
   writeFileSync(join(dir, 'ex.com.json'), '{ broken')
   assert.throws(() => loadFacts('ex.com'), /JSON/)
   writeFileSync(join(dir, 'ex.com.json'), JSON.stringify({ phones: ['+17189690845'], banned: ['Boston'] }))

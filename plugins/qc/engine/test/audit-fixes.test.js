@@ -125,8 +125,8 @@ test('E12 with facts: a number in the copy is heuristic, a tel: link stays certa
     links: [{ raw: 'tel:+18005550000', protocol: 'tel:', selector: 'a' }],
   }
   const f = E12.check(p, { facts })
-  assert.equal(f.find(x => /in the text/.test(x.found)).confidence, 'heuristic')
-  assert.equal(f.find(x => /tel|not in the site facts: tel/.test(x.found) && !/in the text/.test(x.found)).confidence, 'high')
+  assert.equal(f.find(x => /in text/.test(x.found)).confidence, 'heuristic')
+  assert.equal(f.find(x => /tel|not in the site facts: tel/.test(x.found) && !/in text/.test(x.found)).confidence, 'high')
 })
 
 test('stateOfAddress reads the state after the street line', () => {

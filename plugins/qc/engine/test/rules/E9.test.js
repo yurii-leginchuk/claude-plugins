@@ -132,7 +132,7 @@ test('E9 skips pages the facts file ignores', () => {
 })
 
 test('facts.gbp rejects a link that is not Google Maps', () => {
-  assert.throws(() => facts({ gbp: ['https://ex.com/contact/'] }), /не похоже на ссылку Google Maps/)
+  assert.throws(() => facts({ gbp: ['https://ex.com/contact/'] }), /does not look like a Google Maps/)
   assert.deepEqual(facts({ gbp: [SHORT] }).gbp, [{ name: null, url: SHORT, address: null, paths: [] }])
 })
 
