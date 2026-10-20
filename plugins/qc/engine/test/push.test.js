@@ -27,6 +27,7 @@ test('buildPayload sends results, not HTML: one entry per defect with all its pa
   assert.equal(payload.defects[3].review.verdict, 'false-positive')
   assert.equal(payload.stats.distinct.major, 2, 'D1 and M1 count; the heuristic and the false positive do not')
   assert.deepEqual(payload.manual[0].evidence, ['manual-0-0.png'])
+  assert.deepEqual(payload.defects.map(d => d.category), ['dev', 'dev', 'copy', 'dev'], 'E3 and E1 are dev, H16 is copy')
   assert.equal(files.get('manual-0-0.png'), '/nowhere/visual/manual-0-0.png')
 })
 

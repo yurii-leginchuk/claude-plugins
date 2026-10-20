@@ -71,7 +71,8 @@ export function finding(rule, page, props) {
     found: null,
     expected: null,
     where: null,
-    ...(link ? { selector: link.selector, where: describeLink(link) } : {}),
+    // `locate` tells `qc evidence` how to find the spot on the live page.
+    ...(link ? { selector: link.selector, where: describeLink(link), locate: { href: link.raw || null, text: (link.text || '').trim().slice(0, 120) || null } } : {}),
     ...rest,
     // header/nav/footer/breadcrumbs/main/chrome: the report files a defect
     // in site chrome under global errors, fixed once for every page.

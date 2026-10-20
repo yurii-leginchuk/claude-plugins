@@ -26,6 +26,8 @@ import { runStaticRules, allRules } from './rules/index.js'
 import { allBrowserRules } from './rules/browser-index.js'
 import { diffRuns, verdict, countDistinct } from './report/json.js'
 import { renderReport } from './report/html.js'
+import { inlineScreenshots } from './report/inline.js'
+import { attachEvidence } from './browser/evidence.js'
 import {
   loadSnapshot, listSnapshots, clearSnapshot, clearAll, saveSnapshot, saveRun, previousRun,
   latestBrowserResultsByUrl,
@@ -54,6 +56,7 @@ qc browse <host|url> [--breakpoints a,b] [--sweep step|0] [--pages n] [--force] 
   this is NOT the same as audit's --only/--skip, which control which rules execute
 qc findings <host>                 distinct defects of the latest run with ids, for review
 qc review <host> <review.json>     re-render the latest report with Claude's verdicts
+qc evidence <host> [--force]       crop a picture of the spot of every defect of the latest run
 qc push <host>                     send the latest run's results to the QC Reports site (~/.config/qc/reports.json)
 qc cache list
 qc cache clear <host> | --all`
@@ -179,24 +182,6 @@ function sameTarget(meta, wanted) {
 // not fail the whole audit -- the finding is still valid evidence without
 // its crop; it simply renders with no image, same as any finding that never
 // had one.
-function inlineScreenshots(findings) {
-  const seen = new Map()
-  for (const f of findings) {
-    if (!f.shot) continue
-    if (seen.has(f.shot)) {
-      f.shotDataUri = seen.get(f.shot)
-      continue
-    }
-    try {
-      const uri = `data:image/png;base64,${readFileSync(f.shot).toString('base64')}`
-      seen.set(f.shot, uri)
-      f.shotDataUri = uri
-    } catch {
-      seen.set(f.shot, undefined)
-    }
-  }
-  return findings
-}
 
 // `fetchImpl`, when given, is threaded through to loadStrategySheet for a
 // sheet-based target -- it has no effect on plain-site targets. This exists
@@ -471,8 +456,10 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   const browserFindings = browserRows.flatMap(r => r.findings || [])
     .filter(f => liveBrowserIds.has(f.rule))
     .map(f => (f.rule === 'X1' && String(f.found).startsWith('[third-party]') ? { ...f, confidence: 'heuristic' } : f))
-  inlineScreenshots(browserFindings)
   const findings = [...staticFindings, ...browserFindings]
+  // Pictures `qc evidence` took of earlier runs' defects stay with them.
+  attachEvidence(host, findings)
+  inlineScreenshots(findings)
 
   // Coverage is reported only when a browser pass has actually left rows on
   // disk for this host -- an empty array here (never run) must produce NO
@@ -1004,6 +991,18 @@ async function main() {
     if (cmd === 'review') {
       if (!args[0] || !args[1]) throw new Error('give a host and a review file: qc review <host> <review.json>')
       console.log(JSON.stringify(applyReview(resolveHostInput(args[0]), args[1]), null, 2))
+      return
+    }
+    if (cmd === 'evidence') {
+      if (!args[0]) throw new Error('give a host: qc evidence <host>')
+      const { captureEvidence } = await import('./browser/evidence.js')
+      const { idsFor } = await import('./review.js')
+      const host = resolveHostInput(args[0])
+      const res = await captureEvidence(host, { force: Boolean(flags.force) })
+      const fs = JSON.parse(readFileSync(join(res.runDir, 'findings.json'), 'utf8'))
+      const ids = idsFor(fs, new Set(fs.map(f => f.page)).size)
+      const { notFoundIdentities, ...rest } = res
+      console.log(JSON.stringify({ ...rest, notFoundIds: notFoundIdentities.map(i => ids[i]).filter(Boolean) }, null, 2))
       return
     }
     if (cmd === 'push') {

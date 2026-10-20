@@ -170,7 +170,23 @@ user asks for it: translate the HTML artifact (`report.html`) and republish it; 
      obvious typos (H3). Each contradiction is one `content` defect naming every page it is on
      (`pages`), quoting both claims in `found`. Record `check: "content"` entries without `width`;
      one `ok` entry per site when nothing contradicts, listing in `checked` what was compared.
-   - Write `{ "summary": "<about the site>", "items": [{ "id": "D3", "verdict": "...", "note": "..." }], "manual": [ … ] }`
+   - **Look at every defect's evidence crop.** Run
+     `node <plugin-root>/engine/src/cli.js evidence "<host>"` (Playwright opens each defect's page,
+     finds the spot and saves a crop with it outlined; `--force` redoes them). Open the crops
+     (a contact sheet of several per image is fine) and check each points at the right thing; a
+     crop of the wrong element is a locator problem to report, a crop that shows no defect is a
+     reason to change the verdict. `notFoundIds` and `invisible` are spots it could not show —
+     look at those pages yourself.
+   - **Say who fixes each defect** (`category` on an item or a manual defect): `dev` — a developer
+     fixes it on the site without another team (markup, links, CSS, forms, plugins, a missing
+     option); `seo` — it most likely needs input from the SEO department (titles, descriptions,
+     schema facts, indexing, redirects, site structure); `copy` — it most likely needs input from
+     the copy team (wording, claims, contradictions, a missing paragraph or answer, who the author
+     is). The engine gives every rule a default; set `category` only where this defect differs
+     (a heading-level skip that is a tag swap is `dev`; a schema placeholder address needs the real
+     address — `seo`; a hub card for a missing service needs its text — `copy`). The report shows
+     the team on every defect with quick All · dev · seo · copy tabs.
+   - Write `{ "summary": "<about the site>", "items": [{ "id": "D3", "verdict": "...", "note": "...", "category": "dev" }], "manual": [ … ] }`
      (`manual`: your Playwright checks and the content check, format in `/qc-browse`) to
      `<runDir>/review-input.json` and run
      `node <plugin-root>/engine/src/cli.js review "<host>" "<runDir>/review-input.json"`. It re-renders

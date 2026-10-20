@@ -480,7 +480,7 @@ test('every distinct defect gets its own page list, not one merged list', () => 
     diff: { fixed: [], remaining: [], added: findings }, snapshotAgeDays: 0, source: 'sitemap',
   })
   const group = out.match(/<details class="rule">[\s\S]*?<\/details>/)[0]
-  const defects = [...group.matchAll(/<div class="defect">/g)]
+  const defects = [...group.matchAll(/<div class="defect"[ >]/g)]
   assert.equal(defects.length, 2, 'expected one block per distinct defect')
   const alpha = group.split('a.beta')[0]
   assert.match(alpha, /https:\/\/ex\.com\/1/)

@@ -9,6 +9,9 @@ import { join, extname } from 'node:path'
 import { latestRunDir } from './crawl/store.js'
 import { defectIdentity, verdict, countDistinct } from './report/json.js'
 import { renderReport, scopeOf } from './report/html.js'
+import { inlineScreenshots } from './report/inline.js'
+import { CATEGORIES } from './report/category.js'
+import { attachEvidence } from './browser/evidence.js'
 
 const VERDICTS = new Set(['confirmed', 'false-positive', 'unsure'])
 const STATUSES = new Set(['ok', 'defect', 'skipped'])
@@ -18,7 +21,7 @@ const SEVERITIES = new Set(['critical', 'major', 'minor', 'note'])
 // the pages), with the taxonomy codes each check may report. The engine
 // never clicks or reads for meaning; these are the parts it leaves to Claude.
 export const MANUAL_CHECKS = {
-  menu: ['D1', 'C6', 'C9', 'D9', 'D2', 'B6'],
+  menu: ['D1', 'C2', 'C6', 'C9', 'D9', 'D2', 'B6'],
   popup: ['K4', 'C6', 'D9', 'J2', 'B6'],
   form: ['G2', 'G3', 'G5', 'G6', 'G7', 'G11', 'G12', 'G14', 'J5'],
   faq: ['F9', 'C2', 'J2'],
@@ -70,7 +73,7 @@ function manualOf(review, dir) {
         findings.push({
           id: manualIds.get(key),
           rule: d.rule, title: d.title || MANUAL_TITLES[d.rule], severity: d.severity, confidence: 'high', engine: 'claude',
-          check: m.check, manual: i, page, breakpoint: width, selector: d.selector || null, found: d.found, expected: d.expected,
+          check: m.check, manual: i, page, breakpoint: width, category: CATEGORIES.includes(d.category) ? d.category : (m.check === 'content' ? 'copy' : 'dev'), selector: d.selector || null, found: d.found, expected: d.expected,
           where: d.where || null, zone: m.check === 'menu' ? 'header' : null,
           review: { verdict: 'confirmed', note: m.check === 'content' ? 'found by Claude while reading the pages' : 'checked by Claude in Playwright' },
         })
@@ -149,12 +152,14 @@ function sortByReview(dir, findings, review) {
     if (!VERDICTS.has(item.verdict)) throw new Error(`review ${item.id}: verdict must be confirmed, false-positive or unsure`)
     const identity = identityOf.get(item.id)
     if (!identity) throw new Error(`review: no defect ${item.id} in the last run (run qc findings first)`)
-    byIdentity.set(identity, { verdict: item.verdict, note: item.note ? String(item.note) : null })
+    if (item.category && !CATEGORIES.includes(item.category)) throw new Error(`review ${item.id}: category must be one of ${CATEGORIES.join(', ')}`)
+    byIdentity.set(identity, { verdict: item.verdict, note: item.note ? String(item.note) : null, category: item.category || null })
   }
   const kept = []
   const rejected = []
-  for (const f of findings) {
+  for (let f of findings) {
     const r = byIdentity.get(defectIdentity(f))
+    if (r?.category) f = { ...f, category: r.category }
     if (r?.verdict === 'false-positive') rejected.push({ ...f, review: r })
     // A heuristic Claude settled (in Playwright, by eye) is a defect: it counts.
     else if (r?.verdict === 'confirmed' && f.confidence === 'heuristic') kept.push({ ...f, confidence: 'high', confirmedHeuristic: true, review: r })
@@ -175,6 +180,8 @@ export function reviewedRun(host) {
 export function applyReview(host, reviewPath) {
   const { dir, findings, input } = runOf(host)
   const review = JSON.parse(readFileSync(reviewPath, 'utf8'))
+  attachEvidence(host, findings)
+  inlineScreenshots(findings)
   const { kept, rejected, manual, byIdentity } = sortByReview(dir, findings, review)
   const html = renderReport({ ...input, findings: kept, rejected, siteSummary: review.summary || null, manualChecks: manual.checks, ids: idsFor(findings, input.pages) })
   writeFileSync(join(dir, 'report.html'), html)

@@ -97,3 +97,11 @@ test('E13: the bare phone is pointed at, not the tel: button with the same numbe
   assert.match(f.where, /under heading “FAQ”/)
   assert.match(f.where, /Call \+1 718 969 0845 or request a quote/)
 })
+
+test('categoryOf: dev by default, seo for meta/schema/headings, copy for wording; Claude’s category wins', async () => {
+  const { categoryOf } = await import('../../src/report/category.js')
+  assert.deepEqual(['E3', 'I7', 'H16', 'J3', 'S1', 'H6'].map(rule => categoryOf({ rule })), ['dev', 'seo', 'copy', 'dev', 'seo', 'copy'])
+  assert.equal(categoryOf({ rule: 'H17', found: 'og:site_name = “Site”' }), 'seo')
+  assert.equal(categoryOf({ rule: 'H17', found: 'brand is written as “Opura Services”' }), 'copy')
+  assert.equal(categoryOf({ rule: 'E3', category: 'seo' }), 'seo')
+})

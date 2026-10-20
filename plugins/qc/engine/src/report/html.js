@@ -2,6 +2,7 @@ import { rollUp, verdict, countDistinct, defectIdentity } from './json.js'
 import { STALENESS_WARNING_DAYS } from '../lib/snapshot-ttl.js'
 import { UNNAMED_REGION_PREFIX } from '../browser/regions.js'
 import { TYPE_ORDER, TYPE_LABEL } from '../lib/page-type.js'
+import { categoryOf } from './category.js'
 
 // Escaping is the security boundary of this module: every interpolated value
 // originates from a crawled third-party page (found/expected/page/selector)
@@ -117,6 +118,12 @@ table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--line)}
 .did{display:inline-block;font:700 14px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace;padding:3px 9px;border-radius:6px;text-decoration:none!important;background:var(--fg);color:var(--bg);letter-spacing:.02em}
 .did:hover{background:var(--maj)}
+.cat{display:inline-block;font:700 11px/1.4 ui-sans-serif,-apple-system,sans-serif;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:999px;border:1px solid currentColor;vertical-align:middle}
+.cat-dev{color:#2f6db5}.cat-seo{color:#8a4fbf}.cat-copy{color:#b7621b}
+.catbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:8px 0}
+.catbar button{font:inherit;font-size:13px;padding:4px 12px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--fg);cursor:pointer}
+.catbar button[aria-pressed=true]{background:var(--fg);color:var(--bg)}
+.catbar .n{opacity:.65}
 .ids{display:flex;flex-wrap:wrap;gap:4px;flex-basis:100%;order:9}
 .ids .did{font-size:12px;padding:1px 6px}
 .flash{outline:2px solid var(--maj);outline-offset:6px;border-radius:4px}
@@ -210,7 +217,7 @@ function renderManual(manualChecks, claudeFindings) {
     }
     return `<div class="menu-row"><p class="kv"><span class="chip ${cls}">${esc(label)}</span>${m.width != null ? ` <b>${esc(m.width)} px</b> ·` : ''} ${rich(m.page)}</p>
 ${m.checked ? `<p class="kv">${rich(m.checked)}</p>` : ''}
-${defs.map(f => `<div class="defect"${f.id ? ` id="${esc(f.id)}"` : ''}><p class="kv">${f.id ? `<a class="did" href="#${esc(f.id)}">${esc(f.id)}</a> ` : ''}<span class="chip ${CHIP[f.severity] || 'note'}">${esc(f.severity)}</span> ${esc(f.rule)} · ${esc(f.title)}</p><p class="kv">found: ${rich(f.found)}</p>${f.where ? `<p class="kv">where: ${rich(f.where)}</p>` : ''}<p class="kv">expected: ${rich(f.expected)}</p>${f.pages.length > 1 ? `<ul class="pages">${f.pages.map(p => `<li>${rich(p)}</li>`).join('')}</ul>` : ''}</div>`).join('')}
+${defs.map(f => `<div class="defect"${f.id ? ` id="${esc(f.id)}"` : ''} data-cat="${esc(categoryOf(f))}"><p class="kv">${f.id ? `<a class="did" href="#${esc(f.id)}">${esc(f.id)}</a> ` : ''}<span class="cat cat-${esc(categoryOf(f))}">${esc(categoryOf(f))}</span> <span class="chip ${CHIP[f.severity] || 'note'}">${esc(f.severity)}</span> ${esc(f.rule)} · ${esc(f.title)}</p><p class="kv">found: ${rich(f.found)}</p>${f.where ? `<p class="kv">where: ${rich(f.where)}</p>` : ''}<p class="kv">expected: ${rich(f.expected)}</p>${f.pages.length > 1 ? `<ul class="pages">${f.pages.map(p => `<li>${rich(p)}</li>`).join('')}</ul>` : ''}</div>`).join('')}
 ${(m.shots || []).length ? `<div class="strip">${m.shots.map((src, i) => thumb(src, `${m.width != null ? `${m.width} px · ` : ''}${i + 1}`, m.width || 768)).join('')}</div>` : ''}</div>`
   }).join('')}</div></details>`
   }).join('')
@@ -228,6 +235,11 @@ el.scrollIntoView({block:'center'});el.classList.remove('flash');void el.offsetW
 const f=document.getElementById('qc-find-form');if(f)f.addEventListener('submit',e=>{e.preventDefault();go(document.getElementById('qc-find').value)});
 document.addEventListener('click',e=>{const a=e.target.closest('a.did');if(a){e.preventDefault();go(a.getAttribute('href'),true)}});
 if(location.hash)go(location.hash,true);
+document.querySelectorAll('[data-cat-filter]').forEach(b=>{const c=b.dataset.catFilter;b.querySelector('.n').textContent=document.querySelectorAll('.defect[data-cat'+(c==='all'?'':'="'+c+'"')+']').length});
+document.querySelectorAll('[data-cat-filter]').forEach(b=>b.addEventListener('click',()=>{const c=b.dataset.catFilter;
+document.querySelectorAll('[data-cat-filter]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));
+document.querySelectorAll('.defect[data-cat]').forEach(d=>{d.hidden=c!=='all'&&d.dataset.cat!==c});
+document.querySelectorAll('details.rule').forEach(g=>{const ds=g.querySelectorAll('.defect[data-cat]');if(!ds.length)return;const any=[...ds].some(d=>!d.hidden);g.hidden=!any;if(c!=='all'&&any)g.open=true})}));
 const pf=document.getElementById('qc-page-find'),pm=document.getElementById('qc-page-msg');
 if(pf)pf.addEventListener('input',()=>{const q=pf.value.trim().toLowerCase();let n=0;const vb=document.getElementById('qc-visual');if(q&&vb)vb.open=true;
 document.querySelectorAll('.vis-group').forEach(g=>{let hit=0;g.querySelectorAll('.vis-page').forEach(p=>{const ok=!q||p.dataset.find.includes(q);p.hidden=!ok;if(ok)hit++});
@@ -337,9 +349,10 @@ function renderDefect(d, ctx = {}) {
     : ''
 
   const did = ctx.ids?.[d.identity]
+  const cat = categoryOf(d.example || d)
   return `
-      <div class="defect"${did ? ` id="${esc(did)}"` : ''}>
-        ${did ? `<div class="kv"><a class="did" href="#${esc(did)}">${esc(did)}</a></div>` : ''}
+      <div class="defect"${did ? ` id="${esc(did)}"` : ''} data-cat="${esc(cat)}">
+        <div class="kv">${did ? `<a class="did" href="#${esc(did)}">${esc(did)}</a> ` : ''}<span class="cat cat-${esc(cat)}">${esc(cat)}</span></div>
         ${d.example?.review ? `<div class="kv review review-${esc(d.example.review.verdict)}">Claude: ${esc(REVIEW_LABEL[d.example.review.verdict] || d.example.review.verdict)}${d.example.review.note ? ` — ${rich(d.example.review.note)}` : ''}</div>` : ''}
         ${String(d.scope || '').startsWith('template:') ? `<div class="kv">section: <code>${esc(d.scope.slice(9))}</code></div>` : ''}
         <div class="kv">found: <code>${rich(d.found)}</code></div>
@@ -486,6 +499,7 @@ export function renderReport({
   // never rendered, so the word never appeared in the HTML at all. It leads the
   // tile row now, with occurrences kept beside it as blast radius.
   const distinct = countDistinct(solid)
+  // Distinct counted defects per team, for the filter bar.
   const distinctTotal = distinct.critical + distinct.major + distinct.minor + distinct.note
   const occurrenceTotal = solid.length
 
@@ -646,6 +660,7 @@ ${oversizeBytes != null ? `<div class="note-box">The report is over the recommen
 <form class="find" id="qc-find-form" role="search"><label for="qc-find">Find a defect by id</label>
 <input id="qc-find" name="qc-find" placeholder="D12 or M3" autocomplete="off" spellcheck="false">
 <button type="submit">Find</button><span id="qc-find-msg" class="sub" aria-live="polite"></span></form>
+<div class="catbar" role="group" aria-label="Who fixes it">${['all', 'dev', 'seo', 'copy'].map(c => `<button type="button" data-cat-filter="${c}" aria-pressed="${c === 'all'}">${c === 'all' ? 'All' : c} <span class="n"></span></button>`).join('')}<span class="sub">dev — a developer fixes it alone · seo — needs the SEO team · copy — needs the copy team</span></div>
 <p class="sub">Defects by severity: ${distinct.critical} critical · ${distinct.major} major · ${distinct.minor} minor · ${distinct.note} note. This is the number of real tasks to fix.
 The Critical/Major/Minor tiles above count occurrences (one fix can close several at once).</p>
 <h2>Static check (HTML, links, SEO, content)</h2>

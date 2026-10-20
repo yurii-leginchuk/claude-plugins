@@ -12,6 +12,7 @@ import { homedir } from 'node:os'
 import { reviewedRun } from './review.js'
 import { defectIdentity, verdict, countDistinct } from './report/json.js'
 import { scopeOf } from './report/html.js'
+import { categoryOf } from './report/category.js'
 
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 
@@ -40,6 +41,7 @@ export function buildPayload(run) {
         code: f.engine === 'claude' ? f.id : ids[identity], identity, rule: f.rule, title: f.title,
         severity: f.severity, confidence: f.confidence || 'high', engine: f.engine || 'static', check: f.check || '',
         found: f.found ?? '', expected: f.expected ?? '', selector: f.selector ?? '', review: f.review || null,
+        category: categoryOf(f),
         zones: new Set(), region: f.region || null, pages: new Map(), breakpoints: new Set(), shots: new Set(),
       })
     }
@@ -55,7 +57,7 @@ export function buildPayload(run) {
     for (const s of g.shots) files.set(basename(s), s)
     return {
       code: g.code, identity: g.identity, rule: g.rule, title: g.title, severity: g.severity, confidence: g.confidence,
-      engine: g.engine, check: g.check, found: g.found, expected: g.expected, selector: g.selector, review: g.review,
+      engine: g.engine, check: g.check, category: g.category, found: g.found, expected: g.expected, selector: g.selector, review: g.review,
       scope: scopeOf({ zones: g.zones, pages, region: g.region }, input.pages),
       pages: pages.map(url => ({ url, where: g.pages.get(url) })), page_count: pages.length,
       breakpoints: [...g.breakpoints].sort((a, b) => a - b), evidence: [...g.shots].map(s => basename(s)),

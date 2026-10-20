@@ -134,7 +134,7 @@ Every check is recorded as one entry per page × width in the review file's `man
 { "check": "menu|popup|form|faq|focus|content", "page": "https://site/", "width": 360,
   "status": "ok|defect|skipped", "checked": "what was checked, with numbers",
   "shots": ["/Users/…/.qc-cache/site/manual/menu-360-open.png"],
-  "defects": [{ "rule": "D2", "severity": "major", "found": "…", "expected": "…", "selector": "…" }] }
+  "defects": [{ "rule": "D2", "severity": "major", "category": "dev", "found": "…", "expected": "…", "selector": "…" }] }
 ```
 
 `ok` entries go in too — the report shows what was looked at, not only what broke.
@@ -150,8 +150,22 @@ everything has loaded. If something fails only in the first second or two after 
 ~3 s and try again — record a defect only if it still fails. Timing counts only for what must work
 right at page load: the burger, first-screen buttons and links, the form in the hero. A check you
 could not do is `skipped` with the reason in `checked`. Each check allows only its own rule codes
-(the engine refuses others): menu D1 C6 C9 D9 D2 B6 · popup K4 C6 D9 J2 B6 · form G2 G3 G5 G6 G7 G11
+(the engine refuses others): menu D1 C2 C6 C9 D9 D2 B6 · popup K4 C6 D9 J2 B6 · form G2 G3 G5 G6 G7 G11
 G12 G14 J5 · faq F9 C2 J2 · focus J2 J5 · content H16 H8 H3 H12 E17.
+
+**Check like a visitor, and look at what you opened.** Hover what a visitor hovers, tap what they
+tap, open every dropdown, burger, popup and accordion — then, in every open state, look at the
+whole screenshot for layout (text past its box, cut labels, overlaps), not only at the thing you
+were checking, and run the overflow probe:
+
+```
+mcp__playwright__browser_run_code_unsafe { filename: "<plugin-root>/engine/probes/overflow.js" }
+```
+
+It lists every run of text that sticks out of the box it is painted in or out of the screen, with
+px. Each item it returns is a C2 (in a menu, FAQ) or C6 (past the screen) defect after you have
+seen it on the screenshot. A check that only measured focus rings and wrote "all good" next to a
+screenshot with labels hanging out of a dropdown is a missed defect.
 
 ### Popups
 
@@ -180,6 +194,17 @@ another (F9); the open item's text fits (C2); it opens by Enter/Space from the k
 One page (home), at 1440 and 360: press Tab from the top through header, the first CTA, one form —
 focus is always visible (J5 major if it disappears), reaches the menu and the burger (J2), opens
 the menu with Enter, and is not trapped. Screenshot a focused element.
+
+### Desktop menu
+
+At 1440 (and at the narrowest width that still shows the desktop menu): open every dropdown the
+way a visitor does — `browser_hover` on the parent item. If hover in Playwright opens nothing,
+that is usually the stand, not the site (pointer events delegated to a script that synthetic
+hover does not trigger): open it with keyboard focus instead (focus the parent link, Tab into the
+submenu) and check it the same way; never record D1 for a desktop dropdown on Playwright hover
+alone. In each open dropdown: screenshot, the overflow probe, every item readable inside the
+panel (C2 major when labels run past it), the panel within the screen (C6), nothing covering it
+(B6).
 
 ### Mobile menu
 
