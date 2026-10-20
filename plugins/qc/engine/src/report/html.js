@@ -120,6 +120,8 @@ th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--line)}
 .did:hover{background:var(--maj)}
 .cat{display:inline-block;font:700 11px/1.4 ui-sans-serif,-apple-system,sans-serif;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:999px;border:1px solid currentColor;vertical-align:middle}
 .cat-dev{color:#2f6db5}.cat-seo{color:#8a4fbf}.cat-copy{color:#b7621b}
+/* Team split (dev/seo/copy) hidden for now; the data is still in the report. */
+.catbar,.cat{display:none!important}
 .catbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:8px 0}
 .catbar button{font:inherit;font-size:13px;padding:4px 12px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--fg);cursor:pointer}
 .catbar button[aria-pressed=true]{background:var(--fg);color:var(--bg)}
