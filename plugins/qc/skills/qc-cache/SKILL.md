@@ -36,9 +36,8 @@ Clearing a host's snapshot deletes its crawled pages/links **and every saved run
 last run" comparison (`diff.fixed`/`diff.remaining` reset to "no previous run") because
 `diffRuns()` has nothing to compare against.
 
-- Before running `clear <host>` or `clear --all`, tell the operator (in Russian) what will be lost:
-  the cached pages/links for that host, and the run history that powers "что починили с прошлого
-  раза". This applies even if the user only asked to "clear the cache" without mentioning history.
+- Before running `clear <host>` or `clear --all`, tell the operator (in the user’s language) what will be lost:
+  the cached pages/links for that host, and the run history that powers "what got fixed since last time". This applies even if the user only asked to "clear the cache" without mentioning history.
 - For `clear --all`, additionally ask for explicit confirmation before running it — it removes
   history for every host in the cache, not just one.
 - If the user's actual goal is "just re-crawl, don't reuse the snapshot," prefer suggesting
@@ -47,6 +46,6 @@ last run" comparison (`diff.fixed`/`diff.remaining` reset to "no previous run") 
 
 ## Presenting results
 
-Summarise in chat in Russian: what was listed or removed, how many hosts/snapshots were affected,
+Summarise in chat in the user’s language: what was listed or removed, how many hosts/snapshots were affected,
 and (for `clear`) a reminder that the next audit on that host will run without diff history until a
 new run completes.

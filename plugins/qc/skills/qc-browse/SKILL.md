@@ -16,6 +16,14 @@ This command does **not** crawl a site itself. It only reads the snapshot `/qc-s
 already saved — page list, links, parsed HTML. If that snapshot doesn't exist yet, the engine
 refuses to run and says so; tell the user to run `/qc-site` first, don't try to work around it.
 
+## Language
+
+Reports are **English**: the engine writes its findings in English, and so does everything you add
+to them — the About-the-site lines, review notes, manual-check `checked` text, content defects.
+The chat summary goes in the language the user writes to you in. Translate a report only if the
+user asks for it: translate the HTML artifact (`report.html`) and republish it; the QC Reports site
+(`qc push`) takes English only and refuses anything with Cyrillic in it.
+
 ## Before you run it
 
 - **This is slow, and it gets slower on a weak or shared staging box.** The page loop is
@@ -86,8 +94,8 @@ refuses to run and says so; tell the user to run `/qc-site` first, don't try to 
    the review file — that is what puts the manual-checks block and its screenshots into the report. Publish
    it as «Publishing the report» below says. **Load the `artifact-design` skill first** — mandatory
    before publishing artifact HTML.
-8. Summarise in chat, in Russian:
-   - Coverage first, plainly: "проверено N из M страниц" — and if `pagesDone < pagesTotal` or
+8. Summarise in chat, in the user’s language:
+   - Coverage first, plainly: "N of M pages checked" — and if `pagesDone < pagesTotal` or
      `stoppedEarly`, lead with that, not with the findings. A partial pass must never be presented
      as if it covered the whole site.
    - `widths` actually used, and whether they were discovered from the site's own CSS or given via
@@ -124,7 +132,7 @@ Every check is recorded as one entry per page × width in the review file's `man
 
 ```json
 { "check": "menu|popup|form|faq|focus|content", "page": "https://site/", "width": 360,
-  "status": "ok|defect|skipped", "checked": "что проверено, с цифрами",
+  "status": "ok|defect|skipped", "checked": "what was checked, with numbers",
   "shots": ["/Users/…/.qc-cache/site/manual/menu-360-open.png"],
   "defects": [{ "rule": "D2", "severity": "major", "found": "…", "expected": "…", "selector": "…" }] }
 ```
@@ -200,9 +208,9 @@ the menu with Enter, and is not trapped. Screenshot a focused element.
   5. Close it (burger again, or the close button): the menu must disappear.
   6. Compare the panel's links with the desktop list: missing pages and extra ones. A mobile menu
      built as a separate widget is where items go missing.
-- **Record** `check: "menu"`, e.g. `checked`: «открывается по тапу; 360 из 360 px; за край не
-  выходит; 9 пунктов, последний виден; подменю Services раскрывается; закрывается крестиком;
-  ссылки совпадают с десктопом (11 из 11)». Rules and severities: **D1** the burger opens nothing (critical) or a submenu does not open /
+- **Record** `check: "menu"`, e.g. `checked`: "opens on tap; 360 of 360 px; does not cross the
+  edge; 9 items, the last one visible; the Services submenu expands; closes with the cross;
+  links match the desktop menu (11 of 11)". Rules and severities: **D1** the burger opens nothing (critical) or a submenu does not open /
   taps navigate away (major); **C6** the open menu sticks out of the screen (major); **C9** the last
   items cannot be reached (major); **D9** the menu does not close (major); **D2** a desktop item is
   missing on mobile (major), an extra mobile item (minor — skip phone/CTA buttons the desktop header

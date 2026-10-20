@@ -23,11 +23,19 @@ behaviour, contrast, console errors, broken images, and per-breakpoint screensho
 once `/qc-browse` has been run for the same host at least once: it records to `browser.jsonl`, and
 *every* subsequent `qc audit` on that host reads and merges it into the report automatically, no
 extra flag needed. A report with none of that is a **static-only** report, and the report's own
-header says so plainly ("браузерная проверка не выполнялась") — never read a static-only `Pass` as
+header says so plainly ("Browser check was not run") — never read a static-only `Pass` as
 "the site passed its visual checks", it means nothing about them either way. If the user's request
 implies visual/responsive checking ("как сайт выглядит на мобильном", "проверь адаптивность",
 screenshots, overlapping elements), point them at `/qc-browse` instead of, or in addition to, this
 command.
+
+## Language
+
+Reports are **English**: the engine writes its findings in English, and so does everything you add
+to them — the About-the-site lines, review notes, manual-check `checked` text, content defects.
+The chat summary goes in the language the user writes to you in. Translate a report only if the
+user asks for it: translate the HTML artifact (`report.html`) and republish it; the QC Reports site
+(`qc push`) takes English only and refuses anything with Cyrillic in it.
 
 ## Steps
 
@@ -53,7 +61,7 @@ command.
       - page counts by type;
       - anything odd you already noticed while reading (another network site's email, a
         placeholder, a page that contradicts another) — these go to the chat summary as
-        «замечено Claude, правилом не покрыто».
+        "noticed by Claude, not covered by a rule".
    5. **Show the user** the services, locations and anything odd in one short message, and ask
       them to confirm or correct. Then write into the facts file (keep the other fields):
       `services: [{name, url}]`, `locations: [{name, url}]`, `pages: {"/path/": "type"}` — the
@@ -86,15 +94,15 @@ command.
    site over ~15 pages pass `--breakpoints 360,768,1024,1440` unless the user asked for a deep
    visual pass, and say which widths ran. Run it in the background too. If it exits non-zero (e.g. Chromium not installed — `npx playwright install
    chromium` in the engine dir), say so, publish the static report, and stop. For its summary
-   fields and failure handling follow `/qc-browse` steps 4–5. A check «с нуля» / after changes to
+   fields and failure handling follow `/qc-browse` steps 4–5. A check "from scratch" / after changes to
    the site needs `audit --fresh` and then `browse --force`: a plain browse skips every page it has
    already measured (check `browserCoverage.stalePages` is 0 before publishing).
 
    While the second audit runs, do the manual checks yourself in Playwright as `/qc-browse`
    «Manual checks» describes (mobile menu, popups, forms without submitting, FAQ, keyboard focus);
    their entries go into the review file in step 5. The browser pass
-   also takes a full-page screenshot of every page at every width — the report's «Визуальная
-   проверка» block (summary field `visual`).
+   also takes a full-page screenshot of every page at every width — the report's "Visual check"
+   block (summary field `visual`).
 3. **Check the exit code before trusting anything on stdout.** The engine's `renderReport`,
    `rollUp`, and `diffRuns` throw on malformed input, and the CLI catches every thrown error,
    prints it to stderr, and exits non-zero. A non-zero exit means no valid report was produced —
@@ -123,7 +131,7 @@ command.
      number that reflects actual remaining work — **lead the summary with `distinct`, not
      `counts`**. Mention `counts` only as a secondary "blast radius" figure (how many pages a fix
      touches), never as the headline number. The HTML report leads with the same split — its first
-     tile reads «N дефектов / M вхождений на K страницах» — so your summary and the artifact agree.
+     tile reads "N defects / M occurrences on K pages" — so your summary and the artifact agree.
    - `heuristics` (also split by severity) are findings the engine could not confirm with enough
      certainty to count toward the verdict — e.g. an external link that returned 400/403 (could be
      the site blocking automated requests, not a dead link) or a new-tab/no-new-tab style call.
@@ -135,15 +143,15 @@ command.
    pattern matches; you are the second pair of eyes.
    - Read your knowledge base from step 0 and `profile.path` (brand, services, locations, phones,
      emails, forms with their options), and write 2–4 plain sentences on what the site is: who the business is, what it offers, where, how
-     people contact it. This is the report's «О сайте» block and your reference for the review.
+     people contact it. This is the report's "About the site" block and your reference for the review.
    - Run `node <plugin-root>/engine/src/cli.js findings "<host>"`. It lists the latest run's
      distinct defects as `D1…Dn` with rule, severity, confidence, found, expected, scope
      (global / template / page) and up to three example pages with `where`.
    - Judge each defect: all critical and major ones, and every heuristic (cap ~60, most severe
      first; leave the rest unreviewed and say so). Verdicts: `confirmed`, `false-positive`, `unsure`,
-     each with a one-line note in Russian saying why — a page it names written as a link,
-     `[Newark](https://site/locations/newark/)` («номер в FAQ действительно без tel:»,
-     «email-защита Cloudflare, в браузере это mailto»). Where the entry alone is not enough, open the
+     each with a one-line note in English saying why — a page it names written as a link,
+     `[Newark](https://site/locations/newark/)` ("the FAQ number really has no tel: link",
+     "Cloudflare email protection, a mailto: in the browser"). Where the entry alone is not enough, open the
      page and look at that spot only. **A defect that carries `verify` is settled in Playwright, the
      way `verify` says** (bot-blocked links opened in a real browser, `href="#"` clicked to see if
      it opens a popup, contrast and overlap looked at on a screenshot, hover actually hovered) —
@@ -151,7 +159,7 @@ command.
      logical ones: is the "missing" service really a service of this business, is the "foreign" city
      one it serves. Reading pages here is to confirm or reject an engine finding — never add a finding
      the engine did not report; if you notice something the engine missed, say so in the chat
-     summary as «замечено Claude, правилом не покрыто» and propose the rule.
+     summary as "noticed by Claude, not covered by a rule" and propose the rule.
    - **Read the copy for contradictions** (the `content` check — the engine's H16 only matches a
      few patterns). With PA CMS, `discovery_page_md_get` for every page (over ~40 pages: every hub,
      every template's pages up to 10 each, all posts' intros); otherwise WebFetch. Compare what
@@ -166,7 +174,7 @@ command.
      (`manual`: your Playwright checks and the content check, format in `/qc-browse`) to
      `<runDir>/review-input.json` and run
      `node <plugin-root>/engine/src/cli.js review "<host>" "<runDir>/review-input.json"`. It re-renders
-     `report.html`: false positives move to «Отклонено при ревью Claude» and stop counting, the rest
+     `report.html`: false positives move to "Rejected in Claude’s review" and stop counting, the rest
      show your note. Use its printed `verdict`/`distinct` in the summary, not the pre-review ones.
 6. Read `reportPath` and publish it with the Artifact tool (icon `checklist`), together with the
    page screenshots in `<runDir>/visual/` as `/qc-browse` «Publishing the report» says — the report
@@ -186,17 +194,17 @@ command.
    Artifact. Credentials live in `~/.config/qc/reports.json` (`{url, user, appPassword}`); if the
    file is missing, say so and skip this step rather than fail the QC. Give the printed `url` in the
    summary next to the Artifact link. «Fixed» marks are kept per site and defect, so they carry to
-   the next scan; a defect marked fixed that this scan found again is flagged «вернулся».
-7. Summarise in chat, in Russian (the operator-facing language for this skill). Name every
+   the next scan; a defect marked fixed that this scan found again is flagged "came back".
+7. Summarise in chat, in the user’s language. Name every
    defect by its id as the report shows it — `D12` for the engine's (the same as `qc findings`),
    `M3` for your manual ones — so the reader can type it into the report's search:
-   - What the site is (your «О сайте» lines) and how many findings you confirmed, rejected and left
+   - What the site is (your About-the-site lines) and how many findings you confirmed, rejected and left
      unsure; name the rejected ones briefly so a rule can be fixed.
    - Lead with global errors (header, menu, footer, every page — one fix each), then template
      errors per section, then single pages: the report is grouped the same way.
-   - **Вердикт** (`verdict`) and the **distinct** counts per severity (critical/major/minor) —
-     this is the headline, phrased as "N реальных дефектов", not raw occurrence counts.
-   - Raw `counts` as a secondary line ("встречаются на M страницах"), only if it materially adds
+   - **Verdict** (`verdict`) and the **distinct** counts per severity (critical/major/minor) —
+     this is the headline, phrased as "N real defects", not raw occurrence counts.
+   - Raw `counts` as a secondary line ("found on M pages"), only if it materially adds
      information (e.g. a single defect repeated on many pages).
    - `heuristics`, explicitly labeled as needing manual confirmation, broken down by severity —
      never silently dropped from the summary.
@@ -204,12 +212,12 @@ command.
      because it determines whether `noindex` findings were suppressed (a `dev` classification
      silences `I4`-style findings that would otherwise fire on every page).
    - `diff` (added/fixed/remaining vs the previous run for this host), if `runDir` shows this
-     wasn't the first run. The report renders all three as tiles: «новых», «починено», «осталось».
+     wasn't the first run. The report renders all three as tiles: "new", "fixed", "remaining".
    - The top rule groups by distinct-defect count. Read this off the report, do not invent or
-     recompute it: each rule row's summary line reads `<N> дефектов · <M> страниц · <K> находок`,
+     recompute it: each rule row's summary line reads `<N> defects · <M> pages · <K> findings`,
      where `N` is that row's distinct-defect count — the number to rank by and to quote. Inside the
-     row, each distinct defect is rendered as its own block with its own `найдено` / `ожидается` /
-     `селектор` and its own page list, so "8 дефектов" means eight separately described problems,
+     row, each distinct defect is rendered as its own block with its own `found` / `expected` /
+     `selector` and its own page list, so "8 defects" means eight separately described problems,
      not one example repeated.
    - If the report's header carries a `Sitemap: <status>` warning box, say so: the page list may be
      incomplete, so the audit may not have covered the whole site.
@@ -221,7 +229,7 @@ command.
      `/qc-browse` again.
    - Browser coverage (`browserCoverage`): if `null`, say plainly that no browser/visual pass has
      run for this host and that `/qc-browse` is what adds it. If present, state `pagesDone`/
-     `pagesTotal` and the widths checked, and lead with "частично" language rather than a clean
+     `pagesTotal` and the widths checked, and lead with "partial" language rather than a clean
      verdict if `pagesDone < pagesTotal` — a partial browser pass must never be presented as if the
      whole site's visual behaviour was checked.
    - The manual checks (menu, popups, forms, FAQ, focus, content): what you checked, what was fine,
@@ -235,13 +243,13 @@ Phones, GBP profiles, retired terms, emails and the review rating are checked ag
 (`~/.qc-facts/<host>.json`, or `--facts <path>`; format in the engine README, «Site facts»).
 Without it H9 and H11 report nothing, and E9 and E12 only compare the site with itself.
 
-- Read `facts` in the summary. If it is `null`, say so in the summary: «факты сайта не заданы —
-  H9/H11 не проверялись, E9/E12 сравнивали сайт только сам с собой».
+- Read `facts` in the summary. If it is `null`, say so in the summary: "no site facts —
+  H9/H11 were not checked, E9/E12 compared the site only with itself".
 - To create the file, get the values from the user, the client's strategy sheet or the GBP
   listing. Never fill it from the site being audited — that would make every defect match
   itself. If a value is unknown, leave the field out rather than guessing; ask the user for the
   retired services/locations (`banned`), since only they know what the client dropped.
-- For `gbp`, take each location's link from GBP's own «Поделиться» (Share) button or from the
+- For `gbp`, take each location's link from GBP's own Share button or from the
   user, plus its address and the site paths of its location page. The link on the site is
   what is being checked, so it cannot be the source.
 - Write the file only after the user has confirmed the values, then rerun the audit.
