@@ -144,7 +144,7 @@ async function attemptPage({ newPage, url, widths, timeout, bundle, regions, hos
           // a later width. Silently showing an unlabelled crop would let a
           // reader mistake "the evidence" for "the worst case". `shotWidth`
           // records which width the crop actually came from, right next to
-          // `shot`, so a report can say "снимок с 360px" and a reader who
+          // `shot`, so a report can say "screenshot at 360px" and a reader who
           // knows the defect also occurs at 1440 can go look themselves,
           // rather than trusting an unlabelled image.
           //

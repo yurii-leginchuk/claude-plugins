@@ -148,7 +148,7 @@ test('J3 flags dark text over a translucent white panel on a black section (naiv
   const finding = f.find(x => /translucent-fail/.test(x.selector))
   assert.ok(finding, 'expected #translucent-fail to be flagged')
   assert.equal(finding.confidence, 'heuristic')
-  const ratio = parseFloat(/^контраст ([\d.]+):1/.exec(finding.found)[1])
+  const ratio = parseFloat(/^contrast ([\d.]+):1/.exec(finding.found)[1])
   assert.ok(ratio < 4.5, `expected a low composited ratio, got ${ratio}`)
   assert.ok(ratio > 1, `expected a plausible contrast ratio, got ${ratio}`)
 })

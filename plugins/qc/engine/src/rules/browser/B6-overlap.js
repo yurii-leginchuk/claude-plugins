@@ -1,6 +1,6 @@
 export const meta = {
   id: 'B6',
-  title: 'Перекрытие элементов',
+  title: 'Overlapping elements',
   severity: 'major',
   confidence: 'heuristic',
 }
@@ -81,11 +81,11 @@ export function check(ctx) {
       if (seen[key]) continue
       seen[key] = 1
       out.push({
-        rule: 'B6', title: 'Перекрытие элементов', severity: 'major', confidence: 'heuristic',
+        rule: 'B6', title: 'Overlapping elements', severity: 'major', confidence: 'heuristic',
         engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint, selector: sa,
         containerId: ctx.helpers.containerId(a.el),
-        found: 'перекрывается с ' + sb + ' на ' + Math.round(area) + 'px²',
-        expected: 'элементы не должны накладываться',
+        found: 'overlaps ' + sb + ' by ' + Math.round(area) + 'px²',
+        expected: 'elements should not overlap',
       })
     }
   }

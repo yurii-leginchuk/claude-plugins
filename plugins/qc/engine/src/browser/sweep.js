@@ -85,14 +85,14 @@ export async function sweepPage(page, { url, host, sweep = SWEEP, capturedIdenti
   const findings = []
   for (const s of seen.values()) {
     const f = {
-      rule: 'C8', title: 'Элемент выходит за край экрана на части ширин', severity: 'critical', confidence: 'high',
+      rule: 'C8', title: 'Element goes past the screen edge at some widths', severity: 'critical', confidence: 'high',
       engine: 'browser', page: url, breakpoint: s.worst.w, selector: s.selector, containerId: s.containerId,
       // The widths go to `where`, not `found`: a header element breaking at
       // slightly different ranges on two pages is still one defect.
-      found: `элемент ${s.selector} выходит за правый край экрана (горизонтальный скролл)`,
-      expected: 'элемент не шире экрана: убрать фиксированную ширину/отступ, max-width: 100%, перенос строк',
-      where: [`ширины ${ranges(s.widths, sweep.step)} px, сильнее всего ${s.worst.w} px (на ${s.worst.by} px)`,
-        s.containerId ? `контейнер Elementor ${s.containerId}` : null, s.heading ? `под заголовком «${s.heading}»` : null].filter(Boolean).join(' · '),
+      found: `element ${s.selector} goes past the right edge of the screen (horizontal scroll)`,
+      expected: 'element no wider than the screen: remove the fixed width/margin, max-width: 100%, wrap lines',
+      where: [`widths ${ranges(s.widths, sweep.step)} px, worst at ${s.worst.w} px (by ${s.worst.by} px)`,
+        s.containerId ? `Elementor container ${s.containerId}` : null, s.heading ? `under heading “${s.heading}”` : null].filter(Boolean).join(' · '),
     }
     f.region = region(f)
     const identity = `C8|${f.selector}`

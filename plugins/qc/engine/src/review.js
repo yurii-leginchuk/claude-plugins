@@ -26,15 +26,15 @@ export const MANUAL_CHECKS = {
   content: ['H16', 'H8', 'H3', 'H12', 'E17'],
 }
 export const MANUAL_TITLES = {
-  D1: 'Меню или подменю не открывается', C6: 'Не помещается в экран', C9: 'Мобильное меню не прокручивается',
-  D9: 'Не закрывается', D2: 'Мобильное и десктопное меню расходятся', B6: 'Перекрытие элементов',
-  K4: 'Попап не работает', J2: 'Не работает с клавиатуры', J5: 'Доступность (ADA)',
-  G2: 'Чекбокс согласия не обязателен', G3: 'Обязательное поле без *', G5: 'Телефон принимает не цифры',
-  G6: 'Email не обязателен', G7: 'Кнопка отправки пропадает после ошибки', G11: 'Раскладка полей формы',
-  G12: 'Активное поле не подсвечивается', G14: 'Форма не отправляется или прыгает наверх',
-  F9: 'Аккордеон работает неправильно', C2: 'Элемент не влезает в экран',
-  H16: 'Страницы противоречат друг другу', H8: 'Дубль текста', H3: 'Опечатка', H12: 'Чужой город или штат',
-  E17: 'Текст обещает не то, что есть на сайте',
+  D1: 'Menu or submenu does not open', C6: 'Does not fit the screen', C9: 'Mobile menu does not scroll',
+  D9: 'Does not close', D2: 'Mobile and desktop menus differ', B6: 'Overlapping elements',
+  K4: 'Popup does not work', J2: 'Does not work with the keyboard', J5: 'Accessibility (ADA)',
+  G2: 'Consent checkbox is not required', G3: 'Required field without *', G5: 'Phone field accepts non-digits',
+  G6: 'Email is not required', G7: 'Submit button disappears after an error', G11: 'Form field layout',
+  G12: 'Active field is not highlighted', G14: 'Form does not submit or jumps to the top',
+  F9: 'Accordion works incorrectly', C2: 'Element does not fit the screen',
+  H16: 'Pages contradict each other', H8: 'Duplicate text', H3: 'Typo', H12: 'Wrong city or state',
+  E17: 'Text promises something the site does not have',
 }
 
 // review.manual: one entry per check × page × width, `ok` ones included so
@@ -46,33 +46,33 @@ function manualOf(review, dir) {
   const findings = []
   const entries = [...(review.manual || []), ...(review.menu || []).map(m => ({ check: 'menu', ...m }))]
   entries.forEach((m, i) => {
-    const at = `ревью manual[${i}]`
-    if (!m || !MANUAL_CHECKS[m.check]) throw new Error(`${at}: check должен быть одним из ${Object.keys(MANUAL_CHECKS).join(', ')}`)
-    if (!m.page) throw new Error(`${at}: нужен page`)
-    if (m.check !== 'content' && !Number.isFinite(Number(m.width))) throw new Error(`${at}: нужен width`)
-    if (!STATUSES.has(m.status)) throw new Error(`${at}: status должен быть ok, defect или skipped`)
+    const at = `review manual[${i}]`
+    if (!m || !MANUAL_CHECKS[m.check]) throw new Error(`${at}: check must be one of ${Object.keys(MANUAL_CHECKS).join(', ')}`)
+    if (!m.page) throw new Error(`${at}: page is required`)
+    if (m.check !== 'content' && !Number.isFinite(Number(m.width))) throw new Error(`${at}: width is required`)
+    if (!STATUSES.has(m.status)) throw new Error(`${at}: status must be ok, defect or skipped`)
     const width = m.width == null ? null : Number(m.width)
     const shots = (m.shots || []).map((src, j) => {
-      if (!existsSync(src)) throw new Error(`${at}: нет файла скриншота ${src}`)
+      if (!existsSync(src)) throw new Error(`${at}: screenshot file not found: ${src}`)
       mkdirSync(join(dir, 'visual'), { recursive: true })
       const name = `manual-${i}-${j}${extname(src) || '.png'}`
       copyFileSync(src, join(dir, 'visual', name))
       return `visual/${name}`
     })
     for (const d of m.defects || []) {
-      if (!MANUAL_CHECKS[m.check].includes(d.rule)) throw new Error(`${at}: rule для ${m.check} должен быть одним из ${MANUAL_CHECKS[m.check].join(', ')}`)
-      if (!SEVERITIES.has(d.severity)) throw new Error(`${at}: severity должен быть critical, major, minor или note`)
-      if (!d.found || !d.expected) throw new Error(`${at}: у дефекта нужны found и expected`)
+      if (!MANUAL_CHECKS[m.check].includes(d.rule)) throw new Error(`${at}: rule for ${m.check} must be one of ${MANUAL_CHECKS[m.check].join(', ')}`)
+      if (!SEVERITIES.has(d.severity)) throw new Error(`${at}: severity must be critical, major, minor or note`)
+      if (!d.found || !d.expected) throw new Error(`${at}: a defect needs found and expected`)
       for (const page of d.pages?.length ? d.pages : [m.page]) {
         findings.push({
           rule: d.rule, title: d.title || MANUAL_TITLES[d.rule], severity: d.severity, confidence: 'high', engine: 'claude',
           check: m.check, manual: i, page, breakpoint: width, selector: d.selector || null, found: d.found, expected: d.expected,
           where: d.where || null, zone: m.check === 'menu' ? 'header' : null,
-          review: { verdict: 'confirmed', note: m.check === 'content' ? 'найдено Claude при чтении страниц' : 'проверено Claude в Playwright' },
+          review: { verdict: 'confirmed', note: m.check === 'content' ? 'found by Claude while reading the pages' : 'checked by Claude in Playwright' },
         })
       }
     }
-    if (m.status === 'defect' && !(m.defects || []).length) throw new Error(`${at}: status defect без defects`)
+    if (m.status === 'defect' && !(m.defects || []).length) throw new Error(`${at}: status defect without defects`)
     checks.push({ index: i, check: m.check, page: m.page, width, status: m.status, checked: m.checked ? String(m.checked) : null, shots })
   })
   return { checks, findings }
@@ -81,20 +81,20 @@ function manualOf(review, dir) {
 // How Claude settles a finding the engine could not, in a real browser
 // (Playwright MCP) rather than by fetching HTML. Shown by `qc findings`.
 export const VERIFY = {
-  E1: 'Playwright: открыть ссылку в браузере (navigate) — страница открылась и это та страница? Бот-защита отдаёт 403/406 только скрипту',
-  F12: 'Playwright: нажать ссылку — открылся попап/форма или прокрутка к блоку? Тогда это триггер, а не мёртвая ссылка',
-  J3: 'Playwright: скриншот элемента на его ширине — текст виден и читается? Скрытый (screen-reader) текст не в счёт',
-  F1: 'Playwright: навести мышь (hover) и сравнить скриншоты или computed style до и после',
-  F4: 'Playwright: навести мышь и нажать — элемент что-то делает?',
-  X1: 'Playwright: открыть страницу и прочитать консоль — ошибка от сайта или от стороннего виджета (капча, чат)?',
-  B6: 'Playwright: скриншот на этой ширине — элементы правда наезжают друг на друга?',
-  C2: 'Playwright: скриншот на этой ширине — есть ли горизонтальный скролл или обрезанный контент?',
+  E1: 'Playwright: open the link in the browser (navigate). Did the page open and is it the right page? Bot protection returns 403/406 only to scripts',
+  F12: 'Playwright: click the link. Did a popup/form open or did it scroll to a block? Then it is a trigger, not a dead link',
+  J3: 'Playwright: screenshot the element at its width. Is the text visible and readable? Hidden (screen-reader) text does not count',
+  F1: 'Playwright: hover the mouse and compare screenshots or computed style before and after',
+  F4: 'Playwright: hover and click. Does the element do anything?',
+  X1: 'Playwright: open the page and read the console. Is the error from the site or from a third-party widget (captcha, chat)?',
+  B6: 'Playwright: screenshot at this width. Do the elements really overlap?',
+  C2: 'Playwright: screenshot at this width. Is there horizontal scroll or cut-off content?',
 }
 
 function runOf(host) {
   const dir = latestRunDir(host)
   if (!dir || !existsSync(join(dir, 'report-input.json'))) {
-    throw new Error(`нет запуска для ${host}, сделанного этой версией: сначала qc audit`)
+    throw new Error(`no run for ${host} made by this version: run qc audit first`)
   }
   const findings = JSON.parse(readFileSync(join(dir, 'findings.json'), 'utf8'))
   const input = JSON.parse(readFileSync(join(dir, 'report-input.json'), 'utf8'))
@@ -137,9 +137,9 @@ export function applyReview(host, reviewPath) {
   const identityOf = new Map(ids.map(x => [x.id, x.identity]))
   const byIdentity = new Map()
   for (const item of review.items || []) {
-    if (!VERDICTS.has(item.verdict)) throw new Error(`ревью ${item.id}: verdict должен быть confirmed, false-positive или unsure`)
+    if (!VERDICTS.has(item.verdict)) throw new Error(`review ${item.id}: verdict must be confirmed, false-positive or unsure`)
     const identity = identityOf.get(item.id)
-    if (!identity) throw new Error(`ревью: нет дефекта ${item.id} в последнем запуске (сначала qc findings)`)
+    if (!identity) throw new Error(`review: no defect ${item.id} in the last run (run qc findings first)`)
     byIdentity.set(identity, { verdict: item.verdict, note: item.note ? String(item.note) : null })
   }
   const kept = []

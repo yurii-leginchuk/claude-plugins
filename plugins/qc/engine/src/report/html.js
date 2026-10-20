@@ -112,27 +112,27 @@ dialog.lb img{display:block;max-width:100%;margin:0 auto}
 // Thumbnail width per viewport width: a phone shot stays narrow, a desktop
 // one wide, all at the same height so a row reads as one strip.
 const thumbWidth = (w) => Math.round(Math.min(320, Math.max(110, Number(w) / 4.5)))
-const thumb = (src, label, w) => `<figure class="thumb"><button type="button" data-full="${esc(src)}" data-label="${esc(label)}" style="width:${thumbWidth(w)}px" aria-label="Открыть ${esc(label)}"><img loading="lazy" src="${esc(src)}" alt="${esc(label)}"></button><figcaption>${esc(label)}</figcaption></figure>`
+const thumb = (src, label, w) => `<figure class="thumb"><button type="button" data-full="${esc(src)}" data-label="${esc(label)}" style="width:${thumbWidth(w)}px" aria-label="Open ${esc(label)}"><img loading="lazy" src="${esc(src)}" alt="${esc(label)}"></button><figcaption>${esc(label)}</figcaption></figure>`
 
 // Every page at every width, defects or not -- what QA scrolls through by eye.
 function renderVisual(visual) {
   if (!Array.isArray(visual) || !visual.length) {
-    return '<h2>Визуальная проверка</h2><p class="sub">Скриншотов страниц нет — браузерная проверка не снимала страницы (запустите <code>qc browse</code> этой версией).</p>'
+    return '<h2>Visual check</h2><p class="sub">No page screenshots: the browser pass did not capture any pages (run <code>qc browse</code> with this version).</p>'
   }
-  return `<h2>Визуальная проверка — все страницы на всех ширинах</h2>
-<div class="note-box heuristic">Скриншоты всей страницы на каждой ширине, даже там, где дефектов не найдено, — чтобы глазами пролистать сайт. Нажмите на миниатюру, чтобы открыть в полный размер.</div>
+  return `<h2>Visual check: every page at every width</h2>
+<div class="note-box heuristic">Full-page screenshots at every width, including pages with no defects, so you can scroll through the site by eye. Click a thumbnail to open it at full size.</div>
 ${visual.map(v => `<div class="vis-page"><p class="kv"><code>${esc(v.url)}</code></p><div class="strip">${v.shots.map(s =>
-    thumb(s.src, `${s.width} px${s.cut ? ' (обрезано)' : ''}`, s.width)).join('')}</div></div>`).join('')}`
+    thumb(s.src, `${s.width} px${s.cut ? ' (cut)' : ''}`, s.width)).join('')}</div></div>`).join('')}`
 }
 
-const MANUAL_STATUS = { ok: ['ok', 'в порядке'], defect: ['crit', 'есть дефекты'], skipped: ['note', 'не проверено'] }
+const MANUAL_STATUS = { ok: ['ok', 'ok'], defect: ['crit', 'defects found'], skipped: ['note', 'not checked'] }
 const MANUAL_SECTIONS = [
-  ['menu', 'Мобильное меню', 'открывается ли бургер, на всю ли ширину, не выходит ли за край, видны ли все пункты, раскрываются ли подменю, закрывается ли, совпадают ли ссылки с десктопным меню'],
-  ['popup', 'Попапы', 'открывается ли по кнопке, помещается ли в экран, закрывается ли крестиком, кликом мимо и Esc'],
-  ['form', 'Формы', 'обязательные поля и *, тексты ошибок, маска телефона, кнопка после ошибки, раскладка на мобильном (без отправки)'],
-  ['faq', 'FAQ и аккордеоны', 'открывается ли нужный пункт, не ломается ли вёрстка'],
-  ['focus', 'Фокус с клавиатуры', 'виден ли фокус при переходе по Tab, доходит ли он до меню, кнопок и форм, нет ли ловушек'],
-  ['content', 'Противоречия в тексте', 'сроки, цифры, часы, цены и обещания, которые расходятся между страницами'],
+  ['menu', 'Mobile menu', 'does the burger open, full width, nothing past the edge, all items visible, submenus expand, it closes, links match the desktop menu'],
+  ['popup', 'Popups', 'opens from its button, fits the screen, closes with the X, a click outside and Esc'],
+  ['form', 'Forms', 'required fields and *, error texts, phone mask, button after an error, mobile layout (not submitted)'],
+  ['faq', 'FAQ and accordions', 'the right item opens, the layout does not break'],
+  ['focus', 'Keyboard focus', 'focus is visible on Tab, reaches the menu, buttons and forms, no focus traps'],
+  ['content', 'Contradictions in the text', 'timelines, numbers, hours, prices and promises that differ between pages'],
 ]
 
 // What Claude checked by hand (Playwright, or reading the pages for
@@ -141,8 +141,8 @@ function renderManual(manualChecks, claudeFindings) {
   const checks = Array.isArray(manualChecks) ? manualChecks : []
   const done = MANUAL_SECTIONS.filter(([k]) => checks.some(c => c.check === k))
   const missing = MANUAL_SECTIONS.filter(([k]) => !checks.some(c => c.check === k))
-  const head = `<h2>Ручные проверки Claude (Playwright и чтение страниц)</h2>
-<div class="note-box heuristic">Это то, что движок не умеет: нажать, навести, пройти Tab, понять смысл текста. Claude проверил вручную; найденные дефекты учтены в вердикте.</div>`
+  const head = `<h2>Claude’s manual checks (Playwright and reading the pages)</h2>
+<div class="note-box heuristic">These are things the engine cannot do: click, hover, Tab through, understand what the text means. Claude checked them by hand; the defects found count toward the verdict.</div>`
   const body = done.map(([k, title, what]) => `<h3>${esc(title)}</h3><p class="sub">${esc(what)}</p>${checks.filter(c => c.check === k).map(m => {
     const [cls, label] = MANUAL_STATUS[m.status] || MANUAL_STATUS.skipped
     // One block per defect, with every page it names (a content defect spans several).
@@ -154,14 +154,14 @@ function renderManual(manualChecks, claudeFindings) {
     }
     return `<div class="menu-row"><p class="kv"><span class="chip ${cls}">${esc(label)}</span>${m.width != null ? ` <b>${esc(m.width)} px</b> ·` : ''} <code>${esc(m.page)}</code></p>
 ${m.checked ? `<p class="kv">${esc(m.checked)}</p>` : ''}
-${defs.map(f => `<div class="defect"><p class="kv"><span class="chip ${CHIP[f.severity] || 'note'}">${esc(f.severity)}</span> ${esc(f.rule)} · ${esc(f.title)}</p><p class="kv">найдено: ${esc(f.found)}</p>${f.where ? `<p class="kv">где: ${esc(f.where)}</p>` : ''}<p class="kv">ожидается: ${esc(f.expected)}</p>${f.pages.length > 1 ? `<ul class="pages">${f.pages.map(p => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}</div>`).join('')}
+${defs.map(f => `<div class="defect"><p class="kv"><span class="chip ${CHIP[f.severity] || 'note'}">${esc(f.severity)}</span> ${esc(f.rule)} · ${esc(f.title)}</p><p class="kv">found: ${esc(f.found)}</p>${f.where ? `<p class="kv">where: ${esc(f.where)}</p>` : ''}<p class="kv">expected: ${esc(f.expected)}</p>${f.pages.length > 1 ? `<ul class="pages">${f.pages.map(p => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}</div>`).join('')}
 ${(m.shots || []).length ? `<div class="strip">${m.shots.map((src, i) => thumb(src, `${m.width != null ? `${m.width} px · ` : ''}${i + 1}`, m.width || 768)).join('')}</div>` : ''}</div>`
   }).join('')}`).join('')
-  const rest = missing.length ? `<p class="sub">Не проверялось вручную: ${missing.map(([, t]) => esc(t)).join(', ')}.</p>` : ''
+  const rest = missing.length ? `<p class="sub">Not checked by hand: ${missing.map(([, t]) => esc(t)).join(', ')}.</p>` : ''
   return head + body + rest
 }
 
-const LIGHTBOX = `<dialog class="lb" id="qc-lb"><div class="bar"><span id="qc-lb-t"></span><button type="button" id="qc-lb-x">Закрыть</button></div><img id="qc-lb-i" alt=""></dialog>
+const LIGHTBOX = `<dialog class="lb" id="qc-lb"><div class="bar"><span id="qc-lb-t"></span><button type="button" id="qc-lb-x">Close</button></div><img id="qc-lb-i" alt=""></dialog>
 <script>(()=>{const d=document.getElementById('qc-lb');if(!d||!d.showModal)return;const i=document.getElementById('qc-lb-i'),t=document.getElementById('qc-lb-t');
 document.addEventListener('click',e=>{const b=e.target.closest('[data-full]');if(!b)return;i.src=b.dataset.full;i.alt=b.dataset.label;t.textContent=b.dataset.label;d.showModal()});
 document.getElementById('qc-lb-x').onclick=()=>d.close();d.addEventListener('click',e=>{if(e.target===d)d.close()})})()</script>`
@@ -194,7 +194,7 @@ function renderDefect(d, ctx = {}) {
   // at is represented, not just whichever occurrence rollUp kept.
   const bps = breakpointsByIdentity.get(d.identity)
   const breakpointsHtml = bps && bps.size
-    ? `<div class="kv">брейкпоинты: <code>${[...bps].sort((a, b) => a - b).map(esc).join(', ')}</code></div>`
+    ? `<div class="kv">breakpoints: <code>${[...bps].sort((a, b) => a - b).map(esc).join(', ')}</code></div>`
     : ''
 
   // A `region` is a proved-shared container (regions.js, Tasks 6-7 -- header,
@@ -213,7 +213,7 @@ function renderDefect(d, ctx = {}) {
   // A region whose NAME could not be determined is labelled as the container
   // id it actually is, and said to be unnamed -- not printed in the name slot
   // as though it were one. On the only real site this has run against, every
-  // label read "регион: 3381" rather than "footer", because that snapshot was
+  // label read "region: 3381" rather than "footer", because that snapshot was
   // crawled before the parser recorded `locationsById` and nothing detected a
   // snapshot whose shape predates a parser change. The finding is still
   // correct and still collapses across pages; only the name is missing, and
@@ -222,8 +222,8 @@ function renderDefect(d, ctx = {}) {
   const unnamedRegion = typeof region === 'string' && region.startsWith(UNNAMED_REGION_PREFIX)
   const regionHtml = region
     ? (unnamedRegion
-        ? `<div class="kv">регион: общий контейнер Elementor <code>${esc(region.slice(UNNAMED_REGION_PREFIX.length))}</code> (название — header/footer — определить не удалось: снимок сделан до того, как парсер начал сохранять локации; пересоберите его через <code>--fresh</code>) — общий для всех вхождений ниже, исправить нужно один раз</div>`
-        : `<div class="kv">регион: <code>${esc(region)}</code> — общий для всех вхождений ниже, исправить нужно один раз</div>`)
+        ? `<div class="kv">region: shared Elementor container <code>${esc(region.slice(UNNAMED_REGION_PREFIX.length))}</code> (its name, header or footer, could not be determined: the snapshot was taken before the parser started saving locations; rebuild it with <code>--fresh</code>). Shared by every occurrence below, so fix it once</div>`
+        : `<div class="kv">region: <code>${esc(region)}</code>. Shared by every occurrence below, so fix it once</div>`)
     : ''
 
   // Review fix: `shotDataUri` reaches this function from `d.example`, which
@@ -253,24 +253,24 @@ function renderDefect(d, ctx = {}) {
   const suppressed = shotDataUri && suppressedShots.has(d.identity)
   const shotHtml = shotDataUri
     ? (suppressed
-        ? `<div class="kv sub">скриншот скрыт — отчёт превысил лимит размера (см. предупреждение выше)</div>`
+        ? `<div class="kv sub">screenshot hidden: the report went over the size limit (see the warning above)</div>`
         : `<div class="kv"><img src="${esc(shotDataUri)}" alt="" style="max-width:100%">` +
-          (shotWidth != null ? `<div class="sub">снимок сделан при ширине ${esc(shotWidth)}px</div>` : '') +
+          (shotWidth != null ? `<div class="sub">screenshot taken at ${esc(shotWidth)}px wide</div>` : '') +
           `</div>`)
     : ''
 
   return `
       <div class="defect">
         ${d.example?.review ? `<div class="kv review review-${esc(d.example.review.verdict)}">Claude: ${esc(REVIEW_LABEL[d.example.review.verdict] || d.example.review.verdict)}${d.example.review.note ? ` — ${esc(d.example.review.note)}` : ''}</div>` : ''}
-        ${String(d.scope || '').startsWith('template:') ? `<div class="kv">раздел: <code>${esc(d.scope.slice(9))}</code></div>` : ''}
-        <div class="kv">найдено: <code>${esc(d.found)}</code></div>
-        ${d.expected ? `<div class="kv">ожидается: <code>${esc(d.expected)}</code></div>` : ''}
-        <div class="kv">селектор: <code>${esc(d.selector)}</code></div>
+        ${String(d.scope || '').startsWith('template:') ? `<div class="kv">section: <code>${esc(d.scope.slice(9))}</code></div>` : ''}
+        <div class="kv">found: <code>${esc(d.found)}</code></div>
+        ${d.expected ? `<div class="kv">expected: <code>${esc(d.expected)}</code></div>` : ''}
+        <div class="kv">selector: <code>${esc(d.selector)}</code></div>
         ${breakpointsHtml}
         ${regionHtml}
         ${shotHtml}
         <ul class="pages">${shownPages.map(p => `<li>${esc(p)}${d.where?.[p] ? `<div class="where">${esc(d.where[p])}</div>` : ''}</li>`).join('')}</ul>
-        ${hiddenCount > 0 ? `<p class="kv">…и ещё ${hiddenCount} страниц не показано (ограничение списка)</p>` : ''}
+        ${hiddenCount > 0 ? `<p class="kv">…and ${hiddenCount} more pages not shown (list limit)</p>` : ''}
       </div>`
 }
 
@@ -308,9 +308,9 @@ function scoped(groups, totalPages) {
     }
   }
   const TITLES = {
-    global: ['Глобальные ошибки', 'хедер, меню, футер или все страницы сайта — исправляется один раз в общем шаблоне'],
-    template: ['Ошибки шаблонов разделов', 'все страницы одного раздела — исправляется в шаблоне или общем блоке раздела'],
-    page: ['Ошибки отдельных страниц', 'исправляется на конкретной странице'],
+    global: ['Site-wide', 'header, menu, footer or every page of the site: fix once in the shared template'],
+    template: ['Template', 'every page of one section: fix in the section’s template or shared block'],
+    page: ['Single pages', 'fix on the page itself'],
   }
   return ['global', 'template', 'page'].filter(k => buckets.has(k)).map(k => ({
     key: k, title: TITLES[k][0], note: TITLES[k][1],
@@ -339,16 +339,16 @@ function renderGroup(g, ctx = {}) {
     <summary>
       <span class="chip ${CHIP[g.severity] ?? 'note'}">${esc(LABEL[g.severity] ?? g.severity)}</span>
       <b>${esc(g.rule)}</b> · ${esc(g.title)}
-      <span class="cnt">${defects.length} дефектов · ${g.pages.length} страниц · ${g.count} находок</span>
+      <span class="cnt">${defects.length} defects · ${g.pages.length} pages · ${g.count} findings</span>
     </summary>
     <div class="body">
       ${shown.map(d => renderDefect(d, { ...ctx, severity: g.severity })).join('')}
-      ${hiddenDefects > 0 ? `<p class="kv">…и ещё ${hiddenDefects} дефектов не показано (ограничение списка)</p>` : ''}
+      ${hiddenDefects > 0 ? `<p class="kv">…and ${hiddenDefects} more defects not shown (list limit)</p>` : ''}
     </div>
   </details>`
 }
 
-const REVIEW_LABEL = { confirmed: 'подтверждено', unsure: 'нужно проверить вручную', 'false-positive': 'ложное срабатывание' }
+const REVIEW_LABEL = { confirmed: 'confirmed', unsure: 'needs a manual check', 'false-positive': 'false positive' }
 
 export function renderReport({
   host, env, envReason, pages, findings, diff, snapshotAgeDays, source, sitemapStatus,
@@ -391,8 +391,8 @@ export function renderReport({
   const hiddenPageCount = uniquePages.length - shownPages.length
 
   const ageLabel = snapshotAgeDays < 1
-    ? 'свежий'
-    : `${Number(snapshotAgeDays).toFixed(0)} дн.`
+    ? 'fresh'
+    : `${Number(snapshotAgeDays).toFixed(0)} days`
 
   // The severity tiles count raw occurrences, which is what made the report
   // lead with "Major 56" -- the exact number this engine's distinct/occurrence
@@ -436,14 +436,14 @@ export function renderReport({
   // never look complete just because SOME findings are shown.
   let browserCoverageHtml
   if (!browserCoverage) {
-    browserCoverageHtml = `<div class="note-box">Браузерная проверка не выполнялась — этот отчёт основан только на статическом анализе HTML. Визуальные и интерактивные дефекты (переполнение, наложения элементов, hover/focus, ошибки консоли, скриншоты) не проверялись. Запустите <code>qc browse ${esc(host)}</code>, чтобы дополнить отчёт.</div>`
+    browserCoverageHtml = `<div class="note-box">The browser pass did not run: this report is based on static HTML analysis only. Visual and interactive defects (overflow, overlapping elements, hover/focus, console errors, screenshots) were not checked. Run <code>qc browse ${esc(host)}</code> to complete the report.</div>`
   } else {
     const pagesDone = Number(browserCoverage.pagesDone) || 0
     const pagesTotal = Number(browserCoverage.pagesTotal) || 0
     const widths = Array.isArray(browserCoverage.widths) ? browserCoverage.widths : []
     const complete = pagesTotal > 0 && pagesDone >= pagesTotal
 
-    // Pages that would not open at all. "7 из 31" alone cannot distinguish a
+    // Pages that would not open at all. "7 of 31" alone cannot distinguish a
     // page that FAILED from one that was never attempted, and those call for
     // opposite reactions: a not-yet-attempted page just needs the pass to be
     // run again, while a failed page is a page the site itself would not
@@ -454,15 +454,15 @@ export function renderReport({
     const shownFailed = failedUrls.slice(0, PAGE_LIST_CAP)
     const hiddenFailed = failedUrls.length - shownFailed.length
     const failedHtml = pagesFailed
-      ? `<div class="note-box">Не открылись при браузерной проверке: <b>${esc(pagesFailed)}</b> страниц(ы) — они проверены безуспешно, а не пропущены, и визуальные дефекты на них неизвестны.` +
+      ? `<div class="note-box">Did not open in the browser pass: <b>${esc(pagesFailed)}</b> page(s). They were attempted and failed, not skipped, and their visual defects are unknown.` +
         (shownFailed.length
           ? `<ul>${shownFailed.map(x => {
               const url = typeof x === 'string' ? x : (x && x.url) || ''
               const err = typeof x === 'string' ? '' : (x && x.error) || ''
               return `<li><code>${esc(url)}</code>${err ? ` — ${esc(err)}` : ''}</li>`
-            }).join('')}${hiddenFailed > 0 ? `<li>…и ещё ${esc(hiddenFailed)}</li>` : ''}</ul>`
+            }).join('')}${hiddenFailed > 0 ? `<li>…and ${esc(hiddenFailed)} more</li>` : ''}</ul>`
           : '') +
-        ` Повторный запуск <code>qc browse ${esc(host)}</code> пробует их снова — <code>--force</code> для этого не нужен.</div>`
+        ` Running <code>qc browse ${esc(host)}</code> again retries them; <code>--force</code> is not needed for that.</div>`
       : ''
 
     // Widths the breakpoint budget excluded. `dropped` already reaches
@@ -472,20 +472,20 @@ export function renderReport({
     // and Elementor desktop boundary) was never measured at all.
     const droppedWidths = Array.isArray(browserCoverage.droppedWidths) ? browserCoverage.droppedWidths : []
     const droppedHtml = droppedWidths.length
-      ? `<div class="note-box">Ширины, не вошедшие в проверку из-за лимита (${esc(droppedWidths.length)}): <code>${droppedWidths.map(esc).join(', ')}</code>. Дефекты, которые проявляются только на этих ширинах, не измерялись. Чтобы проверить любую из них, запустите <code>qc browse ${esc(host)} --breakpoints ${esc(droppedWidths.join(','))} --force</code>.</div>`
+      ? `<div class="note-box">Widths left out of the check by the limit (${esc(droppedWidths.length)}): <code>${droppedWidths.map(esc).join(', ')}</code>. Defects that show only at these widths were not measured. To check any of them, run <code>qc browse ${esc(host)} --breakpoints ${esc(droppedWidths.join(','))} --force</code>.</div>`
       : ''
 
-    browserCoverageHtml = `<p class="sub">браузерная проверка: ${esc(pagesDone)} из ${esc(pagesTotal)} страниц` +
-      (pagesFailed ? ` · не открылись: ${esc(pagesFailed)}` : '') +
-      (widths.length ? ` · ширины: ${widths.map(esc).join(', ')}` : '') +
-      (droppedWidths.length ? ` · исключённые ширины: ${droppedWidths.map(esc).join(', ')}` : '') + `</p>` +
+    browserCoverageHtml = `<p class="sub">browser pass: ${esc(pagesDone)} of ${esc(pagesTotal)} pages` +
+      (pagesFailed ? ` · did not open: ${esc(pagesFailed)}` : '') +
+      (widths.length ? ` · widths: ${widths.map(esc).join(', ')}` : '') +
+      (droppedWidths.length ? ` · excluded widths: ${droppedWidths.map(esc).join(', ')}` : '') + `</p>` +
       // Rows older than this crawl were dropped by audit (cli.js); saying
       // "partial, resume" would hide that the whole pass is out of date.
       (Number(browserCoverage.stalePages) > 0
-        ? `<div class="note-box">Браузерная проверка устарела для ${esc(browserCoverage.stalePages)} стр.: они проверялись до этого обхода, их находки в отчёт не вошли. Запустите <code>qc browse ${esc(host)}</code> заново.</div>`
+        ? `<div class="note-box">The browser pass is out of date for ${esc(browserCoverage.stalePages)} pages: they were checked before this crawl, so their findings are not in the report. Run <code>qc browse ${esc(host)}</code> again.</div>`
         : '') +
       (!complete && !(Number(browserCoverage.stalePages) > 0 && pagesDone === 0)
-        ? `<div class="note-box">Браузерная проверка выполнена частично: проверено ${esc(pagesDone)} из ${esc(pagesTotal)} страниц. Визуальные дефекты на остальных страницах могли остаться незамеченными. Запустите <code>qc browse ${esc(host)}</code> ещё раз, чтобы продолжить — прогон возобновляемый: уже проверенные страницы не начинаются заново, а те, что не открылись, пробуются снова.</div>`
+        ? `<div class="note-box">The browser pass is partial: ${esc(pagesDone)} of ${esc(pagesTotal)} pages checked. Visual defects on the other pages may have gone unnoticed. Run <code>qc browse ${esc(host)}</code> again to continue. The run resumes: pages already checked are not started over, and pages that did not open are retried.</div>`
         : '') +
       failedHtml + droppedHtml
   }
@@ -514,64 +514,64 @@ export function renderReport({
     const ctx = { breakpointsByIdentity, suppressedShots: suppressedShots ?? new Set(), candidates }
     const groupsHtml = groups.length
       ? renderScoped(groups, pages, ctx)
-      : '<p class="sub">Нарушений не найдено — сайт прошёл проверку без замечаний.</p>'
+      : '<p class="sub">No violations found: the site passed the check with no remarks.</p>'
     const heurHtml = heur.length
-      ? `<h2>Требует взгляда (неподтверждённые эвристики)</h2>
-<div class="note-box heuristic">Ниже — находки эвристических правил: возможны ложные срабатывания, они <b>не учитываются</b> в вердикте и в плитках серьёзности выше. Проверьте вручную перед тем, как заводить задачу.</div>
+      ? `<h2>Needs a look (unconfirmed heuristics)</h2>
+<div class="note-box heuristic">Below are findings from heuristic rules. They may be false positives and <b>do not count</b> toward the verdict or the severity tiles above. Check by hand before filing a task.</div>
 ${renderScoped(heur, pages, ctx)}`
       : ''
-    const widthsLabel = Array.isArray(browserCoverage?.widths) && browserCoverage.widths.length ? ` · ширины ${browserCoverage.widths.join(', ')} px и ресайз 1920→320` : ''
+    const widthsLabel = Array.isArray(browserCoverage?.widths) && browserCoverage.widths.length ? ` · widths ${browserCoverage.widths.join(', ')} px and resize 1920→320` : ''
     const browserHtml = !browserCoverage && !bGroups.length && !bHeur.length
-      ? `<h2>Браузерная проверка</h2><p class="sub">Не выполнялась — визуальные дефекты не проверены.</p>`
-      : `<h2>Браузерная проверка (вёрстка, адаптив, интерактив${esc(widthsLabel)})</h2>
-${bGroups.length ? renderScoped(bGroups, pages, ctx) : '<p class="sub">Подтверждённых визуальных дефектов нет.</p>'}
-${bHeur.length ? `<h3>Требует взгляда</h3><div class="note-box heuristic">Эвристики браузерной проверки — не учитываются в вердикте.</div>${renderScoped(bHeur, pages, ctx)}` : ''}`
+      ? `<h2>Browser pass</h2><p class="sub">Did not run: visual defects were not checked.</p>`
+      : `<h2>Browser pass (layout, responsive, interactive${esc(widthsLabel)})</h2>
+${bGroups.length ? renderScoped(bGroups, pages, ctx) : '<p class="sub">No confirmed visual defects.</p>'}
+${bHeur.length ? `<h3>Needs a look</h3><div class="note-box heuristic">Browser pass heuristics: they do not count toward the verdict.</div>${renderScoped(bHeur, pages, ctx)}` : ''}`
     const rejectedGroups = rollUp(rejected)
     const rejectedHtml = rejectedGroups.length
-      ? `<h2>Отклонено при ревью Claude</h2>
-<div class="note-box heuristic">Claude проверил эти находки и счёл их ложными срабатываниями. Они не учитываются в вердикте и плитках; причина указана у каждой.</div>
+      ? `<h2>Rejected in Claude’s review</h2>
+<div class="note-box heuristic">Claude checked these findings and judged them false positives. They do not count toward the verdict or the tiles; each one gives the reason.</div>
 ${rejectedGroups.map(g => renderGroup(g, ctx)).join('')}`
       : ''
 
     const html = `<!doctype html>
-<html lang="ru"><head><meta charset="utf-8">
+<html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>QC ${esc(host)}</title><style>${CSS}</style></head><body><div class="wrap">
 <h1>QC · ${esc(host)}</h1>
-<p class="sub">среда: <b>${esc(env)}</b>${envReason ? ` (${esc(envReason)})` : ''} ·
-страниц: ${esc(pages)} · источник списка: ${esc(source)} ·
-снапшот: ${ageLabel}</p>
+<p class="sub">environment: <b>${esc(env)}</b>${envReason ? ` (${esc(envReason)})` : ''} ·
+pages: ${esc(pages)} · page list source: ${esc(source)} ·
+snapshot: ${ageLabel}</p>
 <p><span class="verdict ${vClass}">${esc(v)}</span></p>
-${siteSummary ? `<div class="note-box heuristic"><b>О сайте:</b> ${esc(siteSummary)}</div>` : ''}
-${snapshotAgeDays > STALENESS_WARNING_DAYS ? `<div class="note-box">Снапшоту больше ${esc(STALENESS_WARNING_DAYS)} дней — данные могли устареть. Перезапустите с <code>--fresh</code>.</div>` : ''}
-${sitemapWarning ? `<div class="note-box">Sitemap: <b>${esc(sitemapStatus)}</b> — список страниц мог оказаться неполным, часть страниц сайта в отчёт не попала.</div>` : ''}
+${siteSummary ? `<div class="note-box heuristic"><b>About the site:</b> ${esc(siteSummary)}</div>` : ''}
+${snapshotAgeDays > STALENESS_WARNING_DAYS ? `<div class="note-box">The snapshot is more than ${esc(STALENESS_WARNING_DAYS)} days old, so the data may be out of date. Run again with <code>--fresh</code>.</div>` : ''}
+${sitemapWarning ? `<div class="note-box">Sitemap: <b>${esc(sitemapStatus)}</b>. The page list may be incomplete, so some of the site’s pages may be missing from the report.</div>` : ''}
 ${browserCoverageHtml}
-${suppressedShots && suppressedShots.size ? `<div class="note-box">Часть скриншотов скрыта, чтобы уместиться в лимит размера публикации: ${esc(suppressedShots.size)} скриншот(ов) не показано (порядок удаления: сначала note, затем minor, major и, при необходимости, critical). Сами дефекты и их описания — found/expected/селектор/страницы — остаются ниже полностью, скрыты только изображения.</div>` : ''}
-${oversizeBytes != null ? `<div class="note-box">Отчёт превышает рекомендуемый лимит размера публикации (~${esc((oversizeBytes / (1024 * 1024)).toFixed(1))} МБ из ${esc(PUBLISH_BYTE_LIMIT / (1024 * 1024))} МБ), даже после того как были скрыты все скриншоты, которые можно было скрыть. Публикация как Artifact может не сработать из-за размера файла. Сами находки в этом файле не пострадали — это предупреждение о размере, не о содержимом.</div>` : ''}
+${suppressedShots && suppressedShots.size ? `<div class="note-box">Some screenshots are hidden to fit the publish size limit: ${esc(suppressedShots.size)} screenshot(s) not shown (removal order: note first, then minor, major and, if needed, critical). The defects and their details (found/expected/selector/pages) are all still below; only the images are hidden.</div>` : ''}
+${oversizeBytes != null ? `<div class="note-box">The report is over the recommended publish size limit (~${esc((oversizeBytes / (1024 * 1024)).toFixed(1))} MB of ${esc(PUBLISH_BYTE_LIMIT / (1024 * 1024))} MB), even after hiding every screenshot that could be hidden. Publishing it as an Artifact may fail because of the file size. The findings in this file are intact; this is a warning about size, not content.</div>` : ''}
 <div class="tiles">
-  <div class="tile wide"><b>${distinctTotal} дефектов</b><span>${occurrenceTotal} вхождений на ${uniquePages.length} страницах</span></div>
+  <div class="tile wide"><b>${distinctTotal} defects</b><span>${occurrenceTotal} occurrences on ${uniquePages.length} pages</span></div>
   <div class="tile"><b>${by('critical')}</b><span>Critical</span></div>
   <div class="tile"><b>${by('major')}</b><span>Major</span></div>
   <div class="tile"><b>${by('minor')}</b><span>Minor</span></div>
-  <div class="tile"><b>${diff?.added?.length ?? 0}</b><span>новых</span></div>
-  <div class="tile"><b>${diff?.fixed?.length ?? 0}</b><span>починено</span></div>
-  <div class="tile"><b>${diff?.remaining?.length ?? 0}</b><span>осталось</span></div>
+  <div class="tile"><b>${diff?.added?.length ?? 0}</b><span>new</span></div>
+  <div class="tile"><b>${diff?.fixed?.length ?? 0}</b><span>fixed</span></div>
+  <div class="tile"><b>${diff?.remaining?.length ?? 0}</b><span>remaining</span></div>
 </div>
-<p class="sub">Дефектов по серьёзности: ${distinct.critical} critical · ${distinct.major} major · ${distinct.minor} minor · ${distinct.note} note — это число реальных задач на исправление.
-Плитки Critical/Major/Minor выше считают вхождения (одна правка может закрыть сразу несколько).</p>
-<h2>Статическая проверка (HTML, ссылки, SEO, контент)</h2>
+<p class="sub">Defects by severity: ${distinct.critical} critical · ${distinct.major} major · ${distinct.minor} minor · ${distinct.note} note. This is the number of real tasks to fix.
+The Critical/Major/Minor tiles above count occurrences (one fix can close several at once).</p>
+<h2>Static check (HTML, links, SEO, content)</h2>
 ${groupsHtml}
 ${heurHtml}
 ${browserHtml}
 ${renderManual(manualChecks, claudeFindings)}
 ${renderVisual(visual)}
 ${rejectedHtml}
-<h2>Страницы</h2>
-${uniquePages.length ? `<div class="scroll"><table><tr><th>Страница</th><th>Находок</th></tr>
+<h2>Pages</h2>
+${uniquePages.length ? `<div class="scroll"><table><tr><th>Page</th><th>Findings</th></tr>
 ${shownPages.map(p =>
   `<tr><td>${esc(p)}</td><td>${list.filter(f => f.page === p).length}</td></tr>`).join('')}
 </table></div>
-${hiddenPageCount > 0 ? `<p class="kv">…и ещё ${hiddenPageCount} страниц не показано (ограничение индекса)</p>` : ''}` : '<p class="sub">Нет страниц с находками.</p>'}
+${hiddenPageCount > 0 ? `<p class="kv">…and ${hiddenPageCount} more pages not shown (index limit)</p>` : ''}` : '<p class="sub">No pages with findings.</p>'}
 </div>${hasShots ? LIGHTBOX : ''}</body></html>`
     return { html, candidates }
   }

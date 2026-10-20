@@ -48,7 +48,7 @@ test('loadStrategySheet via fetchImpl still enforces the timeout (fetchImpl is n
     () => loadStrategySheet('https://docs.google.com/spreadsheets/d/FAKE/export?format=xlsx', {
       fetchImpl: stalled, timeout: 50,
     }),
-    /(таймаут|время ожидания)/i
+    /timed out/i
   )
   assert.ok(Date.now() - started < 2000, 'must reject promptly, not hang')
 })

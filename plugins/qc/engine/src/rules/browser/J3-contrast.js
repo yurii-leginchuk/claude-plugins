@@ -1,6 +1,6 @@
 export const meta = {
   id: 'J3',
-  title: 'Недостаточный контраст текста',
+  title: 'Insufficient text contrast',
   severity: 'major',
   confidence: 'heuristic',
 }
@@ -114,12 +114,12 @@ export function check(ctx) {
     if (seen[sel]) continue
     seen[sel] = 1
     out.push({
-      rule: 'J3', title: 'Недостаточный контраст текста', severity: 'major',
+      rule: 'J3', title: 'Insufficient text contrast', severity: 'major',
       confidence: 'heuristic', engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint,
       selector: sel,
       containerId: ctx.helpers.containerId(el),
-      found: 'контраст ' + ratio.toFixed(2) + ':1 при ' + Math.round(px) + 'px',
-      expected: 'не ниже ' + need + ':1',
+      found: 'contrast ' + ratio.toFixed(2) + ':1 at ' + Math.round(px) + 'px',
+      expected: 'at least ' + need + ':1',
     })
   }
   return out

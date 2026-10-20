@@ -16,6 +16,6 @@ test('the resize sweep finds an overflow that exists only between two breakpoint
   assert.equal(f.length, 1)
   assert.equal(f[0].rule, 'C8')
   assert.equal(f[0].selector, '.elementor-element-abc123')
-  assert.match(f[0].where, /^ширины 1000–1200 px/)
-  assert.match(f[0].where, /под заголовком «Pricing»/)
+  assert.match(f[0].where, /^widths 1000–1200 px/)
+  assert.match(f[0].where, /under heading “Pricing”/)
 })

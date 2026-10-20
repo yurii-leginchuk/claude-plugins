@@ -40,7 +40,7 @@ ${parts.join(',\n')}
         } catch (e) {
           // A crashing rule must not lose the other rules' findings.
           out.push({
-            rule: rules[i].id, title: 'Правило упало', severity: 'note',
+            rule: rules[i].id, title: 'Rule crashed', severity: 'note',
             confidence: 'high', engine: 'browser', page: ctx.url,
             breakpoint: ctx.breakpoint, selector: null,
             found: 'rule crashed: ' + (e && e.message), expected: null,

@@ -121,7 +121,7 @@ async function resolveOne(url, fetchImpl) {
       return { url, status: res.status, finalUrl: current, key: placeKey(current), name: placeName(current), error: null }
     }
   }
-  return { url, status: 0, finalUrl: current, key: null, error: 'слишком много редиректов' }
+  return { url, status: 0, finalUrl: current, key: null, error: 'too many redirects' }
 }
 
 // Resolves every short/legacy link not already in `known` (the snapshot's

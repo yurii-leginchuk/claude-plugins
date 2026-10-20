@@ -90,7 +90,7 @@ test('cache clear --all empties the cache', async () => {
     cwd,
     env: { ...process.env, QC_CACHE_DIR: cache },
   })
-  assert.match(stdout, /пусто|\[\]/)
+  assert.match(stdout, /empty|\[\]/)
 })
 
 // --- Judgement call 1: exit codes -----------------------------------------
@@ -109,7 +109,7 @@ test('audit exits non-zero and explains itself when no pages can be found', asyn
       run('node', ['src/cli.js', 'audit', emptyBase], { cwd, env: { ...process.env, QC_CACHE_DIR: cache1 } }),
       (err) => {
         assert.notEqual(err.code, 0)
-        assert.match(err.stderr, /не найдено ни одной страницы/)
+        assert.match(err.stderr, /no pages found/)
         return true
       }
     )
@@ -304,7 +304,7 @@ test('a --prod (or sheet Dev Link) signal on THIS run overrides a stale pairedAs
     saveSnapshot(host, {
       meta: {
         parseVersion: PARSE_VERSION,
-        host, env: 'prod', envReason: 'боевой хост, страницы индексируются',
+        host, env: 'prod', envReason: 'live host, pages are indexed',
         source: 'crawl', sitemapStatus: null, pairedAsDev: false, pairedAsDevReason: null,
         pageCount: 1, pagesRequested: 1, pagesFailed: 0, failedUrls: [],
       },
@@ -385,7 +385,7 @@ test('a heuristic-only page reports verdict Pass with a non-zero heuristics coun
 // *requested* URL and threw away `res.finalUrl`. Requesting `/about` on a site
 // that 301s to `/about/` produced a PageDoc keyed to `/about` while the
 // document's (correct, self-referencing) canonical said `/about/` -- so I5
-// reported a Critical "canonical с лишним слешем" on a page with no defect at
+// reported a Critical "canonical with an extra slash" on a page with no defect at
 // all. Hand-typed strategy-sheet URLs and any http->https site hit this on
 // every page. Read through the whole pipeline (discover -> fetch -> parse ->
 // rules), because every layer in that chain had to agree for the bug to exist.
@@ -408,9 +408,9 @@ test('a correct canonical behind a redirect produces no I5 finding', async () =>
     }
     if (req.url === '/about/') {
       res.writeHead(200, { 'content-type': 'text/html' })
-      return res.end(`<!doctype html><html lang="en"><head><title>О нас</title>
+      return res.end(`<!doctype html><html lang="en"><head><title>About us</title>
 <link rel="canonical" href="${rbase}/about/"></head>
-<body><header>h</header><main><h1>О нас</h1></main></body></html>`)
+<body><header>h</header><main><h1>About us</h1></main></body></html>`)
     }
     res.writeHead(404); res.end('nope')
   })
@@ -447,8 +447,8 @@ test('a page fetched through a redirect is keyed to its final URL', async () => 
     if (req.url === '/about') { res.writeHead(301, { location: `${rbase}/about/` }); return res.end() }
     if (req.url === '/about/') {
       res.writeHead(200, { 'content-type': 'text/html' })
-      return res.end(`<!doctype html><html lang="en"><head><title>О нас</title>
-<link rel="canonical" href="${rbase}/about/"></head><body><h1>О нас</h1></body></html>`)
+      return res.end(`<!doctype html><html lang="en"><head><title>About us</title>
+<link rel="canonical" href="${rbase}/about/"></head><body><h1>About us</h1></body></html>`)
     }
     res.writeHead(404); res.end('nope')
   })
