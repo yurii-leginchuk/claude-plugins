@@ -1,6 +1,6 @@
 export const meta = {
   id: 'X2',
-  title: 'Картинка не загрузилась',
+  title: 'Image did not load',
   severity: 'major',
   confidence: 'high',
 }
@@ -56,19 +56,19 @@ export function check(ctx) {
     if (!broken && !placeholder) continue
 
     let reason
-    if (swapAttr) reason = 'ожидался ' + swapAttr.value.slice(0, 60)
-    else if (hasLazyClass) reason = 'класс "' + (img.getAttribute('class') || '').slice(0, 40) + '" указывает на ленивую загрузку'
-    else reason = 'есть атрибут loading="lazy", но реальный источник не подгрузился'
+    if (swapAttr) reason = 'expected ' + swapAttr.value.slice(0, 60)
+    else if (hasLazyClass) reason = 'class "' + (img.getAttribute('class') || '').slice(0, 40) + '" points to lazy loading'
+    else reason = 'has loading="lazy", but the real source never loaded'
 
     out.push({
-      rule: 'X2', title: 'Картинка не загрузилась', severity: 'major', confidence: 'high',
+      rule: 'X2', title: 'Image did not load', severity: 'major', confidence: 'high',
       engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint,
       selector: ctx.helpers.selector(img),
       containerId: ctx.helpers.containerId(img),
       found: broken
-        ? 'не загрузилась: ' + src.slice(0, 120)
-        : 'осталась data:-заглушкой (' + reason + '): ' + src.slice(0, 60),
-      expected: 'изображение загружено',
+        ? 'did not load: ' + src.slice(0, 120)
+        : 'still a data: placeholder (' + reason + '): ' + src.slice(0, 60),
+      expected: 'image loaded',
     })
   }
   return out

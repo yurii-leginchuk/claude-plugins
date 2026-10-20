@@ -4,16 +4,16 @@ import { renderReport } from '../../src/report/html.js'
 import { SNAPSHOT_TTL_DAYS, STALENESS_WARNING_DAYS } from '../../src/lib/snapshot-ttl.js'
 
 const findings = [
-  { rule: 'E4', title: 'Формат tel:', severity: 'major', engine: 'static', confidence: 'high',
+  { rule: 'E4', title: 'tel: format', severity: 'major', engine: 'static', confidence: 'high',
     page: 'https://ex.com/a', selector: 'a.phone', found: 'tel:855-607-8758',
     expected: 'tel:+18556078758', breakpoint: null },
-  { rule: 'I1', title: 'Количество H1', severity: 'critical', engine: 'static', confidence: 'high',
-    page: 'https://ex.com/b', selector: 'body', found: 'H1 не найден', expected: 'ровно один H1',
+  { rule: 'I1', title: 'H1 count', severity: 'critical', engine: 'static', confidence: 'high',
+    page: 'https://ex.com/b', selector: 'body', found: 'H1 not found', expected: 'exactly one H1',
     breakpoint: null },
 ]
 
 const html = renderReport({
-  host: 'ex.com', env: 'dev', envReason: 'имя хоста', pages: 12, findings,
+  host: 'ex.com', env: 'dev', envReason: 'host name', pages: 12, findings,
   diff: { fixed: [], remaining: [], added: findings }, snapshotAgeDays: 0.2, source: 'sitemap',
 })
 
@@ -28,7 +28,7 @@ test('shows the verdict', () => {
 
 test('groups by rule and shows the count', () => {
   assert.match(html, /E4/)
-  assert.match(html, /Формат tel:/)
+  assert.match(html, /tel: format/)
   assert.match(html, /tel:\+18556078758/)
 })
 
@@ -146,9 +146,9 @@ function buildScaleFindings(count, pageCount, ruleCount) {
   const out = []
   for (let i = 0; i < count; i++) {
     out.push({
-      rule: `R${i % ruleCount}`, title: `Правило ${i % ruleCount}`, severity: 'minor',
+      rule: `R${i % ruleCount}`, title: `Rule ${i % ruleCount}`, severity: 'minor',
       engine: 'static', confidence: 'high', page: `https://big-portfolio.example.com/page-${i % pageCount}`,
-      selector: `.item-${i % 7}`, found: `значение-${i % 40}`, expected: 'ожидаемое значение', breakpoint: null,
+      selector: `.item-${i % 7}`, found: `value-${i % 40}`, expected: 'expected value', breakpoint: null,
     })
   }
   return out
@@ -170,7 +170,7 @@ test('truncates a rule group page list at 200 and says so visibly', () => {
   const findings = []
   for (let i = 0; i < 250; i++) {
     findings.push({
-      rule: 'E4', title: 'Формат tel:', severity: 'major', engine: 'static', confidence: 'high',
+      rule: 'E4', title: 'tel: format', severity: 'major', engine: 'static', confidence: 'high',
       page: `https://ex.com/page-${i}`, selector: 'a.phone', found: 'tel:855-607-8758',
       expected: 'tel:+18556078758', breakpoint: null,
     })
@@ -184,26 +184,26 @@ test('truncates a rule group page list at 200 and says so visibly', () => {
   const listSegment = out.match(/<ul class="pages">([\s\S]*?)<\/ul>/)[1]
   const shown = [...listSegment.matchAll(/<li>/g)]
   assert.ok(shown.length <= 200, `page list should be capped at 200, saw ${shown.length}`)
-  assert.match(out, /ещё 50/) // visible truncation notice for the remaining 50 pages
+  assert.match(out, /and 50 more/) // visible truncation notice for the remaining 50 pages
 })
 
 // Review follow-up (Important 1): a rule that emits findings at more than
 // one severity used to collapse into a single row chipped with the most
 // severe of the bunch -- rendered against the real cached cleaningny.com
 // run, E3's 44 major + 180 minor findings showed up as one "Major · 224
-// находок" row, hiding that the calibration had split them at all. Assert
+// findings" row, hiding that the calibration had split them at all. Assert
 // the rendered HTML now shows two separate <details class="rule"> rows,
 // each with its own correct chip and its own count.
 test('a rule that emits two severities renders as two separate rows with distinct chips, not one merged row', () => {
   const findings = [
     ...Array.from({ length: 3 }, (_, i) => ({
-      rule: 'E3', title: 'Правила target=_blank', severity: 'major', engine: 'static', confidence: 'high',
-      page: `https://ex.com/major-${i}`, selector: 'a.internal', found: 'внутренняя ссылка с target=_blank',
-      expected: 'без target', breakpoint: null,
+      rule: 'E3', title: 'target=_blank rules', severity: 'major', engine: 'static', confidence: 'high',
+      page: `https://ex.com/major-${i}`, selector: 'a.internal', found: 'internal link with target=_blank',
+      expected: 'no target', breakpoint: null,
     })),
     ...Array.from({ length: 5 }, (_, i) => ({
-      rule: 'E3', title: 'Правила target=_blank', severity: 'minor', engine: 'static', confidence: 'high',
-      page: `https://ex.com/minor-${i}`, selector: 'a.social', found: 'внешняя ссылка без rel=noopener',
+      rule: 'E3', title: 'target=_blank rules', severity: 'minor', engine: 'static', confidence: 'high',
+      page: `https://ex.com/minor-${i}`, selector: 'a.social', found: 'external link without rel=noopener',
       expected: 'rel="noopener"', breakpoint: null,
     })),
   ]
@@ -219,18 +219,18 @@ test('a rule that emits two severities renders as two separate rows with distinc
   const minorRow = e3Rows.find(m => /chip min/.test(m[0]))
   assert.ok(majorRow, 'expected a row with the major chip')
   assert.ok(minorRow, 'expected a row with the minor chip')
-  assert.match(majorRow[0], /3 находок/, 'major row counts only its own 3 findings')
-  assert.match(minorRow[0], /5 находок/, 'minor row counts only its own 5 findings')
+  assert.match(majorRow[0], /3 findings/, 'major row counts only its own 3 findings')
+  assert.match(minorRow[0], /5 findings/, 'minor row counts only its own 5 findings')
   // No single row should claim all 8 -- that would mean they were re-merged.
-  assert.doesNotMatch(majorRow[0], /8 находок/)
-  assert.doesNotMatch(minorRow[0], /8 находок/)
+  assert.doesNotMatch(majorRow[0], /8 findings/)
+  assert.doesNotMatch(minorRow[0], /8 findings/)
 })
 
 test('truncates the page index at 500 and says so visibly', () => {
   const findings = []
   for (let i = 0; i < 600; i++) {
     findings.push({
-      rule: 'E4', title: 'Формат tel:', severity: 'major', engine: 'static', confidence: 'high',
+      rule: 'E4', title: 'tel: format', severity: 'major', engine: 'static', confidence: 'high',
       page: `https://ex.com/idx-${i}`, selector: 'a.phone', found: `tel:855-607-87${i}`,
       expected: 'tel:+18556078758', breakpoint: null,
     })
@@ -243,7 +243,7 @@ test('truncates the page index at 500 and says so visibly', () => {
   // Each unique page can also appear inside the rule-group page list (capped
   // separately at 200), so the total mentions can exceed 500 but the page
   // index table itself must stop at 500 rows and say so.
-  assert.match(out, /ещё 100/) // 600 unique pages - 500 shown = 100 not shown
+  assert.match(out, /and 100 more/) // 600 unique pages - 500 shown = 100 not shown
   assert.ok(shownInIndex.length > 0)
 })
 
@@ -255,8 +255,8 @@ test('truncates the page index at 500 and says so visibly', () => {
 
 test('a heuristic-only findings list renders Pass but still shows the heuristic section', () => {
   const findings = [
-    { rule: 'H1', title: 'Подозрительный текст', severity: 'critical', engine: 'heuristic',
-      confidence: 'heuristic', page: 'https://ex.com/a', selector: 'p', found: 'странный текст',
+    { rule: 'H1', title: 'Suspicious text', severity: 'critical', engine: 'heuristic',
+      confidence: 'heuristic', page: 'https://ex.com/a', selector: 'p', found: 'odd text',
       expected: '', breakpoint: null },
   ]
   const out = renderReport({
@@ -268,7 +268,7 @@ test('a heuristic-only findings list renders Pass but still shows the heuristic 
   assert.match(out, /class="verdict v-Pass">Pass<\/span>/)
   assert.doesNotMatch(out, /class="verdict v-Fail">Fail<\/span>/)
   assert.match(out, /H1/)
-  assert.match(out, /эвристи/i) // Russian copy calling out unconfirmed heuristics
+  assert.match(out, /unconfirmed heuristics/i) // copy calling out unconfirmed heuristics
   // The critical severity tile must not count the heuristic finding.
   assert.match(out, /<b>0<\/b>\s*<span>Critical<\/span>/)
 })
@@ -284,7 +284,7 @@ test('zero findings renders a clear "nothing found" report, not an empty shell',
     diff: { fixed: [], remaining: [], added: [] }, snapshotAgeDays: 1, source: 'sitemap',
   })
   assert.match(out, /Pass/)
-  assert.match(out, /не найдено/i)
+  assert.match(out, /no violations found/i)
   assert.match(out, /<!doctype html>/i)
 })
 
@@ -295,18 +295,18 @@ test('a missing diff object renders without throwing and shows zero new/fixed', 
     // diff intentionally omitted
   })
   assert.match(out, /<!doctype html>/i)
-  assert.match(out, /<b>0<\/b>\s*<span>новых<\/span>/)
-  assert.match(out, /<b>0<\/b>\s*<span>починено<\/span>/)
+  assert.match(out, /<b>0<\/b>\s*<span>new<\/span>/)
+  assert.match(out, /<b>0<\/b>\s*<span>fixed<\/span>/)
 })
 
-test('snapshotAgeDays of 0 renders as fresh, not as "0 дн." or NaN', () => {
+test('snapshotAgeDays of 0 renders as fresh, not as "0 days" or NaN', () => {
   const out = renderReport({
     host: 'ex.com', env: 'prod', envReason: '', pages: 5, findings: [],
     diff: { fixed: [], remaining: [], added: [] }, snapshotAgeDays: 0, source: 'sitemap',
   })
   assert.doesNotMatch(out, /NaN/)
-  assert.doesNotMatch(out, /0 дн\./)
-  assert.match(out, /свеж/i)
+  assert.doesNotMatch(out, /0 days/)
+  assert.match(out, /fresh/i)
 })
 
 // The staleness banner debt: `loadFreshSnapshot` in cli.js only ever hands
@@ -332,7 +332,7 @@ test('a snapshot near the TTL (but still within it, i.e. still reused) renders t
     host: 'ex.com', env: 'prod', envReason: '', pages: 5, findings: [],
     diff: { fixed: [], remaining: [], added: [] }, snapshotAgeDays: nearTtlAge, source: 'sitemap',
   })
-  assert.match(out, /Снапшоту больше .* дней/, 'a snapshot this old must render the staleness banner')
+  assert.match(out, /The snapshot is more than .* days old/, 'a snapshot this old must render the staleness banner')
   assert.match(out, /--fresh/)
 })
 
@@ -341,16 +341,16 @@ test('a snapshot well within the warning threshold does NOT render the staleness
     host: 'ex.com', env: 'prod', envReason: '', pages: 5, findings: [],
     diff: { fixed: [], remaining: [], added: [] }, snapshotAgeDays: 1, source: 'sitemap',
   })
-  assert.doesNotMatch(out, /Снапшоту больше/)
+  assert.doesNotMatch(out, /The snapshot is more than/)
 })
 
 test('env "unknown" renders sensibly', () => {
   const out = renderReport({
-    host: 'ex.com', env: 'unknown', envReason: 'не удалось определить', pages: 5, findings: [],
+    host: 'ex.com', env: 'unknown', envReason: 'could not be determined', pages: 5, findings: [],
     diff: { fixed: [], remaining: [], added: [] }, snapshotAgeDays: 1, source: 'sitemap',
   })
   assert.match(out, /unknown/)
-  assert.match(out, /не удалось определить/)
+  assert.match(out, /could not be determined/)
   assert.doesNotMatch(out, /undefined/)
 })
 
@@ -410,7 +410,7 @@ test('none of the malformed-findings cases ever produce the word Pass as rendere
 test('renders a precisely-scoped Fail verdict, not just the CSS class name', () => {
   const out = renderReport({
     host: 'ex.com', env: 'prod', envReason: '', pages: 1,
-    findings: [{ rule: 'I1', title: 'Количество H1', severity: 'critical', engine: 'static',
+    findings: [{ rule: 'I1', title: 'H1 count', severity: 'critical', engine: 'static',
       confidence: 'high', page: 'https://ex.com/a', selector: 'body', found: 'f', expected: 'e',
       breakpoint: null }],
     diff: { fixed: [], remaining: [], added: [] }, snapshotAgeDays: 1, source: 'sitemap',
@@ -423,7 +423,7 @@ test('renders a precisely-scoped Fail verdict, not just the CSS class name', () 
 test('renders a precisely-scoped Needs fixes verdict, not just the CSS class name', () => {
   const out = renderReport({
     host: 'ex.com', env: 'prod', envReason: '', pages: 1,
-    findings: [{ rule: 'E4', title: 'Формат tel:', severity: 'major', engine: 'static',
+    findings: [{ rule: 'E4', title: 'tel: format', severity: 'major', engine: 'static',
       confidence: 'high', page: 'https://ex.com/a', selector: 'a.phone', found: 'f', expected: 'e',
       breakpoint: null }],
     diff: { fixed: [], remaining: [], added: [] }, snapshotAgeDays: 1, source: 'sitemap',
@@ -444,13 +444,13 @@ test('renders a precisely-scoped Needs fixes verdict, not just the CSS class nam
 
 test('two different found values under one rule+severity both reach the HTML', () => {
   const findings = [
-    { rule: 'E1', title: 'Битые ссылки', severity: 'critical', engine: 'static', confidence: 'high',
+    { rule: 'E1', title: 'Broken links', severity: 'critical', engine: 'static', confidence: 'high',
       page: 'https://ex.com/a', selector: 'a.first', found: 'HTTP 404: https://ex.com/gone',
-      expected: 'рабочая ссылка', breakpoint: null },
-    { rule: 'E1', title: 'Битые ссылки', severity: 'critical', engine: 'static', confidence: 'high',
+      expected: 'a working link', breakpoint: null },
+    { rule: 'E1', title: 'Broken links', severity: 'critical', engine: 'static', confidence: 'high',
       page: 'https://ex.com/b', selector: 'a.second',
-      found: 'битый URL: https://ex.com/janitorial-cleaning/https://ex.com/x',
-      expected: 'корректный URL', breakpoint: null },
+      found: 'broken URL: https://ex.com/janitorial-cleaning/https://ex.com/x',
+      expected: 'a valid URL', breakpoint: null },
   ]
   const out = renderReport({
     host: 'ex.com', env: 'prod', envReason: '', pages: 2, findings,
@@ -460,20 +460,20 @@ test('two different found values under one rule+severity both reach the HTML', (
   assert.match(out, /janitorial-cleaning/)
   assert.match(out, /a\.first/)
   assert.match(out, /a\.second/)
-  assert.match(out, /рабочая ссылка/)
-  assert.match(out, /корректный URL/)
+  assert.match(out, /a working link/)
+  assert.match(out, /a valid URL/)
 })
 
 test('every distinct defect gets its own page list, not one merged list', () => {
   const findings = [
     ...['https://ex.com/1', 'https://ex.com/2'].map(page => ({
       rule: 'E3', title: 'target=_blank', severity: 'major', engine: 'static', confidence: 'high',
-      page, selector: 'a.alpha', found: 'внутренняя ссылка с target=_blank: /alpha',
-      expected: 'без target', breakpoint: null,
+      page, selector: 'a.alpha', found: 'internal link with target=_blank: /alpha',
+      expected: 'no target', breakpoint: null,
     })),
     { rule: 'E3', title: 'target=_blank', severity: 'major', engine: 'static', confidence: 'high',
-      page: 'https://ex.com/3', selector: 'a.beta', found: 'внутренняя ссылка с target=_blank: /beta',
-      expected: 'без target', breakpoint: null },
+      page: 'https://ex.com/3', selector: 'a.beta', found: 'internal link with target=_blank: /beta',
+      expected: 'no target', breakpoint: null },
   ]
   const out = renderReport({
     host: 'ex.com', env: 'prod', envReason: '', pages: 3, findings,
@@ -490,7 +490,7 @@ test('every distinct defect gets its own page list, not one merged list', () => 
 
 test('the group summary states how many distinct defects it holds', () => {
   const findings = Array.from({ length: 4 }, (_, i) => ({
-    rule: 'E4', title: 'Формат tel:', severity: 'major', engine: 'static', confidence: 'high',
+    rule: 'E4', title: 'tel: format', severity: 'major', engine: 'static', confidence: 'high',
     page: `https://ex.com/p${i}`, selector: 'a.phone', found: `tel:855-607-875${i}`,
     expected: 'tel:+1855607875X', breakpoint: null,
   }))
@@ -498,20 +498,20 @@ test('the group summary states how many distinct defects it holds', () => {
     host: 'ex.com', env: 'prod', envReason: '', pages: 4, findings,
     diff: { fixed: [], remaining: [], added: findings }, snapshotAgeDays: 0, source: 'sitemap',
   })
-  assert.match(out, /4 дефектов · 4 страниц · 4 находок/)
+  assert.match(out, /4 defects · 4 pages · 4 findings/)
 })
 
 test('a group holding more distinct defects than the cap truncates visibly', () => {
   const findings = Array.from({ length: 130 }, (_, i) => ({
-    rule: 'E1', title: 'Битые ссылки', severity: 'critical', engine: 'static', confidence: 'high',
+    rule: 'E1', title: 'Broken links', severity: 'critical', engine: 'static', confidence: 'high',
     page: 'https://ex.com/a', selector: `a.n${i}`, found: `HTTP 404: https://ex.com/gone-${i}`,
-    expected: 'рабочая ссылка', breakpoint: null,
+    expected: 'a working link', breakpoint: null,
   }))
   const out = renderReport({
     host: 'ex.com', env: 'prod', envReason: '', pages: 1, findings,
     diff: { fixed: [], remaining: [], added: findings }, snapshotAgeDays: 0, source: 'sitemap',
   })
-  assert.match(out, /ещё 30 дефектов не показано/)
+  assert.match(out, /and 30 more defects not shown/)
 })
 
 // ---------------------------------------------------------------------------
@@ -529,14 +529,14 @@ function repeatedDefectReport(extra = {}) {
   const findings = [
     ...Array.from({ length: 6 }, (_, i) => ({
       rule: 'E3', title: 'target=_blank', severity: 'major', engine: 'static', confidence: 'high',
-      page: `https://ex.com/p${i}`, selector: 'a.footer', found: 'внутренняя ссылка с target=_blank: /contact',
-      expected: 'без target', breakpoint: null,
+      page: `https://ex.com/p${i}`, selector: 'a.footer', found: 'internal link with target=_blank: /contact',
+      expected: 'no target', breakpoint: null,
     })),
     { rule: 'E3', title: 'target=_blank', severity: 'major', engine: 'static', confidence: 'high',
-      page: 'https://ex.com/p0', selector: 'a.hero', found: 'внутренняя ссылка с target=_blank: /about',
-      expected: 'без target', breakpoint: null },
-    { rule: 'I1', title: 'Количество H1', severity: 'critical', engine: 'static', confidence: 'high',
-      page: 'https://ex.com/p1', selector: 'body', found: 'H1 не найден', expected: 'ровно один H1',
+      page: 'https://ex.com/p0', selector: 'a.hero', found: 'internal link with target=_blank: /about',
+      expected: 'no target', breakpoint: null },
+    { rule: 'I1', title: 'H1 count', severity: 'critical', engine: 'static', confidence: 'high',
+      page: 'https://ex.com/p1', selector: 'body', found: 'H1 not found', expected: 'exactly one H1',
       breakpoint: null },
   ]
   return renderReport({
@@ -548,8 +548,8 @@ function repeatedDefectReport(extra = {}) {
 
 test('the report leads with distinct defects, with occurrences beside them', () => {
   const out = repeatedDefectReport()
-  assert.match(out, /<b>3 дефектов<\/b>/, 'three distinct defects')
-  assert.match(out, /8 вхождений/, 'eight raw occurrences')
+  assert.match(out, /<b>3 defects<\/b>/, 'three distinct defects')
+  assert.match(out, /8 occurrences/, 'eight raw occurrences')
 })
 
 test('the distinct breakdown per severity is rendered, not just the totals', () => {
@@ -557,35 +557,35 @@ test('the distinct breakdown per severity is rendered, not just the totals', () 
   assert.match(out, /1 critical · 2 major · 0 minor · 0 note/)
 })
 
-test('the diff row renders осталось alongside новых and починено', () => {
+test('the diff row renders remaining alongside new and fixed', () => {
   const out = renderReport({
     host: 'ex.com', env: 'prod', envReason: '', pages: 3, findings: [],
     diff: { fixed: [1, 2], remaining: [1, 2, 3, 4], added: [1] },
     snapshotAgeDays: 0, source: 'sitemap',
   })
-  assert.match(out, /<b>1<\/b><span>новых<\/span>/)
-  assert.match(out, /<b>2<\/b><span>починено<\/span>/)
-  assert.match(out, /<b>4<\/b><span>осталось<\/span>/)
+  assert.match(out, /<b>1<\/b><span>new<\/span>/)
+  assert.match(out, /<b>2<\/b><span>fixed<\/span>/)
+  assert.match(out, /<b>4<\/b><span>remaining<\/span>/)
 })
 
-test('a missing diff object still renders осталось as zero', () => {
+test('a missing diff object still renders remaining as zero', () => {
   const out = renderReport({
     host: 'ex.com', env: 'prod', envReason: '', pages: 1, findings: [],
     snapshotAgeDays: 0, source: 'sitemap',
   })
-  assert.match(out, /<b>0<\/b><span>осталось<\/span>/)
+  assert.match(out, /<b>0<\/b><span>remaining<\/span>/)
 })
 
 test('a non-ok sitemapStatus is stated in the header as a possibly incomplete page list', () => {
   const out = repeatedDefectReport({ sitemapStatus: 'partial' })
   assert.match(out, /partial/)
-  assert.match(out, /неполным/i)
+  assert.match(out, /incomplete/i)
 })
 
 test('an ok or absent sitemapStatus renders no such warning', () => {
-  assert.doesNotMatch(repeatedDefectReport({ sitemapStatus: 'ok' }), /неполным/i)
-  assert.doesNotMatch(repeatedDefectReport({ sitemapStatus: null }), /неполным/i)
-  assert.doesNotMatch(repeatedDefectReport(), /неполным/i)
+  assert.doesNotMatch(repeatedDefectReport({ sitemapStatus: 'ok' }), /incomplete/i)
+  assert.doesNotMatch(repeatedDefectReport({ sitemapStatus: null }), /incomplete/i)
+  assert.doesNotMatch(repeatedDefectReport(), /incomplete/i)
 })
 
 test('the sitemap status value is escaped like every other interpolated field', () => {

@@ -35,7 +35,7 @@ function seedStaticSnapshot(host, pages) {
   saveSnapshot(host, {
     meta: {
       parseVersion: PARSE_VERSION,
-      host, env: 'prod', envReason: 'боевой хост', source: 'sitemap', sitemapStatus: 'ok',
+      host, env: 'prod', envReason: 'live host', source: 'sitemap', sitemapStatus: 'ok',
       pairedAsDev: false, pairedAsDevReason: null, prodHost: null,
       pageCount: pages.length, pagesRequested: pages.length, pagesFailed: 0, failedUrls: [],
     },
@@ -65,9 +65,9 @@ test('audit merges browser findings from browser.jsonl, reports coverage, and in
   appendBrowserResult(host, {
     url, widths: [360, 768], error: null,
     findings: [{
-      rule: 'C1', title: 'Горизонтальный скролл документа', severity: 'critical', engine: 'browser',
+      rule: 'C1', title: 'Horizontal document scroll', severity: 'critical', engine: 'browser',
       confidence: 'high', page: url, breakpoint: 360, selector: 'html',
-      found: 'ширина документа 3000px при вьюпорте 360px', expected: 'документ не шире вьюпорта',
+      found: 'document width 3000px at viewport 360px', expected: 'document no wider than the viewport',
       shot: shotPath, shotWidth: 360,
     }],
   })
@@ -98,7 +98,7 @@ test('audit omits browserCoverage (and says so in the report) when qc browse has
   assert.equal(summary.browserCoverage, null, 'no browser.jsonl for this host means no coverage claim at all')
 
   const html = readFileSync(summary.reportPath, 'utf8')
-  assert.match(html, /не выполнялась/i, 'the report must say the browser pass never ran, not stay silent about it')
+  assert.match(html, /did not run/i, 'the report must say the browser pass never ran, not stay silent about it')
 })
 
 test('a partial browser pass (fewer pagesDone than pagesTotal) is stated as partial, not silently complete', async () => {
@@ -118,12 +118,12 @@ test('a partial browser pass (fewer pagesDone than pagesTotal) is stated as part
   assert.equal(summary.browserCoverage.pagesTotal, 2)
 
   const html = readFileSync(summary.reportPath, 'utf8')
-  assert.match(html, /частично/i, 'a partial browser pass must be visibly flagged as partial in the report')
+  assert.match(html, /partial/i, 'a partial browser pass must be visibly flagged as partial in the report')
 })
 
 // A page that FAILED and a page that was never attempted both leave
 // `pagesDone < pagesTotal`, and the report used to say the same thing about
-// both -- "остальные ещё не проверены" -- which is simply false for a page
+// both -- "the rest are not checked yet" -- which is simply false for a page
 // the site refused to serve. The spec requires the count and the list of
 // pages that would not open to reach the report header.
 test('pages that would not open reach the report header, named, with their reason', async () => {
@@ -146,7 +146,7 @@ test('pages that would not open reach the report header, named, with their reaso
   )
 
   const html = readFileSync(summary.reportPath, 'utf8')
-  assert.match(html, /не открылись/i)
+  assert.match(html, /did not open/i)
   assert.match(html, new RegExp(urlB.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   assert.match(html, /Timeout 45000ms exceeded/)
 })
@@ -167,7 +167,7 @@ test('a page that failed and was then retried successfully counts once, as done'
   assert.equal(summary.browserCoverage.pagesFailed, 0, 'the superseded failure must not still count')
 
   const html = readFileSync(summary.reportPath, 'utf8')
-  assert.doesNotMatch(html, /не открылись/i)
+  assert.doesNotMatch(html, /did not open/i)
 })
 
 // `dropped` reached browse's stdout and the snapshot meta and stopped there.
@@ -181,7 +181,7 @@ test('widths the breakpoint budget excluded reach the report', async () => {
   saveSnapshot(host, {
     meta: {
       parseVersion: PARSE_VERSION,
-      host, env: 'prod', envReason: 'боевой хост', source: 'sitemap', sitemapStatus: 'ok',
+      host, env: 'prod', envReason: 'live host', source: 'sitemap', sitemapStatus: 'ok',
       pairedAsDev: false, pairedAsDevReason: null, prodHost: null,
       pageCount: 1, pagesRequested: 1, pagesFailed: 0, failedUrls: [],
       browserWidths: [360, 768, 1024, 1440],
@@ -196,6 +196,6 @@ test('widths the breakpoint budget excluded reach the report', async () => {
   assert.deepEqual(summary.browserCoverage.droppedWidths, [639, 1199, 1200])
 
   const html = readFileSync(summary.reportPath, 'utf8')
-  assert.match(html, /исключённые ширины/i)
+  assert.match(html, /excluded widths/i)
   assert.match(html, /1200/)
 })

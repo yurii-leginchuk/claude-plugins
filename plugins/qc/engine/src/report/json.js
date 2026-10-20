@@ -6,11 +6,11 @@ const ORDER = { critical: 0, major: 1, minor: 2, note: 3 }
  * For rules not listed here, the exact 'found' value is part of the defect identity.
  */
 const RULES_WITH_FLUCTUATING_COUNTS = {
-  // I1 emits "H1 не найден" or "H1 на странице: N" -- N is how many H1s the
+  // I1 emits "H1 not found" or "H1s on the page: N" -- N is how many H1s the
   // page has, and "two H1s here, three there" is one defect (the template
   // emits the wrong number of H1s), not two.
   I1: /\d+/g,
-  // I6 emits "title пустой" or `дубль title на N страницах: "<title>"` -- N is
+  // I6 emits "title is empty" or `duplicate title on N pages: "<title>"` -- N is
   // how many pages currently share that title, which moves as pages are added
   // or fixed while the duplicate-title defect stays the same one.
   I6: /\d+/g,
@@ -26,7 +26,7 @@ const RULES_WITH_FLUCTUATING_COUNTS = {
  * For other rules, the exact value is the defect identity.
  *
  * Examples:
- * - I1 "H1 на странице: 2" vs "H1 на странице: 3" → normalize to same, both represent
+ * - I1 "H1s on the page: 2" vs "H1s on the page: 3" → normalize to same, both represent
  *   "this template emits the wrong number of H1s"
  * - E4 "tel:855-607-8758" vs "tel:855-607-8759" → keep different, different phone numbers are different bugs
  * - E1 "HTTP 404" vs "HTTP 500" → keep different (though defensive; 4xx vs 5xx should probably normalize)

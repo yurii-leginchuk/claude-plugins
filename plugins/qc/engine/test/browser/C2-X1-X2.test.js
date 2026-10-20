@@ -42,7 +42,7 @@ test('C2 ignores off-canvas decoys at a narrow width too, while still catching t
 // --- Clipping ancestors (review, browser-pass fix wave) --------------------
 //
 // Live evidence (task 11, cleaningny.com): 19 of 34 distinct Majors were C2
-// findings reading "2843px при вьюпорте 1440px" on sibling elementor-element
+// findings reading "2843px at viewport 1440px" on sibling elementor-element
 // divs, while C1 saw zero horizontal document scroll on the same pages at the
 // same width -- and the crops captured for two of them show a perfectly
 // ordinary FAQ accordion. Something was containing the overflow; C2 only ever

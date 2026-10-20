@@ -24,7 +24,7 @@ export function reportsConfig(env = process.env) {
     appPassword: env.QC_REPORTS_APP_PASSWORD || fromFile.appPassword,
   }
   if (!cfg.url || !cfg.user || !cfg.appPassword) {
-    throw new Error(`нет доступа к сайту отчётов: заполните ${file} ({"url","user","appPassword"}) или QC_REPORTS_URL/USER/APP_PASSWORD`)
+    throw new Error(`no access to the reports site: fill in ${file} ({"url","user","appPassword"}) or set QC_REPORTS_URL/USER/APP_PASSWORD`)
   }
   return { ...cfg, url: cfg.url.replace(/\/+$/, '') }
 }
@@ -82,6 +82,22 @@ export function buildPayload(run) {
   }
 }
 
+// The reports site takes English only (it refuses Cyrillic too); say which
+// fields before sending, so the run can be translated and pushed again.
+export function nonEnglishFields(payload) {
+  const bad = []
+  const scan = (v, path) => { if (typeof v === 'string' && /\p{Script=Cyrillic}/u.test(v)) bad.push(path) }
+  scan(payload.about, 'about')
+  scan(payload.env_reason, 'env_reason')
+  for (const d of payload.defects) {
+    for (const k of ['title', 'found', 'expected', 'selector']) scan(d[k], `${d.code}.${k}`)
+    scan(d.review?.note, `${d.code}.review.note`)
+    d.pages.forEach((p, i) => scan(p.where, `${d.code}.pages.${i}.where`))
+  }
+  payload.manual.forEach((m, i) => scan(m.checked, `manual.${i}.checked`))
+  return bad
+}
+
 async function call(cfg, method, path, body, fetchImpl) {
   const res = await fetchImpl(`${cfg.url}/wp-json/qc-reports/v1${path}`, {
     method,
@@ -101,6 +117,10 @@ async function call(cfg, method, path, body, fetchImpl) {
 export async function push(host, { fetchImpl = fetch, env = process.env } = {}) {
   const cfg = reportsConfig(env)
   const { payload, files } = buildPayload(reviewedRun(host))
+  const bad = nonEnglishFields(payload)
+  if (bad.length) {
+    throw new Error(`QC Reports takes English only; translate these fields of the review and run qc review again: ${bad.slice(0, 15).join(', ')}${bad.length > 15 ? ` and ${bad.length - 15} more` : ''}`)
+  }
   const saved = await call(cfg, 'POST', '/runs', payload, fetchImpl)
   const failed = []
   for (const [name, path] of files) {

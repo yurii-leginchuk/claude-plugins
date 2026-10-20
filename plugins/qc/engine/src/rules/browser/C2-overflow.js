@@ -1,8 +1,8 @@
 // Confidence (review, browser-pass fix wave): 'heuristic', not 'high'.
 //
 // Measured live (task 11, cleaningny.com): 19 of the 34 distinct Majors in
-// the merged report came from this rule, all reading "2841-2843px при
-// вьюпорте 1440px", on six sibling `elementor-element` divs per page across
+// the merged report came from this rule, all reading "2841-2843px at
+// viewport 1440px", on six sibling `elementor-element` divs per page across
 // three pages -- while C1 reported ZERO horizontal document scroll on those
 // same pages at that same width. Two of the crops this pass captured
 // (shots/840dfeb102c44b31.png and shots/e90ef974ef763a5e.png) show an
@@ -18,12 +18,12 @@
 // check silences those 19. Shipping unproven Majors that visibly do not
 // correspond to a defect is worse than shipping them as findings a human is
 // asked to confirm: at 'heuristic' they still appear in the report, in full,
-// under "требует взгляда", but they no longer move the verdict or inflate a
+// under "needs a look", but they no longer move the verdict or inflate a
 // severity tile. Raise this back to 'high' once a live re-run shows the
 // remaining findings are real.
 export const meta = {
   id: 'C2',
-  title: 'Элемент шире вьюпорта',
+  title: 'Element wider than the viewport',
   severity: 'major',
   confidence: 'heuristic',
 }
@@ -90,11 +90,11 @@ export function check(ctx) {
     if (seen[sel]) continue
     seen[sel] = 1
     out.push({
-      rule: 'C2', title: 'Элемент шире вьюпорта', severity: 'major', confidence: 'heuristic',
+      rule: 'C2', title: 'Element wider than the viewport', severity: 'major', confidence: 'heuristic',
       engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint, selector: sel,
       containerId: ctx.helpers.containerId(el),
-      found: 'ширина ' + Math.round(r.width) + 'px при вьюпорте ' + vw + 'px',
-      expected: 'не шире вьюпорта',
+      found: 'width ' + Math.round(r.width) + 'px at viewport ' + vw + 'px',
+      expected: 'no wider than the viewport',
     })
   }
   return out

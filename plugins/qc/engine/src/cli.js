@@ -83,7 +83,7 @@ const list = (v) => (typeof v === 'string' ? v.split(',').map(s => s.trim()).fil
 function requireStringFlag(flags, name, label) {
   if (flags[name] === undefined) return null
   if (typeof flags[name] !== 'string' || !flags[name].trim()) {
-    throw new Error(`${label} требует значение, получено: ${JSON.stringify(flags[name])}`)
+    throw new Error(`${label} needs a value, got: ${JSON.stringify(flags[name])}`)
   }
   return flags[name]
 }
@@ -135,7 +135,7 @@ function loadFreshSnapshot(host, wanted = null) {
   try {
     snap = loadSnapshot(host)
   } catch (e) {
-    console.error(`предупреждение: кэш для ${host} повреждён (${e.message}), выполняется свежий обход`)
+    console.error(`warning: the cache for ${host} is corrupted (${e.message}), running a fresh crawl`)
     return null
   }
   if (!snap || !snap.meta || typeof snap.meta.savedAt !== 'number') return null
@@ -143,11 +143,11 @@ function loadFreshSnapshot(host, wanted = null) {
   if (ageMs >= SNAPSHOT_TTL_MS) return null
   if (!snap.pages.length) return null
   if (snap.meta.parseVersion !== PARSE_VERSION) {
-    console.error(`кэш для ${host} разобран старой версией парсера, выполняется свежий обход`)
+    console.error(`the cache for ${host} was parsed by an older parser version, running a fresh crawl`)
     return null
   }
   if (wanted && !sameTarget(snap.meta, wanted)) {
-    console.error(`кэш для ${host} сохранён для другого набора страниц, выполняется свежий обход`)
+    console.error(`the cache for ${host} was saved for a different set of pages, running a fresh crawl`)
     return null
   }
   return { snap, ageDays: ageMs / 86400000 }
@@ -203,14 +203,14 @@ function inlineScreenshots(findings) {
 // purely for test injection (a local server standing in for a sheet
 // endpoint); normal CLI invocations from main() never pass it.
 export async function audit(input, flags, { fetchImpl } = {}) {
-  if (!input) throw new Error('укажите URL сайта или ссылку на таблицу')
+  if (!input) throw new Error('give a site URL or a spreadsheet link')
 
   let concurrency = 6
   const concurrencyFlag = requireStringFlag(flags, 'concurrency', '--concurrency')
   if (concurrencyFlag !== null) {
     const n = Number(concurrencyFlag)
     if (!Number.isFinite(n) || n <= 0) {
-      throw new Error(`--concurrency должен быть положительным числом, получено: ${concurrencyFlag}`)
+      throw new Error(`--concurrency must be a positive number, got: ${concurrencyFlag}`)
     }
     concurrency = n
   }
@@ -219,7 +219,7 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   const envFlag = requireStringFlag(flags, 'env', '--env')
   if (envFlag !== null) {
     if (!['dev', 'prod'].includes(envFlag)) {
-      throw new Error(`--env должен быть 'dev' или 'prod', получено: ${envFlag}`)
+      throw new Error(`--env must be 'dev' or 'prod', got: ${envFlag}`)
     }
     envOverride = envFlag
   }
@@ -232,7 +232,7 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   // summary purely so a later rule (or a human) has it on hand.
   const prodUrl = requireStringFlag(flags, 'prod', '--prod')
   if (prodUrl !== null && !hostOf(prodUrl)) {
-    throw new Error(`--prod должен быть корректным URL продакшн-сайта, получено: ${prodUrl}`)
+    throw new Error(`--prod must be a valid URL of the production site, got: ${prodUrl}`)
   }
 
   const factsFlag = requireStringFlag(flags, 'facts', '--facts')
@@ -240,10 +240,10 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   const onlyIds = list(requireStringFlag(flags, 'only', '--only'))
   const skipIds = list(requireStringFlag(flags, 'skip', '--skip'))
   if (requireStringFlag(flags, 'only', '--only') !== null && !onlyIds.length) {
-    throw new Error('--only требует список идентификаторов правил')
+    throw new Error('--only needs a list of rule ids')
   }
   if (requireStringFlag(flags, 'skip', '--skip') !== null && !skipIds.length) {
-    throw new Error('--skip требует список идентификаторов правил')
+    throw new Error('--skip needs a list of rule ids')
   }
   const validIds = (await allRules()).map(r => r.id).sort()
   const unknownIds = [...new Set([...onlyIds, ...skipIds])].filter(id => !validIds.includes(id))
@@ -253,8 +253,8 @@ export async function audit(input, flags, { fetchImpl } = {}) {
     // all-clear indistinguishable from a genuinely clean site. Fail loudly
     // instead, naming the bad id(s) and every valid one.
     throw new Error(
-      `неизвестные идентификаторы правил: ${unknownIds.join(', ')}. ` +
-      `Доступные: ${validIds.join(', ')}`
+      `unknown rule ids: ${unknownIds.join(', ')}. ` +
+      `Available: ${validIds.join(', ')}`
     )
   }
 
@@ -264,12 +264,12 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   let sheetTarget = null
   if (isSheet) {
     sheetTarget = await loadSheetTarget(input, fetchImpl)
-    if (!sheetTarget.urls.length) throw new Error(`в таблице не найдено ни одной страницы: ${input}`)
+    if (!sheetTarget.urls.length) throw new Error(`no pages found in the spreadsheet: ${input}`)
     host = hostOf(sheetTarget.urls[0])
   } else {
     host = hostOf(input)
   }
-  if (!host) throw new Error(`не удалось разобрать URL: ${input}`)
+  if (!host) throw new Error(`could not parse the URL: ${input}`)
 
   // Reference facts for E9/E12/H9/H11 (lib/facts.js). Loaded before any crawl
   // so a malformed file fails the run in a second, not after ten minutes of
@@ -284,8 +284,8 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   // both are present, so it wins the reason text too.
   const invocationPairedAsDev = Boolean(prodUrl) || Boolean(isSheet && sheetTarget.pairedAsDev)
   const invocationPairedAsDevReason = prodUrl
-    ? `dev/prod-пара задана флагом --prod (${prodUrl})`
-    : (isSheet && sheetTarget.pairedAsDev ? 'хост стоит в колонке Dev Link' : null)
+    ? `dev/prod pair set by the --prod flag (${prodUrl})`
+    : (isSheet && sheetTarget.pairedAsDev ? 'the host is in the Dev Link column' : null)
 
   // The production host that pairing names, threaded into `site` for I14's
   // dev-side check. --prod is the more explicit signal and wins, same as it
@@ -360,7 +360,7 @@ export async function audit(input, flags, { fetchImpl } = {}) {
     pairedAsDev = invocationPairedAsDev
     pairedAsDevReason = invocationPairedAsDevReason
     prodHost = invocationProdHost
-    if (!urls.length) throw new Error('не найдено ни одной страницы для аудита')
+    if (!urls.length) throw new Error('no pages found to audit')
 
     crawlStartedAt = Date.now()
     const fetched = await fetchAll(urls, { concurrency })
@@ -377,8 +377,8 @@ export async function audit(input, flags, { fetchImpl } = {}) {
         // we asked for. fetchOne follows redirects, so requesting `/about` on
         // a site that 301s to `/about/` returns the `/about/` document with a
         // correctly self-referencing canonical -- and keying the PageDoc to
-        // the requested URL made I5 report a Critical "canonical с лишним
-        // слешем" on every such page. That is the normal case for hand-typed
+        // the requested URL made I5 report a Critical "canonical with an extra
+        // slash" on every such page. That is the normal case for hand-typed
         // strategy-sheet URLs and for any http->https site, so it fired
         // site-wide. finalUrl also keeps buildIndex keys, I6's homepage check
         // and internal/external link classification honest.
@@ -395,8 +395,8 @@ export async function audit(input, flags, { fetchImpl } = {}) {
     }
     if (!pages.length) {
       throw new Error(
-        `не удалось получить ни одной страницы: все ${failedUrls.length} из ${urls.length} ` +
-        `запросов завершились ошибкой`
+        `could not fetch any page: all ${failedUrls.length} of ${urls.length} ` +
+        `requests failed`
       )
     }
     linkStatus = await checkLinks(pages, { concurrency })
@@ -448,7 +448,7 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   // run" case `browserCoverage` below distinguishes from "browse ran and
   // covered N of M pages". --only/--skip above validate against static rule
   // ids only (see `validIds`) and never touch these -- a browser-pass id
-  // would already have thrown "неизвестные идентификаторы правил" before
+  // would already have thrown "unknown rule ids" before
   // reaching here, so browser findings are always included whole.
   // Latest row per url, not the raw append log: a page that failed and was
   // then retried successfully legitimately carries two rows (see
@@ -470,7 +470,7 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   const liveBrowserIds = new Set([...(await allBrowserRules()).map(r => r.id), 'C8'])
   const browserFindings = browserRows.flatMap(r => r.findings || [])
     .filter(f => liveBrowserIds.has(f.rule))
-    .map(f => (f.rule === 'X1' && String(f.found).startsWith('[стороннее]') ? { ...f, confidence: 'heuristic' } : f))
+    .map(f => (f.rule === 'X1' && String(f.found).startsWith('[third-party]') ? { ...f, confidence: 'heuristic' } : f))
   inlineScreenshots(browserFindings)
   const findings = [...staticFindings, ...browserFindings]
 
@@ -485,7 +485,7 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   //
   // `pagesFailed`/`failedUrls`: the spec requires the count AND the list of
   // pages that would not open to reach the report header. Without them a
-  // reader sees "7 из 31" and cannot tell a page the site refused to serve
+  // reader sees "7 of 31" and cannot tell a page the site refused to serve
   // from one the pass has simply not reached yet -- two situations calling
   // for opposite reactions.
   //
@@ -660,7 +660,7 @@ export async function audit(input, flags, { fetchImpl } = {}) {
 // `browse` accepts <host|url>, unlike `audit` which only ever sees a
 // site-url or sheet-url. hostOf() (lib/url.js) requires a full URL with a
 // scheme and returns null for a bare host string -- `new URL('example.com')`
-// throws. Falling straight through to "не удалось разобрать URL" for the
+// throws. Falling straight through to "could not parse the URL" for the
 // common `qc browse example.com` invocation (no scheme, matching how a
 // human would type a host) would be a worse experience than `qc cache
 // clear <host>` already gets away with by using the raw string directly as
@@ -738,7 +738,7 @@ async function discoverCssTexts(urls, { concurrency }) {
 // across Tasks 1-8: resolve breakpoints, prove regions, and hand both to
 // runBrowserPass, which owns the actual page loop.
 export async function browse(input, flags) {
-  if (!input) throw new Error('укажите хост или URL сайта')
+  if (!input) throw new Error('give a host or a site URL')
 
   // --- Flag validation up front (matching audit()'s own convention: every
   // flag is checked before any I/O happens), except --breakpoints, whose
@@ -760,7 +760,7 @@ export async function browse(input, flags) {
   if (concurrencyFlag !== null) {
     const n = Number(concurrencyFlag)
     if (!Number.isFinite(n) || n <= 0) {
-      throw new Error(`--concurrency должен быть положительным числом, получено: ${concurrencyFlag}`)
+      throw new Error(`--concurrency must be a positive number, got: ${concurrencyFlag}`)
     }
     concurrencyValue = n
   }
@@ -771,7 +771,7 @@ export async function browse(input, flags) {
   if (pagesFlag !== null) {
     const n = Number(pagesFlag)
     if (!Number.isInteger(n) || n <= 0) {
-      throw new Error(`--pages должен быть положительным целым числом, получено: ${pagesFlag}`)
+      throw new Error(`--pages must be a positive integer, got: ${pagesFlag}`)
     }
     maxPages = n
   }
@@ -780,23 +780,23 @@ export async function browse(input, flags) {
   const headed = Boolean(flags.headed)
   // Resize sweep 1920→320 between the breakpoints; --sweep <step px>, 0 = off.
   const sweepStep = flags.sweep === undefined || flags.sweep === true ? SWEEP.step : Number(flags.sweep)
-  if (!Number.isInteger(sweepStep) || sweepStep < 0) throw new Error(`--sweep должен быть шагом в px (0 — выключить), получено: ${flags.sweep}`)
+  if (!Number.isInteger(sweepStep) || sweepStep < 0) throw new Error(`--sweep must be a step in px (0 turns it off), got: ${flags.sweep}`)
   const sweep = sweepStep ? { ...SWEEP, step: sweepStep } : null
 
   const onlyIds = list(requireStringFlag(flags, 'only', '--only'))
   const skipIds = list(requireStringFlag(flags, 'skip', '--skip'))
   if (requireStringFlag(flags, 'only', '--only') !== null && !onlyIds.length) {
-    throw new Error('--only требует список идентификаторов правил')
+    throw new Error('--only needs a list of rule ids')
   }
   if (requireStringFlag(flags, 'skip', '--skip') !== null && !skipIds.length) {
-    throw new Error('--skip требует список идентификаторов правил')
+    throw new Error('--skip needs a list of rule ids')
   }
   const validBrowserIds = (await allBrowserRules()).map(r => r.id).sort()
   const unknownIds = [...new Set([...onlyIds, ...skipIds])].filter(id => !validBrowserIds.includes(id))
   if (unknownIds.length) {
     throw new Error(
-      `неизвестные идентификаторы браузерных правил: ${unknownIds.join(', ')}. ` +
-      `Доступные: ${validBrowserIds.join(', ')}`
+      `unknown browser rule ids: ${unknownIds.join(', ')}. ` +
+      `Available: ${validBrowserIds.join(', ')}`
     )
   }
 
@@ -806,7 +806,7 @@ export async function browse(input, flags) {
     const parsed = breakpointsFlag.split(',').map(s => Number(s.trim()))
     if (!parsed.length || parsed.some(n => !Number.isFinite(n) || n <= 0)) {
       throw new Error(
-        `--breakpoints должен быть списком положительных чисел через запятую, получено: ${breakpointsFlag}`
+        `--breakpoints must be a comma-separated list of positive numbers, got: ${breakpointsFlag}`
       )
     }
     breakpointsOverride = parsed
@@ -814,28 +814,28 @@ export async function browse(input, flags) {
 
   // --- browse refuses to run without a snapshot; it never crawls. ---
   const host = resolveHostInput(input)
-  if (!host) throw new Error(`не удалось разобрать хост или URL: ${input}`)
+  if (!host) throw new Error(`could not parse the host or URL: ${input}`)
 
   let snap
   try {
     snap = loadSnapshot(host)
   } catch (e) {
     throw new Error(
-      `снимок для ${host} повреждён (${e.message}); запустите заново: qc audit ${input}`
+      `the snapshot for ${host} is corrupted (${e.message}); run again: qc audit ${input}`
     )
   }
   if (!snap || !Array.isArray(snap.pages) || !snap.pages.length) {
     throw new Error(
-      `нет сохранённого снимка для ${host} -- browse не выполняет обход сам, ` +
-      `сначала запустите: qc audit ${input}`
+      `no saved snapshot for ${host} -- browse does not crawl on its own, ` +
+      `run this first: qc audit ${input}`
     )
   }
 
   const notes = []
   if (concurrencyValue !== null) {
     notes.push(
-      `--concurrency=${concurrencyValue} применён только к загрузке CSS для определения брейкпоинтов; ` +
-      `сам браузерный проход по страницам всегда последовательный (один Chromium, одна страница за раз)`
+      `--concurrency=${concurrencyValue} applies only to fetching CSS for breakpoint detection; ` +
+      `the browser pass over the pages is always sequential (one Chromium, one page at a time)`
     )
   }
 
@@ -865,8 +865,8 @@ export async function browse(input, flags) {
   // for a field that isn't in the documented minimal contract.
   if (unparseable.length) {
     notes.push(
-      `не удалось разобрать ${unparseable.length} медиа-услови(е/й) при определении брейкпоинтов ` +
-      `(неподдерживаемые единицы измерения): ${unparseable.slice(0, 10).join(', ')}` +
+      `could not parse ${unparseable.length} media condition(s) while detecting breakpoints ` +
+      `(unsupported units): ${unparseable.slice(0, 10).join(', ')}` +
       (unparseable.length > 10 ? ', …' : '')
     )
   }
@@ -947,9 +947,9 @@ export async function browse(input, flags) {
   // already marked done.
   if (onlyIds.length || skipIds.length) {
     notes.push(
-      `--only/--skip здесь фильтруют только напечатанные findings этого резюме -- ` +
-      `в отличие от qc audit, где они определяют, какие правила вообще выполняются, ` +
-      `в browse выполняются ВСЕ браузерные правила, и только вывод сокращается`
+      `--only/--skip here filter only the findings printed in this summary -- ` +
+      `unlike qc audit, where they decide which rules run at all, ` +
+      `browse runs ALL browser rules and only the output is cut down`
     )
   }
   if (onlyIds.length) findings = findings.filter(f => onlyIds.includes(f.rule))
@@ -997,17 +997,17 @@ async function main() {
       return
     }
     if (cmd === 'findings') {
-      if (!args[0]) throw new Error('укажите хост: qc findings <host>')
+      if (!args[0]) throw new Error('give a host: qc findings <host>')
       console.log(JSON.stringify(listFindings(resolveHostInput(args[0])), null, 2))
       return
     }
     if (cmd === 'review') {
-      if (!args[0] || !args[1]) throw new Error('укажите хост и файл ревью: qc review <host> <review.json>')
+      if (!args[0] || !args[1]) throw new Error('give a host and a review file: qc review <host> <review.json>')
       console.log(JSON.stringify(applyReview(resolveHostInput(args[0]), args[1]), null, 2))
       return
     }
     if (cmd === 'push') {
-      if (!args[0]) throw new Error('укажите хост: qc push <host>')
+      if (!args[0]) throw new Error('give a host: qc push <host>')
       const { push } = await import('./push.js')
       console.log(JSON.stringify(await push(resolveHostInput(args[0])), null, 2))
       return
@@ -1016,19 +1016,19 @@ async function main() {
       const [sub, who] = args
       if (sub === 'list') {
         const rows = listSnapshots()
-        console.log(rows.length ? JSON.stringify(rows, null, 2) : 'пусто')
+        console.log(rows.length ? JSON.stringify(rows, null, 2) : 'empty')
         return
       }
       if (sub === 'clear') {
         if (flags.all || who === '--all') {
-          console.log(`удалено снапшотов: ${clearAll()}`)
+          console.log(`snapshots deleted: ${clearAll()}`)
           return
         }
-        if (!who) throw new Error('укажите хост или --all')
-        console.log(clearSnapshot(who) ? `удалён: ${who}` : `не найден: ${who}`)
+        if (!who) throw new Error('give a host or --all')
+        console.log(clearSnapshot(who) ? `deleted: ${who}` : `not found: ${who}`)
         return
       }
-      throw new Error(`неизвестная подкоманда cache: ${sub || '(не указана)'}`)
+      throw new Error(`unknown cache subcommand: ${sub || '(none given)'}`)
     }
     console.log(USAGE)
     process.exitCode = 1

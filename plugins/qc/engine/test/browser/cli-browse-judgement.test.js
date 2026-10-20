@@ -57,7 +57,7 @@ test('--concurrency is validated and reported, not silently ignored', async () =
   assert.equal(s.pagesDone, 1, 'the run still completes normally with the flag set')
   assert.equal(s.concurrencyIgnored, true, 'summary must say the page loop itself never saw the flag')
   assert.ok(
-    s.notes.some(n => /--concurrency/.test(n) && /последовательн/.test(n)),
+    s.notes.some(n => /--concurrency/.test(n) && /sequential/.test(n)),
     `expected a note explaining --concurrency was not applied to the page loop, got: ${JSON.stringify(s.notes)}`
   )
 })
@@ -129,7 +129,7 @@ test('breakpoint discovery reads more than just the first page, and unparseable 
     `expected the vw condition to survive into unparseableWidths, got: ${JSON.stringify(s.unparseableWidths)}`
   )
   assert.ok(
-    s.notes.some(n => /не удалось разобрать/.test(n)),
+    s.notes.some(n => /could not parse/.test(n)),
     `expected a human-readable note about the unparseable condition, got: ${JSON.stringify(s.notes)}`
   )
 })

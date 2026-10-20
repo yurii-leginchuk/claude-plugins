@@ -1,6 +1,6 @@
 export const meta = {
   id: 'F4',
-  title: 'Курсор не соответствует интерактивности',
+  title: 'Cursor does not match interactivity',
   severity: 'minor',
   confidence: 'high',
 }
@@ -91,10 +91,10 @@ export function check(ctx) {
       if (parent && parent !== document.body && parent !== document.documentElement &&
           getComputedStyle(parent).cursor === cursor && !ctx.helpers.interactive(parent)) continue
       out.push({
-        rule: 'F4', title: 'Курсор не соответствует интерактивности', severity: 'minor',
+        rule: 'F4', title: 'Cursor does not match interactivity', severity: 'minor',
         confidence: 'high', engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint,
         selector: sel, containerId: ctx.helpers.containerId(el),
-        found: 'cursor:pointer на неинтерактивном элементе',
+        found: 'cursor:pointer on a non-interactive element',
         expected: 'cursor:default',
       })
       continue
@@ -102,10 +102,10 @@ export function check(ctx) {
 
     if (isInteractive && cursor !== 'pointer' && !el.disabled && !NATIVE_FORM_TAGS.includes(tag)) {
       out.push({
-        rule: 'F4', title: 'Курсор не соответствует интерактивности', severity: 'minor',
+        rule: 'F4', title: 'Cursor does not match interactivity', severity: 'minor',
         confidence: 'high', engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint,
         selector: sel, containerId: ctx.helpers.containerId(el),
-        found: 'cursor:' + cursor + ' на интерактивном элементе',
+        found: 'cursor:' + cursor + ' on an interactive element',
         expected: 'cursor:pointer',
       })
     }

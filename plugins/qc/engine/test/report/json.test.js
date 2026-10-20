@@ -65,7 +65,7 @@ test('rollUp returns heuristic findings even though they do not affect verdict',
 // against the real cached cleaningny.com run, that made E3's 44 major
 // findings (internal target=_blank, a real house-rule defect) and 180 minor
 // findings (external missing rel=noopener, hygiene) merge into one row
-// chipped "Major · 224 находок" -- exactly the flood the E1/E3 calibration
+// chipped "Major · 224 findings" -- exactly the flood the E1/E3 calibration
 // was meant to fix, just moved into the report. Grouping now includes
 // severity and confidence, so same-rule/different-severity findings are
 // separate rows/chips.
@@ -124,10 +124,10 @@ test('diffRuns: HTTP status changes (404 vs 500) remain different for E1', () =>
 })
 
 test('diffRuns: H1 count changes normalize for I1', () => {
-  // I1 emits "H1 на странице: N" where N is discovered quantity
+  // I1 emits "H1s on the page: N" where N is discovered quantity
   // Change from 2 to 3 H1s is the same issue type (too many H1s)
-  const prev = [f({ rule: 'I1', found: 'H1 на странице: 2', page: 'https://ex.com/a' })]
-  const cur = [f({ rule: 'I1', found: 'H1 на странице: 3', page: 'https://ex.com/a' })]
+  const prev = [f({ rule: 'I1', found: 'H1s on the page: 2', page: 'https://ex.com/a' })]
+  const cur = [f({ rule: 'I1', found: 'H1s on the page: 3', page: 'https://ex.com/a' })]
 
   const d = diffRuns(cur, prev)
   assert.equal(d.fixed.length, 0, 'H1 count change not treated as fixed (rule I1 normalizes)')
@@ -136,9 +136,9 @@ test('diffRuns: H1 count changes normalize for I1', () => {
 })
 
 test('diffRuns: Title duplication count changes normalize for I6', () => {
-  // I6 emits "дубль title на N страницах" where N is discovered quantity
-  const prev = [f({ rule: 'I6', found: 'дубль title на 47 страницах', page: 'https://ex.com/a' })]
-  const cur = [f({ rule: 'I6', found: 'дубль title на 12 страницах', page: 'https://ex.com/a' })]
+  // I6 emits "duplicate title on N pages" where N is discovered quantity
+  const prev = [f({ rule: 'I6', found: 'duplicate title on 47 pages', page: 'https://ex.com/a' })]
+  const cur = [f({ rule: 'I6', found: 'duplicate title on 12 pages', page: 'https://ex.com/a' })]
 
   const d = diffRuns(cur, prev)
   assert.equal(d.fixed.length, 0, 'title dup count change not treated as fixed (rule I6 normalizes)')
@@ -294,7 +294,7 @@ test('diffRuns requires current to be an array', () => {
 test('countDistinct collapses a defect repeated verbatim across many pages into one, while raw counts stay at the full occurrence total', () => {
   const template = Array.from({ length: 5 }, (_, i) => f({
     rule: 'E3', severity: 'major', selector: 'a.elementor-icon.elementor-social-icon',
-    found: 'внешняя ссылка без rel=noopener: https://www.facebook.com/people/Opura',
+    found: 'external link without rel=noopener: https://www.facebook.com/people/Opura',
     page: `https://cleaningny.com/p${i}/`,
   }))
   assert.equal(template.length, 5, 'sanity: 5 raw occurrences, one per page')
@@ -353,18 +353,18 @@ test('countDistinct always returns all four severity keys, even for an empty fin
 
 test('rollUp splits a group into one entry per defectIdentity, keeping each found/expected/selector', () => {
   const findings = [
-    f({ rule: 'E3', selector: 'a.one', found: 'ссылка A', expected: 'без target', page: 'https://ex.com/1' }),
-    f({ rule: 'E3', selector: 'a.one', found: 'ссылка A', expected: 'без target', page: 'https://ex.com/2' }),
-    f({ rule: 'E3', selector: 'a.two', found: 'ссылка B', expected: 'без target', page: 'https://ex.com/1' }),
+    f({ rule: 'E3', selector: 'a.one', found: 'link A', expected: 'no target', page: 'https://ex.com/1' }),
+    f({ rule: 'E3', selector: 'a.one', found: 'link A', expected: 'no target', page: 'https://ex.com/2' }),
+    f({ rule: 'E3', selector: 'a.two', found: 'link B', expected: 'no target', page: 'https://ex.com/1' }),
   ]
   const [g] = rollUp(findings)
   assert.equal(g.count, 3, 'raw occurrences unchanged')
   assert.equal(g.identities.length, 2, 'two distinct defects under one rule+severity')
   const [first, second] = g.identities
-  assert.equal(first.found, 'ссылка A')
+  assert.equal(first.found, 'link A')
   assert.equal(first.count, 2)
   assert.deepEqual(first.pages, ['https://ex.com/1', 'https://ex.com/2'])
-  assert.equal(second.found, 'ссылка B')
+  assert.equal(second.found, 'link B')
   assert.deepEqual(second.pages, ['https://ex.com/1'])
 })
 
@@ -381,8 +381,8 @@ test('rollUp identity count matches countDistinct for the same findings', () => 
 
 test('rollUp normalizes fluctuating counts inside a group the same way countDistinct does', () => {
   const findings = [
-    f({ rule: 'I1', severity: 'critical', selector: 'body', found: 'H1 на странице: 2', page: 'https://ex.com/1' }),
-    f({ rule: 'I1', severity: 'critical', selector: 'body', found: 'H1 на странице: 3', page: 'https://ex.com/2' }),
+    f({ rule: 'I1', severity: 'critical', selector: 'body', found: 'H1s on the page: 2', page: 'https://ex.com/1' }),
+    f({ rule: 'I1', severity: 'critical', selector: 'body', found: 'H1s on the page: 3', page: 'https://ex.com/2' }),
   ]
   const [g] = rollUp(findings)
   assert.equal(g.identities.length, 1, 'I1 counts fluctuate; the defect is the same one')
@@ -390,7 +390,7 @@ test('rollUp normalizes fluctuating counts inside a group the same way countDist
 
 test('X1 console lines with per-request URLs and tokens collapse to one defect', async () => {
   const { defectIdentity } = await import('../../src/report/json.js')
-  const a = { rule: 'X1', selector: null, found: '[стороннее] failed: https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/pat/a4d74128a84c9e0f/1792491255387/ea7092ea2b7a4095444761b0c2fc60b74341e1ed54a26c66b296631d9d8a2219' }
-  const b = { ...a, found: '[стороннее] failed: https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/pat/zz/179/03b389adaa141b9fc67ec37606911cbcccda52519cf6f973421b63eef327289a' }
+  const a = { rule: 'X1', selector: null, found: '[third-party] failed: https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/pat/a4d74128a84c9e0f/1792491255387/ea7092ea2b7a4095444761b0c2fc60b74341e1ed54a26c66b296631d9d8a2219' }
+  const b = { ...a, found: '[third-party] failed: https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/pat/zz/179/03b389adaa141b9fc67ec37606911cbcccda52519cf6f973421b63eef327289a' }
   assert.equal(defectIdentity(a), defectIdentity(b))
 })

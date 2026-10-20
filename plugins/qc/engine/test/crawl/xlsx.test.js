@@ -348,7 +348,7 @@ test('loadStrategySheet is bounded by a timeout and never hangs on a stalled con
   try {
     await assert.rejects(
       () => loadStrategySheet(SHEET, { timeout: 50 }),
-      /(таймаут|время ожидания|timed? ?out)/i
+      /timed? ?out/i
     )
     const elapsed = Date.now() - started
     assert.ok(elapsed < 2000, `expected the call to reject quickly after the 50ms timeout, took ${elapsed}ms`)

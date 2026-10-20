@@ -166,15 +166,15 @@ test('page.text excludes script, style, noscript and template source', () => {
   const doc = parsePage({
     url: 'https://example.com/',
     html: `<html><body>
-      <p>Настоящий текст страницы.</p>
+      <p>The real page text.</p>
       <script>var config = {"email":"admin@secret.example","copy":"Lorem ipsum dolor sit amet"};
         jQuery(function ($) { if (a < b) {} });</script>
       <style>.x{content:"Lorem ipsum"}</style>
-      <noscript>Включите JavaScript, lorem ipsum</noscript>
+      <noscript>Enable JavaScript, lorem ipsum</noscript>
       <template><p>Lorem ipsum dolor sit amet</p></template>
     </body></html>`,
   })
-  assert.match(doc.text, /Настоящий текст страницы/)
+  assert.match(doc.text, /The real page text/)
   assert.doesNotMatch(doc.text, /jQuery/)
   assert.doesNotMatch(doc.text, /admin@secret\.example/)
   assert.doesNotMatch(doc.text, /lorem ipsum/i)
@@ -186,7 +186,7 @@ test('excluding script from page.text leaves jsonLd intact', () => {
     url: 'https://example.com/',
     html: `<html><head>
       <script type="application/ld+json">{"@type":"Organization","email":"info@example.com"}</script>
-      </head><body><p>копия</p></body></html>`,
+      </head><body><p>copy</p></body></html>`,
   })
   assert.equal(doc.jsonLd.length, 1)
   assert.equal(doc.jsonLd[0].ok, true)

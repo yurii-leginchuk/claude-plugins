@@ -1,6 +1,6 @@
 export const meta = {
   id: 'X1',
-  title: 'Ошибки консоли и упавшие запросы',
+  title: 'Console errors and failed requests',
   severity: 'major',
   confidence: 'high',
 }
@@ -26,15 +26,15 @@ export function check(ctx) {
     if (seen[key]) continue
     seen[key] = 1
     out.push({
-      rule: 'X1', title: 'Ошибки консоли и упавшие запросы',
+      rule: 'X1', title: 'Console errors and failed requests',
       severity: thirdParty ? 'minor' : 'major',
       confidence: 'high', engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint,
       selector: null,
       // A console/network entry isn't tied to any one element -- explicitly
       // null rather than omitted, same reasoning as C1.
       containerId: null,
-      found: (thirdParty ? '[стороннее] ' : '') + line,
-      expected: 'консоль без ошибок',
+      found: (thirdParty ? '[third-party] ' : '') + line,
+      expected: 'console without errors',
     })
   }
   return out

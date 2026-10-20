@@ -6,10 +6,10 @@ import { pathKey } from './url.js'
 export const TYPE_ORDER = ['home', 'service-hub', 'service', 'location-hub', 'location', 'blog', 'post', 'about',
   'team', 'contact', 'admissions', 'landing', 'careers', 'legal', 'thank-you', 'other']
 export const TYPE_LABEL = {
-  home: 'Главная', 'service-hub': 'Хаб услуг', service: 'Услуги', 'location-hub': 'Хаб локаций', location: 'Локации',
-  blog: 'Блог и рубрики', post: 'Посты', about: 'О компании', team: 'Команда', contact: 'Контакты',
-  admissions: 'Страховки и приём', landing: 'Посадочные (PPC)', careers: 'Вакансии', legal: 'Юридические',
-  'thank-you': 'Страницы «спасибо»', other: 'Прочие',
+  home: 'Home', 'service-hub': 'Services hub', service: 'Services', 'location-hub': 'Locations hub', location: 'Locations',
+  blog: 'Blog and categories', post: 'Posts', about: 'About', team: 'Team', contact: 'Contact',
+  admissions: 'Insurance and admissions', landing: 'Landing pages (PPC)', careers: 'Careers', legal: 'Legal',
+  'thank-you': 'Thank-you pages', other: 'Other',
 }
 const BLOG = /^\/(?:blog|news|articles|resources|insights)(\/|$)/
 

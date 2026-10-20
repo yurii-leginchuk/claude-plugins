@@ -12,7 +12,7 @@ before(() => { cache = mkdtempSync(join(tmpdir(), 'qc-shot-')); process.env.QC_C
 after(() => rmSync(cache, { recursive: true, force: true }))
 
 const finding = (selector) => ({
-  rule: 'C2', page: 'https://ex.com/a', selector, found: 'ширина 1200px', region: null,
+  rule: 'C2', page: 'https://ex.com/a', selector, found: 'width 1200px', region: null,
 })
 
 test('captures a crop of the offending element', async () => {

@@ -54,7 +54,7 @@ test('region names come from elementor-location classes when present', () => {
 // A container proved shared but never NAMED is still a region -- it is just a
 // region whose name is unknown. It used to be given its own id as a name,
 // which is how every region label on the one real site this has run against
-// came out reading "регион: 3381" instead of "footer": that snapshot predates
+// came out reading "region: 3381" instead of "footer": that snapshot predates
 // `locationsById`, so no name was available, and the bare id flowed straight
 // into the name slot. `name` is null now, and the id stays available under
 // `id`, so a reader-facing layer can say the name is missing rather than

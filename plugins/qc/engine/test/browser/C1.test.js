@@ -31,7 +31,7 @@ test('every browser rule check is self-contained and survives serialisation', as
     assert.equal(typeof r.id, 'string')
     assert.ok(['critical', 'major', 'minor', 'note'].includes(r.severity))
     assert.ok(['high', 'heuristic'].includes(r.confidence))
-    assert.match(r.title, /[Ѐ-ӿ]/, `${r.id} title must be Russian`)
+    assert.match(r.title, /^[A-Z][\x20-\x7E]*$/, `${r.id} title must be English`)
     // A check that closes over module scope throws once serialised.
     assert.doesNotThrow(() => new Function(`return (${r.check.toString()})`)())
   }
@@ -115,10 +115,10 @@ test('every browser rule check executes without crashing (module-scope contract)
       { url: 'http://smoke-test.invalid/', breakpoint: 1440 }
     )
     // bundle.js's window.__qc.run() catches a throwing check and turns it
-    // into a { title: 'Правило упало', rule: <id>, found: 'rule crashed: ...' }
+    // into a { title: 'Rule crashed', rule: <id>, found: 'rule crashed: ...' }
     // finding instead of losing the whole run -- see crash-isolation.test.js.
     // That's exactly the signal to assert on here.
-    const crashed = findings.filter(f => f.title === 'Правило упало')
+    const crashed = findings.filter(f => f.title === 'Rule crashed')
     const names = crashed.map(f => `${f.rule} (${f.found})`).join('; ')
     assert.equal(crashed.length, 0,
       `rule(s) crashed, which should be impossible on this content -- ` +

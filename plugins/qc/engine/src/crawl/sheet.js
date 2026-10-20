@@ -56,8 +56,8 @@ export function pickPageList(workbook) {
     const tabNames = workbook.sheets.map(s => s.name)
     const wanted = Object.values(COLUMN_LABELS).join(', ')
     throw new Error(
-      `не удалось найти лист со списком страниц: просмотрены вкладки [${tabNames.join(', ')}], ` +
-      `искали колонки: ${wanted}`
+      `could not find a sheet with the page list: looked at tabs [${tabNames.join(', ')}], ` +
+      `looking for columns: ${wanted}`
     )
   }
 
@@ -85,7 +85,7 @@ export function pickPageList(workbook) {
 // bounded by `timeout`.
 export async function loadStrategySheet(sheetUrl, { timeout = DEFAULT_TIMEOUT_MS, fetchImpl = fetch } = {}) {
   const id = /\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/.exec(sheetUrl)?.[1]
-  if (!id) throw new Error(`не похоже на ссылку Google Sheets: ${sheetUrl}`)
+  if (!id) throw new Error(`does not look like a Google Sheets link: ${sheetUrl}`)
   const exportUrl = `https://docs.google.com/spreadsheets/d/${id}/export?format=xlsx`
 
   // Download the workbook exactly once. fetchOne (Task 9) reads the body as
@@ -111,19 +111,19 @@ export async function loadStrategySheet(sheetUrl, { timeout = DEFAULT_TIMEOUT_MS
       fetchImpl(exportUrl, { signal: ac.signal }),
       new Promise((_, reject) => {
         ac.signal.addEventListener('abort', () =>
-          reject(new Error(`превышено время ожидания (${timeout} мс) при скачивании таблицы: ${sheetUrl}`)))
+          reject(new Error(`timed out (${timeout} ms) downloading the spreadsheet: ${sheetUrl}`)))
       }),
     ])
   } catch (e) {
     if (e.name === 'AbortError') {
-      throw new Error(`превышено время ожидания (${timeout} мс) при скачивании таблицы: ${sheetUrl}`)
+      throw new Error(`timed out (${timeout} ms) downloading the spreadsheet: ${sheetUrl}`)
     }
-    throw new Error(`не удалось скачать таблицу (${sheetUrl}): ${e.message}`)
+    throw new Error(`could not download the spreadsheet (${sheetUrl}): ${e.message}`)
   } finally {
     clearTimeout(timer)
   }
 
-  if (!res.ok) throw new Error(`таблица недоступна: HTTP ${res.status}`)
+  if (!res.ok) throw new Error(`spreadsheet not available: HTTP ${res.status}`)
   const buf = Buffer.from(await res.arrayBuffer())
 
   return pickPageList(readXlsx(buf))

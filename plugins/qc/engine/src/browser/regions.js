@@ -67,7 +67,7 @@ export function proveRegions(pages) {
     // IS still how the region is identified (see regionOf below) -- but it is
     // an id, and a report that prints it in the place a name goes says
     // something false. Measured live (task 11, cleaningny.com): every region
-    // label in the merged report read "регион: 3381" rather than "footer",
+    // label in the merged report read "region: 3381" rather than "footer",
     // because that snapshot was crawled before `locationsById` existed and
     // nothing anywhere detected a snapshot whose shape predates a parser
     // change -- the bare id simply flowed into the name slot and rendered as

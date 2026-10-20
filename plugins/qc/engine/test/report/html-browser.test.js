@@ -3,13 +3,13 @@ import assert from 'node:assert/strict'
 import { renderReport } from '../../src/report/html.js'
 
 const f = (o) => ({
-  rule: 'C1', title: 'Горизонтальный скролл документа', severity: 'critical', engine: 'browser',
+  rule: 'C1', title: 'Horizontal document scroll', severity: 'critical', engine: 'browser',
   confidence: 'high', page: 'https://ex.com/a', breakpoint: 360, selector: 'html',
-  found: 'ширина документа 3000px при вьюпорте 360px', expected: 'документ не шире вьюпорта', ...o,
+  found: 'document width 3000px at viewport 360px', expected: 'document no wider than the viewport', ...o,
 })
 
 const base = {
-  host: 'ex.com', env: 'prod', envReason: 'боевой хост', pages: 10,
+  host: 'ex.com', env: 'prod', envReason: 'live host', pages: 10,
   diff: { fixed: [], remaining: [], added: [] }, snapshotAgeDays: 0, source: 'sitemap',
 }
 
@@ -32,7 +32,7 @@ test('warns when the browser pass covered only part of the site', () => {
     ...base, findings: [f()],
     browserCoverage: { pagesDone: 3, pagesTotal: 10, widths: [360] },
   })
-  assert.match(html, /не проверен|не проверено|частично/i)
+  assert.match(html, /not checked|partial/i)
 })
 
 test('embeds a screenshot when the finding carries one', () => {
@@ -65,7 +65,7 @@ test('a browser finding with no breakpoint does not print "null"', () => {
 
 test('states plainly that the browser pass never ran when browserCoverage is absent', () => {
   const html = renderReport({ ...base, findings: [] })
-  assert.match(html, /не выполнялась|не запуск/i)
+  assert.match(html, /did not run/i)
 })
 
 test('a complete browser pass (pagesDone === pagesTotal) shows no partial warning', () => {
@@ -73,14 +73,14 @@ test('a complete browser pass (pagesDone === pagesTotal) shows no partial warnin
     ...base, findings: [f()],
     browserCoverage: { pagesDone: 10, pagesTotal: 10, widths: [360] },
   })
-  assert.doesNotMatch(html, /частично/i)
+  assert.doesNotMatch(html, /partial/i)
 })
 
 // ---------------------------------------------------------------------------
 // The spec requires the report header to carry the count AND the list of
 // pages that would not open, and to list the widths the breakpoint budget
 // excluded. Neither reached the report: `browserCoverage` carried only
-// {pagesDone, pagesTotal, widths}, so a reader saw "7 из 31" with no way to
+// {pagesDone, pagesTotal, widths}, so a reader saw "7 of 31" with no way to
 // tell a failed page from a not-yet-attempted one, and `dropped` reached
 // browse's stdout and the snapshot meta and then stopped.
 // ---------------------------------------------------------------------------
@@ -97,7 +97,7 @@ test('the header states how many pages would not open, and names them', () => {
       ],
     },
   })
-  assert.match(html, /не открылись/i, 'the count of failed pages is stated')
+  assert.match(html, /did not open/i, 'the count of failed pages is stated')
   assert.match(html, /https:\/\/ex\.com\/about/, 'the failed page is named')
   assert.match(html, /https:\/\/ex\.com\/services/)
   assert.match(html, /Timeout 45000ms exceeded/, 'with the reason it failed')
@@ -108,7 +108,7 @@ test('a pass with no failed pages says nothing about failures', () => {
     ...base, findings: [f()],
     browserCoverage: { pagesDone: 10, pagesTotal: 10, widths: [360], pagesFailed: 0, failedUrls: [] },
   })
-  assert.doesNotMatch(html, /не открылись/i)
+  assert.doesNotMatch(html, /did not open/i)
 })
 
 test('the header lists the widths the breakpoint budget excluded', () => {
@@ -120,7 +120,7 @@ test('the header lists the widths the breakpoint budget excluded', () => {
       droppedWidths: [639, 1199, 1200],
     },
   })
-  assert.match(html, /исключённые ширины/i, 'excluded widths are named as such')
+  assert.match(html, /excluded widths/i, 'excluded widths are named as such')
   assert.match(html, /1200/, 'and the actual widths are listed, not just counted')
   assert.match(html, /639/)
 })
@@ -130,7 +130,7 @@ test('no dropped widths means no note about them', () => {
     ...base, findings: [f()],
     browserCoverage: { pagesDone: 10, pagesTotal: 10, widths: [360], droppedWidths: [] },
   })
-  assert.doesNotMatch(html, /исключённые ширины/i)
+  assert.doesNotMatch(html, /excluded widths/i)
 })
 
 test('a failed url and its error are escaped like everything else', () => {
@@ -162,7 +162,7 @@ test('a defect seen at more than one breakpoint lists every width it occurred at
   const recurring768 = f({ page: 'https://ex.com/b', breakpoint: 768 })
   const other1440 = f({
     page: 'https://ex.com/c', breakpoint: 1440, selector: '.only-at-1440',
-    found: 'другой, не связанный дефект',
+    found: 'another, unrelated defect',
   })
   const html = renderReport({ ...base, findings: [recurring360, recurring768, other1440] })
 
@@ -176,10 +176,10 @@ test('a defect seen at more than one breakpoint lists every width it occurred at
   // The recurring identity's own breakpoints line lists both widths it
   // actually occurred at, sorted, aggregated across BOTH its occurrences --
   // not just whichever single finding rollUp happened to keep as `example`.
-  assert.match(c1Row[0], /брейкпоинты: <code>360, 768<\/code>/)
+  assert.match(c1Row[0], /breakpoints: <code>360, 768<\/code>/)
   // The unrelated defect (a different identity, different selector) lists
   // only its own width -- 1440 is never folded into the recurring row.
-  assert.match(c1Row[0], /брейкпоинты: <code>1440<\/code>/)
+  assert.match(c1Row[0], /breakpoints: <code>1440<\/code>/)
 })
 
 // ---------------------------------------------------------------------------
@@ -198,7 +198,7 @@ function buildShotFindings({ count, severity, fillChar, bytesPerShot }) {
   return Array.from({ length: count }, (_, i) => f({
     page: `https://big.example.com/${severity}-${i}`,
     selector: `.${severity}-${i}`,
-    found: `дефект №${i} серьёзности ${severity}`,
+    found: `defect #${i} severity ${severity}`,
     severity,
     shotDataUri: `data:image/png;base64,${payload}#${severity}${i}`,
   }))
@@ -218,7 +218,7 @@ test('a realistic run (60 distinct defects, each with a screenshot) stays comfor
   const bytes = Buffer.byteLength(html, 'utf8')
   assert.ok(bytes < 2 * 1024 * 1024, `expected < 2MB at realistic scale, got ${bytes} bytes`)
   // Nothing needed dropping at this scale -- every screenshot present.
-  assert.doesNotMatch(html, /лимит размера/i)
+  assert.doesNotMatch(html, /size limit/i)
   assert.equal([...html.matchAll(/<img /g)].length, 60)
 })
 
@@ -232,7 +232,7 @@ test('when screenshots alone exceed the budget, note screenshots are dropped bef
 
   // The drop must actually have happened (the input is ~3.7MB of raw
   // screenshot payload alone) and must be stated visibly, not silently.
-  assert.match(html, /лимит размера/i)
+  assert.match(html, /size limit/i)
   assert.ok(bytes < 2.2 * 1024 * 1024, `expected the drop to bring the document back near budget, got ${bytes} bytes`)
 
   // All 5 critical screenshots survive -- dropping the note tier alone
@@ -245,10 +245,10 @@ test('when screenshots alone exceed the budget, note screenshots are dropped bef
   assert.ok(noteImgs < 60, `expected some note screenshots dropped, saw all ${noteImgs}`)
   // The defect's own text survives even for a dropped screenshot -- only
   // the image itself is suppressed, never the finding it belongs to.
-  assert.match(html, /дефект №0 серьёзности note/)
+  assert.match(html, /defect #0 severity note/)
   // Clearing the budget via dropping means no "still oversized" note is
   // needed -- that note is reserved for when dropping wasn't enough.
-  assert.doesNotMatch(html, /превышает рекомендуемый лимит/i)
+  assert.doesNotMatch(html, /over the recommended publish size limit/i)
 })
 
 // ---------------------------------------------------------------------------
@@ -272,14 +272,14 @@ test('drops critical screenshots as a genuine last resort when nothing else is l
   // (there is nothing else to drop) and the result must fit back under
   // budget.
   assert.ok(bytes <= 2 * 1024 * 1024, `expected dropping critical as a last resort to clear the budget, got ${bytes} bytes`)
-  assert.match(html, /лимит размера/i)
+  assert.match(html, /size limit/i)
   assert.match(html, /critical/, 'the drop notice should name critical among the tiers it may reach')
 
   const remainingImgs = [...html.matchAll(/#critical\d+"/g)].length
   assert.ok(remainingImgs < 50, `expected at least one critical screenshot dropped, saw all ${remainingImgs}`)
   // Every defect's text -- even the ones whose screenshot got dropped --
   // stays in the document; only images were sacrificed.
-  for (let i = 0; i < 50; i++) assert.match(html, new RegExp(`дефект №${i} серьёзности critical`))
+  for (let i = 0; i < 50; i++) assert.match(html, new RegExp(`defect #${i} severity critical`))
 })
 
 // ---------------------------------------------------------------------------
@@ -300,10 +300,10 @@ test('states the document is over budget even when there was nothing to drop (no
   const bytes = Buffer.byteLength(html, 'utf8')
   assert.ok(bytes > 2 * 1024 * 1024, `test setup should exceed the budget from text alone, got ${bytes} bytes`)
 
-  assert.match(html, /превышает рекомендуемый лимит/i)
+  assert.match(html, /over the recommended publish size limit/i)
   // Nothing was suppressed -- there were no screenshots to suppress -- so
   // the "N screenshots hidden" note must NOT also claim a drop happened.
-  assert.doesNotMatch(html, /Часть скриншотов скрыта/i)
+  assert.doesNotMatch(html, /Some screenshots are hidden/i)
   // The content itself is untouched -- every defect's text is still there.
   assert.match(html, /MARKER-0-/)
   assert.match(html, /MARKER-59-/)
@@ -333,28 +333,28 @@ test('a non-data-uri shotDataUri (an external URL) is never rendered as an <img>
 
 test('renders the region as an explicit "fix once" note when the finding carries one', () => {
   const html = renderReport({ ...base, findings: [f({ region: 'footer' })] })
-  assert.match(html, /регион: <code>footer<\/code>/)
-  assert.match(html, /один раз/i)
+  assert.match(html, /region: <code>footer<\/code>/)
+  assert.match(html, /fix it once/i)
 })
 
 test('a defect with no region renders no region line at all', () => {
   const html = renderReport({ ...base, findings: [f()] })
-  assert.doesNotMatch(html, /регион:/)
+  assert.doesNotMatch(html, /region:/)
 })
 
 // On the only real site this has run against, every region label read
-// "регион: 3381" rather than "footer" -- the snapshot predated
+// "region: 3381" rather than "footer" -- the snapshot predated
 // `locationsById`, no name was available, and the bare container id flowed
 // into the name slot and rendered as though it were one. An unnamed region is
 // labelled as the container id it is, and says the name is missing.
 test('an unnamed region is labelled as a container id, not passed off as a name', () => {
   const html = renderReport({ ...base, findings: [f({ region: '#3381' })] })
-  assert.doesNotMatch(html, /регион: <code>#?3381<\/code>/,
+  assert.doesNotMatch(html, /region: <code>#?3381<\/code>/,
     'a bare id must not sit where a name goes')
-  assert.match(html, /контейнер/i, 'it is named as a container')
+  assert.match(html, /container/i, 'it is named as a container')
   assert.match(html, /3381/, 'the id itself is still shown')
-  assert.match(html, /определить не удалось|не удалось/i, 'and the missing name is stated')
-  assert.match(html, /один раз/i, 'the fix-once reading survives')
+  assert.match(html, /could not be determined/i, 'and the missing name is stated')
+  assert.match(html, /fix it once/i, 'the fix-once reading survives')
 })
 
 test('stale browser rows are called out as stale, not as a partial pass to resume', () => {
@@ -363,8 +363,8 @@ test('stale browser rows are called out as stale, not as a partial pass to resum
     snapshotAgeDays: 0, source: 'sitemap', sitemapStatus: 'ok',
     browserCoverage: { stalePages: 2, pagesDone: 0, pagesTotal: 3, pagesFailed: 0, failedUrls: [], widths: [], droppedWidths: [] },
   })
-  assert.match(html, /Браузерная проверка устарела для 2 стр\./)
-  assert.doesNotMatch(html, /выполнена частично/)
+  assert.match(html, /The browser pass is out of date for 2 pages:/)
+  assert.doesNotMatch(html, /is partial/)
 })
 
 test('the visual block shows every page at every width, defects or not, with a lightbox', () => {
@@ -375,44 +375,44 @@ test('the visual block shows every page at every width, defects or not, with a l
   })
   assert.match(html, /<details class="rule vis" id="qc-visual">/, 'the block folds')
   assert.ok(html.indexOf('data-type="home"') < html.indexOf('data-type="service"'), 'groups follow the page-type order')
-  assert.match(html, /<b>Услуги<\/b><span class="cnt">1 страниц<\/span>/)
+  assert.match(html, /<b>Services<\/b><span class="cnt">1 pages<\/span>/)
   assert.match(html, /id="qc-page-find"/)
   assert.match(html, /data-find="https:\/\/ex\.com\/clean\/ clean"/)
   assert.match(html, /https:\/\/ex\.com\/clean\//)
   assert.match(html, /data-full="visual\/a\.jpg"/)
   assert.match(html, /<div class="shot-view" tabindex="0" role="region"[^>]*><img loading="lazy" src="visual\/a\.jpg"/, 'a scrollable window, not a cropped thumbnail')
-  assert.match(html, /1440 px \(обрезано\)/)
+  assert.match(html, /1440 px \(cut\)/)
   assert.match(html, /id="qc-lb"/)
 })
 
 test('without page screenshots or a menu check the report says so', () => {
   const html = renderReport({ ...base, findings: [] })
-  assert.match(html, /Скриншотов страниц нет/)
-  assert.match(html, /Не проверялось вручную: Мобильное меню, Попапы, Формы, FAQ и аккордеоны, Фокус с клавиатуры, Противоречия в тексте/)
+  assert.match(html, /No page screenshots/)
+  assert.match(html, /Not checked by hand: Mobile menu, Popups, Forms, FAQ and accordions, Keyboard focus, Contradictions in the text/)
 })
 
 test("Claude's menu defects render in the menu block and count toward the verdict", () => {
   const d = {
-    rule: 'D2', title: 'Мобильное и десктопное меню расходятся', severity: 'major', confidence: 'high', engine: 'claude', check: 'menu',
-    page: 'https://ex.com/', breakpoint: 360, selector: null, found: 'нет пункта «Blog»', expected: 'тот же набор ссылок',
+    rule: 'D2', title: 'Mobile and desktop menus differ', severity: 'major', confidence: 'high', engine: 'claude', check: 'menu',
+    page: 'https://ex.com/', breakpoint: 360, selector: null, found: 'no “Blog” item', expected: 'the same set of links',
   }
   const html = renderReport({
     ...base, findings: [d],
-    manualChecks: [{ check: 'menu', page: 'https://ex.com/', width: 360, status: 'defect', checked: 'открывается, на всю ширину', shots: ['visual/menu-0-0.png'] },
-      { check: 'menu', page: 'https://ex.com/', width: 768, status: 'ok', checked: 'всё в порядке', shots: [] }],
+    manualChecks: [{ check: 'menu', page: 'https://ex.com/', width: 360, status: 'defect', checked: 'opens, full width', shots: ['visual/menu-0-0.png'] },
+      { check: 'menu', page: 'https://ex.com/', width: 768, status: 'ok', checked: 'all fine', shots: [] }],
   })
   assert.doesNotMatch(html, /verdict v-Pass/, 'a menu defect counts')
-  assert.match(html, /нет пункта «Blog»/)
+  assert.match(html, /no “Blog” item/)
   assert.match(html, /data-full="visual\/menu-0-0\.png"/)
-  assert.match(html, /в порядке/)
-  assert.doesNotMatch(html.split('Ручные проверки Claude')[0], /нет пункта «Blog»/, 'not repeated in the static groups')
-  assert.match(html, /Не проверялось вручную: Попапы/)
+  assert.match(html, /<span class="chip ok">ok<\/span>/)
+  assert.doesNotMatch(html.split('Claude’s manual checks')[0], /no “Blog” item/, 'not repeated in the static groups')
+  assert.match(html, /Not checked by hand: Popups/)
 })
 
 test('every page, path and URL the report names is a link', () => {
   const html = renderReport({
     ...base, findings: [{ ...f(), engine: 'static', rule: 'E13', confidence: 'high', severity: 'major', selector: 'body', page: 'https://ex.com/a/',
-      found: 'путь /services/x/ напечатан текстом, как на [Brooklyn](https://ex.com/locations/brooklyn/) и https://ex.com/b/.' }],
+      found: 'path /services/x/ is typed as text, as on [Brooklyn](https://ex.com/locations/brooklyn/) and https://ex.com/b/.' }],
   })
   assert.match(html, /<a href="https:\/\/ex\.com\/services\/x\/" target="_blank" rel="noopener">\/services\/x\/<\/a>/)
   assert.match(html, /<a href="https:\/\/ex\.com\/locations\/brooklyn\/"[^>]*>Brooklyn<\/a>/)

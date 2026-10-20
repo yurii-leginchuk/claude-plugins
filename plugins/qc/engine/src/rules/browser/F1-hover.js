@@ -1,6 +1,6 @@
 export const meta = {
   id: 'F1',
-  title: 'Нет реакции на hover',
+  title: 'No hover response',
   severity: 'major',
   confidence: 'heuristic',
 }
@@ -128,11 +128,11 @@ export function check(ctx) {
     if (seen[sel]) continue
     seen[sel] = 1
     out.push({
-      rule: 'F1', title: 'Нет реакции на hover', severity: 'major', confidence: 'heuristic',
+      rule: 'F1', title: 'No hover response', severity: 'major', confidence: 'heuristic',
       engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint, selector: sel,
       containerId: ctx.helpers.containerId(el),
-      found: 'ни одно правило :hover не покрывает этот элемент',
-      expected: 'видимая реакция на наведение',
+      found: 'no :hover rule covers this element',
+      expected: 'a visible response on hover',
     })
   }
   return out

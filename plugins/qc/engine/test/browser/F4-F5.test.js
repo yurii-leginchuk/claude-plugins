@@ -95,7 +95,7 @@ test('F4 does not report the same inherited cursor at every nesting level of a d
     <span class="arrow" id="arrow"><i id="icon"><svg id="svg-el"><path id="path-el" d="M0 0"></path></svg></i></span>
   </body></html>`
   const f = await findingsForContent(html, { only: ['F4'] })
-  const pointerOnNonInteractive = f.filter(x => x.found.includes('неинтерактивном'))
+  const pointerOnNonInteractive = f.filter(x => x.found.includes('non-interactive'))
   assert.equal(pointerOnNonInteractive.length, 1, 'only the outermost element that actually declares cursor:pointer should be reported')
   assert.ok(pointerOnNonInteractive[0].selector.includes('arrow') || /span/.test(pointerOnNonInteractive[0].selector))
 })
@@ -172,7 +172,7 @@ test('F4 does not let a long machine-generated numeric id defeat identity collap
   </body></html>`
   const a = await findingsForContent(pageWithId('sm-17856341663330366-3'), { only: ['F4'] })
   const b = await findingsForContent(pageWithId('sm-99912340000000001-3'), { only: ['F4'] })
-  const findWrap = (f) => f.find(x => x.found.includes('неинтерактивном'))
+  const findWrap = (f) => f.find(x => x.found.includes('non-interactive'))
   const fa = findWrap(a)
   const fb = findWrap(b)
   assert.ok(fa && fb, 'both runs must still produce the #wrap finding')

@@ -1,6 +1,6 @@
 export const meta = {
   id: 'C1',
-  title: 'Горизонтальный скролл документа',
+  title: 'Horizontal document scroll',
   severity: 'critical',
   confidence: 'high',
 }
@@ -12,7 +12,7 @@ export function check(ctx) {
   if (overflow <= 1) return []          // 1px tolerance for sub-pixel rounding
   return [{
     rule: 'C1',
-    title: 'Горизонтальный скролл документа',
+    title: 'Horizontal document scroll',
     severity: 'critical',
     confidence: 'high',
     engine: 'browser',
@@ -22,7 +22,7 @@ export function check(ctx) {
     // Page-level finding, not tied to any one element -- explicitly null
     // rather than omitted, so it can't be mistaken for "not yet computed".
     containerId: null,
-    found: 'ширина документа ' + doc.scrollWidth + 'px при вьюпорте ' + doc.clientWidth + 'px',
-    expected: 'документ не шире вьюпорта',
+    found: 'document width ' + doc.scrollWidth + 'px at viewport ' + doc.clientWidth + 'px',
+    expected: 'document no wider than the viewport',
   }]
 }

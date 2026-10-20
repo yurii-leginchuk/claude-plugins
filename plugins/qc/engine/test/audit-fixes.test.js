@@ -125,8 +125,8 @@ test('E12 with facts: a number in the copy is heuristic, a tel: link stays certa
     links: [{ raw: 'tel:+18005550000', protocol: 'tel:', selector: 'a' }],
   }
   const f = E12.check(p, { facts })
-  assert.equal(f.find(x => /тексте/.test(x.found)).confidence, 'heuristic')
-  assert.equal(f.find(x => /tel|не из фактов сайта: tel/.test(x.found) && !/тексте/.test(x.found)).confidence, 'high')
+  assert.equal(f.find(x => /in the text/.test(x.found)).confidence, 'heuristic')
+  assert.equal(f.find(x => /tel|not in the site facts: tel/.test(x.found) && !/in the text/.test(x.found)).confidence, 'high')
 })
 
 test('stateOfAddress reads the state after the street line', () => {
@@ -144,41 +144,41 @@ test('qc findings lists distinct defects with ids, qc review moves false positiv
   const e4 = listed.defects.find(d => d.rule === 'E4')
   assert.match(e4.id, /^D\d+$/)
   const file = join(out.runDir, 'my-review.json')
-  write(file, JSON.stringify({ summary: 'Тестовый сайт', items: [{ id: e4.id, verdict: 'false-positive', note: 'номер верный' }] }))
+  write(file, JSON.stringify({ summary: 'Test site', items: [{ id: e4.id, verdict: 'false-positive', note: 'the number is right' }] }))
   const res = applyReview(host, file)
   assert.equal(res.falsePositive, 1)
   const html = readFileSync(res.reportPath, 'utf8')
-  assert.match(html, /Отклонено при ревью Claude/)
-  assert.match(html, /номер верный/)
-  assert.match(html, /О сайте:/)
-  assert.throws(() => { write(file, JSON.stringify({ items: [{ id: 'D999', verdict: 'confirmed' }] })); applyReview(host, file) }, /нет дефекта D999/)
+  assert.match(html, /Rejected in Claude’s review/)
+  assert.match(html, /the number is right/)
+  assert.match(html, /About the site:/)
+  assert.throws(() => { write(file, JSON.stringify({ items: [{ id: 'D999', verdict: 'confirmed' }] })); applyReview(host, file) }, /no defect D999/)
 
   // The mobile menu, checked by Claude in Playwright: screenshots are copied
   // next to the report, a defect counts, a bad rule id is refused.
   const shot = join(out.runDir, 'menu.png')
   write(shot, 'png')
   write(file, JSON.stringify({ items: [], manual: [
-    { check: 'menu', page: 'https://ex.com/', width: 360, status: 'defect', checked: 'открывается', shots: [shot],
-      defects: [{ rule: 'C6', severity: 'major', found: 'меню вылезает справа на 40 px', expected: 'в пределах экрана' }] },
-    { check: 'content', page: 'https://ex.com/', status: 'defect', checked: 'прочитаны 2 страницы',
-      defects: [{ rule: 'H16', severity: 'major', found: 'срок квоты: «under an hour» и «within 48 hours»', expected: 'один срок', pages: ['https://ex.com/', 'https://ex.com/b/'] }] },
-  ], menu: [{ page: 'https://ex.com/', width: 768, status: 'ok', checked: 'в порядке' }] }))
+    { check: 'menu', page: 'https://ex.com/', width: 360, status: 'defect', checked: 'opens', shots: [shot],
+      defects: [{ rule: 'C6', severity: 'major', found: 'menu sticks out 40 px on the right', expected: 'within the screen' }] },
+    { check: 'content', page: 'https://ex.com/', status: 'defect', checked: 'read 2 pages',
+      defects: [{ rule: 'H16', severity: 'major', found: 'quote time: “under an hour” and “within 48 hours”', expected: 'one time frame', pages: ['https://ex.com/', 'https://ex.com/b/'] }] },
+  ], menu: [{ page: 'https://ex.com/', width: 768, status: 'ok', checked: 'fine' }] }))
   const withManual = applyReview(host, file)
   assert.equal(withManual.manualChecked, 3, 'the older `menu` field is read too')
   assert.equal(withManual.manualDefects, 3, 'a content defect counts once per page it names')
   assert.ok(readFileSync(join(out.runDir, 'visual', 'manual-0-0.png')))
   const manualHtml = readFileSync(withManual.reportPath, 'utf8')
-  assert.match(manualHtml, /меню вылезает справа на 40 px/)
-  assert.match(manualHtml, /Противоречия в тексте/)
+  assert.match(manualHtml, /menu sticks out 40 px on the right/)
+  assert.match(manualHtml, /Contradictions in the text/)
   // Every defect carries the id `qc findings` gave it, manual ones M1…, and the report can find them.
   for (const d of listFindings(host).defects.filter(x => x.id !== e4.id)) assert.match(manualHtml, new RegExp(`id="${d.id}"`), d.id)
   assert.match(manualHtml, /<div class="defect" id="M1">|id="M1"/)
   assert.match(manualHtml, /id="qc-find"/)
   assert.match(manualHtml, /\/\^\[DM\]\\d\+\$\//, 'the id pattern survives escaping')
-  assert.match(manualHtml, /<details class="rule"><summary><span class="chip crit">есть дефекты<\/span> <b>Мобильное меню<\/b>/)
+  assert.match(manualHtml, /<details class="rule"><summary><span class="chip crit">defects found<\/span> <b>Mobile menu<\/b>/)
   assert.match(manualHtml, /<li><a href="https:\/\/ex\.com\/b\/"/, 'a content defect lists every page it names')
-  assert.throws(() => { write(file, JSON.stringify({ manual: [{ check: 'menu', page: 'https://ex.com/', width: 360, status: 'defect', defects: [{ rule: 'H16', severity: 'major', found: 'a', expected: 'b' }] }] })); applyReview(host, file) }, /rule для menu должен быть/)
-  assert.throws(() => { write(file, JSON.stringify({ manual: [{ check: 'popup', page: 'https://ex.com/', status: 'ok' }] })); applyReview(host, file) }, /нужен width/)
+  assert.throws(() => { write(file, JSON.stringify({ manual: [{ check: 'menu', page: 'https://ex.com/', width: 360, status: 'defect', defects: [{ rule: 'H16', severity: 'major', found: 'a', expected: 'b' }] }] })); applyReview(host, file) }, /rule for menu must be one of/)
+  assert.throws(() => { write(file, JSON.stringify({ manual: [{ check: 'popup', page: 'https://ex.com/', status: 'ok' }] })); applyReview(host, file) }, /width is required/)
 }))
 
 test('scopeOf files chrome and near-every-page defects as global, one section as template', async () => {
@@ -209,8 +209,8 @@ test('E3: a Privacy Policy link inside a form must open in a new tab, not the ot
     <form><label>I agree to <a href="/terms/">Terms</a></label></form><main><a href="/about/" target="_blank">About</a></main></body>` })
   const f = E3.check(p)
   assert.deepEqual(f.map(x => x.found), [
-    'ссылка «Terms» в форме открывается в той же вкладке — заполненная форма потеряется',
-    'внутренняя ссылка с target=_blank: /about/',
+    'link “Terms” in a form opens in the same tab, so the filled-in form is lost',
+    'internal link with target=_blank: /about/',
   ])
 })
 
@@ -243,5 +243,5 @@ test('page types from facts give the profile its services when no list is given'
     { url: 'https://ex.com/addiction-blog/x/', headings: [{ level: 1, text: 'X' }], links: [] },
   ]
   assert.deepEqual(buildProfile({ pages, facts }).services.items.map(i => i.name), ['Drug Rehab'])
-  assert.throws(() => normalizeFacts({ pages: { '/a/': 'blogpost' } }, 'f.json'), /не из списка/)
+  assert.throws(() => normalizeFacts({ pages: { '/a/': 'blogpost' } }, 'f.json'), /is not one of/)
 })
