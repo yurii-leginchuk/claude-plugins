@@ -129,7 +129,7 @@ Cross-page checks that need no reference data (most are heuristic, see each rule
 | H16 | contradictions across pages: years in business, "N services/locations" vs real counts, 24/7 vs stated hours, prices, staff roles |
 | E17 | a CTA whose text and target disagree (Call without tel:, Book to a page without a form, Directions not to Maps); "see our X page" with no such page |
 | K13 | dev vs live (dev audits with `--prod` or a sheet's Dev Link): menu and footer items, live pages that 404 on dev, lost schema types, headings, title/description, logo |
-| H6 | a placeholder that reached the page: a stand-in image (alt or file name), a copy-doc marker («[LINK PLACEHOLDER]», «Insert … Here»), the same in title, description or schema |
+| H6 | a placeholder that reached the page: a copy-doc marker («[LINK PLACEHOLDER]», «Insert … Here»), the same in title, description or schema; images are not checked (they come from the design) |
 | K17 | a post signed by a service account («PA Dev», admin, test) in the byline, the author archive link or the schema |
 | I22 | a working copy (`-dev`, `-test`, `-copy`, `-old`, `elementor-123`) published: from WordPress's REST list of pages and posts (`wp-json/wp/v2`, kept in the snapshot meta as `wpContent`, `null` when closed), the crawl, and links to one |
 | E13 | (also) a site path or own URL typed into the copy instead of linked; worse when no such page exists |

@@ -10,19 +10,16 @@ import { parsePage } from '../../src/parse/page.js'
 const O = 'https://ex.com'
 const page = (path, html) => parsePage({ url: `${O}${path}`, html: `<html><head><title>T</title></head><body>${html}</body></html>` })
 
-test('H6: placeholder images, copy-doc markers and schema placeholders, once each', () => {
+test('H6: copy-doc markers and schema placeholders, once each; images come from the design and are skipped', () => {
   const p = page('/a/', `<main><img src="/up/gray-placeholder.png" alt="Opura logo"><img src="/x.png" alt="Generic gray circular placeholder icon">
     <img src="/x.png" alt="Generic gray circular placeholder icon"><p>Read the [LINK PLACEHOLDER] guide.</p><img src="/team.jpg" alt="Our team"></main>
     <script type="application/ld+json">{"@type":"LocalBusiness","address":{"streetAddress":"Insert Street Address Here"}}</script>`)
   const f = H6.check(p)
   assert.deepEqual(f.map(x => x.found), [
-    'placeholder image: file gray-placeholder.png',
-    'alt describes a placeholder: “Generic gray circular placeholder icon”',
     'placeholder in text: “[LINK PLACEHOLDER]”',
     'placeholder in schema: “Insert Street Address Here”',
   ])
-  assert.equal(f[1].confidence, 'heuristic', 'the alt alone is not proof')
-  assert.equal(f[2].severity, 'critical')
+  assert.equal(f[0].severity, 'critical')
   assert.deepEqual(H6.check(page('/b/', '<main><p>Insert your card here? No, we bill monthly.</p><img src="/a.jpg" alt="Office"></main>')).map(x => x.found),
     ['placeholder in text: “Insert your card here”'], 'the marker shape is what counts')
 })
