@@ -42,7 +42,7 @@ test('E9 flags a link to a Google search or a map pin instead of the profile', (
   const p = page({ links: [link('https://www.google.com/maps/search/?api=1&query=5806+Culebra+Rd', 'Directions')] })
   const f = E9.check(p, site())
   assert.equal(f.length, 1)
-  assert.match(f[0].found, /адрес на карте, а не на профиль GBP/)
+  assert.match(f[0].found, /an address on the map, not to the GBP profile/)
   assert.equal(f[0].confidence, 'high')
 })
 
@@ -65,7 +65,7 @@ test('E9 with facts: a short link resolving to another profile is a defect, the 
   const wrong = new Map([[SHORT, { url: SHORT, status: 302, key: '42', name: 'BAART Duplicate' }]])
   const f = E9.check(page({ links: [link(SHORT)] }), site({ facts: f0, gbp: wrong }))
   assert.equal(f.length, 1)
-  assert.match(f[0].found, /профиль не из фактов \(BAART Duplicate\)/)
+  assert.match(f[0].found, /a profile not in the facts \(BAART Duplicate\)/)
 })
 
 test('E9 with facts: a location page must link its own location', () => {
@@ -76,7 +76,7 @@ test('E9 with facts: a location page must link its own location', () => {
   const p = page({ url: 'https://ex.com/locations/brighton/', links: [link(OTHER)] })
   const f = E9.check(p, site({ facts: f0 }))
   assert.equal(f.length, 1)
-  assert.match(f[0].found, /странице локации «Brighton» ведёт на профиль другой локации «Other»/)
+  assert.match(f[0].found, /location page “Brighton” points to the profile of another location “Other”/)
   assert.equal(f[0].expected, BRIGHTON)
   // Off any location page, both profiles are fine.
   assert.deepEqual(E9.check(page({ links: [link(OTHER), link(BRIGHTON)] }), site({ facts: f0 })), [])
@@ -96,9 +96,9 @@ test('E9 with facts: the listed address must be a link wherever it appears', () 
   })
   const f = E9.check(p, site({ facts: f0 }))
   assert.equal(f.length, 1, 'Rd and Road are the same street')
-  assert.equal(f[0].found, 'адрес «5806 Culebra Road» не кликабельный')
+  assert.equal(f[0].found, 'address “5806 Culebra Road” is not clickable')
   assert.equal(f[0].confidence, 'high')
-  assert.equal(f[0].occurrences, '1 из 2 упоминаний без ссылки')
+  assert.equal(f[0].occurrences, '1 of 2 mentions without a link')
 })
 
 test('E9 flags an address linked somewhere other than GBP', () => {
@@ -106,7 +106,7 @@ test('E9 flags an address linked somewhere other than GBP', () => {
   const p = page({ text: '5806 Culebra Road', links: [{ ...link('https://ex.com/contact/', '5806 Culebra Road'), protocol: 'https:' }] })
   const f = E9.check(p, site({ facts: f0 }))
   assert.equal(f.length, 1)
-  assert.match(f[0].found, /ведёт не на GBP: https:\/\/ex\.com\/contact\//)
+  assert.match(f[0].found, /does not point to GBP: https:\/\/ex\.com\/contact\//)
 })
 
 test('E9 without facts: an unlinked address is only heuristic', () => {

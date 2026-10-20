@@ -2,13 +2,13 @@ import { finding } from '../index.js'
 
 export default {
   id: 'I5',
-  title: 'Canonical страницы',
+  title: 'Page canonical',
   severity: 'critical',
   engine: 'static',
   check(page, _site) {
     if (!page.canonical) {
       return [finding(this, page, {
-        selector: 'head', found: 'canonical отсутствует', expected: page.url,
+        selector: 'head', found: 'canonical missing', expected: page.url,
       })]
     }
     if (page.canonical !== page.url) {
@@ -19,7 +19,7 @@ export default {
 
       if (urlWithoutSlash === canonicalWithoutSlash) {
         // They differ only by trailing slash - make it explicit
-        const slashMsg = page.canonical.endsWith('/') ? 'canonical с лишним слешем' : 'canonical без слеша'
+        const slashMsg = page.canonical.endsWith('/') ? 'canonical with an extra slash' : 'canonical without a slash'
         return [finding(this, page, {
           selector: 'link[rel=canonical]',
           found: `${slashMsg}: ${page.canonical}`,
@@ -30,7 +30,7 @@ export default {
       const httpDowngrade = page.url.startsWith('https://') && page.canonical.startsWith('http://')
       return [finding(this, page, {
         selector: 'link[rel=canonical]',
-        found: httpDowngrade ? `canonical на http: ${page.canonical}` : page.canonical,
+        found: httpDowngrade ? `canonical on http: ${page.canonical}` : page.canonical,
         expected: page.url,
       })]
     }

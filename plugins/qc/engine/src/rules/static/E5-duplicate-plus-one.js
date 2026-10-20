@@ -3,7 +3,7 @@ import { doubledCountryCode } from '../../lib/phone.js'
 
 export default {
   id: 'E5',
-  title: 'Задвоенный код страны в номере',
+  title: 'Duplicated country code in the number',
   severity: 'major',
   engine: 'static',
   check(page, _site) {

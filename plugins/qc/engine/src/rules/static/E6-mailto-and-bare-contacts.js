@@ -9,7 +9,7 @@ const FILE_EXTENSIONS = new Set([
 
 export default {
   id: 'E6',
-  title: 'mailto в новой вкладке и некликабельные контакты',
+  title: 'mailto in a new tab and non-clickable contacts',
   severity: 'major',
   engine: 'static',
   check(page, _site) {
@@ -22,8 +22,8 @@ export default {
       if ((l.target || '').toLowerCase() === '_blank') {
         out.push(finding(this, page, {
           link: l,
-          found: `mailto с target=_blank: ${l.raw}`,
-          expected: 'без target',
+          found: `mailto with target=_blank: ${l.raw}`,
+          expected: 'without target',
         }))
       }
     }

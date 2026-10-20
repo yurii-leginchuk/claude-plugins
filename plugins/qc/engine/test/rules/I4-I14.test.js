@@ -142,7 +142,7 @@ test('I14 flags a link to the production domain when auditing dev', () => {
   const f = I14.check(p, devSite())
   assert.equal(f.length, 1)
   assert.equal(f[0].severity, 'critical')
-  assert.match(f[0].found, /ссылка на прод/)
+  assert.match(f[0].found, /link to prod/)
   assert.equal(f[0].selector, 'a.nav')
 })
 
@@ -150,7 +150,7 @@ test('I14 flags an image served from the production domain when auditing dev', (
   const p = page({ images: [{ src: 'https://cleaningny.com/wp-content/uploads/hero.jpg', selector: 'img.hero' }] })
   const f = I14.check(p, devSite())
   assert.equal(f.length, 1)
-  assert.match(f[0].found, /картинка с прода/)
+  assert.match(f[0].found, /image from prod/)
 })
 
 test('I14 treats www and bare production hosts as the same host', () => {
@@ -192,5 +192,5 @@ test('I14 on prod is unaffected by prodHost being present', () => {
   const p = page({ links: [{ raw: 'https://x.patest.website/a', href: 'https://x.patest.website/a', selector: 'a' }] })
   const f = I14.check(p, { env: 'prod', prodHost: 'cleaningny.com' })
   assert.equal(f.length, 1)
-  assert.match(f[0].found, /ссылка на дев/)
+  assert.match(f[0].found, /link to dev/)
 })

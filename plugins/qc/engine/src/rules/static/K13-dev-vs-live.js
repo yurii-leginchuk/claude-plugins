@@ -16,7 +16,7 @@ import { pathKey, sameHost } from '../../lib/url.js'
 //   headings, title, description and logo that changed (heuristic -- a
 //     redesign changes them on purpose, but they should be changed on
 //     purpose).
-const MENU = { header: 'меню', nav: 'меню', footer: 'футер' }
+const MENU = { header: 'menu', nav: 'menu', footer: 'footer' }
 const MAX_HEADINGS = 5
 const TYPE = /"@type"\s*:\s*(?:"([^"]+)"|\[([^\]]+)\])/g
 
@@ -55,7 +55,7 @@ const fileOf = (u) => { try { return new URL(u).pathname.split('/').pop().replac
 
 export default {
   id: 'K13',
-  title: 'Дев расходится с лайвом',
+  title: 'Dev differs from live',
   severity: 'major',
   engine: 'static',
   check(page, site) {
@@ -69,8 +69,8 @@ export default {
       for (const m of prod.missing || []) {
         push({
           selector: 'sitemap',
-          found: `страница есть на лайве, на деве ${m.status}: ${pathKey(m.prod)}`,
-          expected: 'перенести страницу или поставить редирект до запуска',
+          found: `page exists on live, dev returns ${m.status}: ${pathKey(m.prod)}`,
+          expected: 'move the page or set up a redirect before launch',
         })
       }
     }
@@ -85,13 +85,13 @@ export default {
       if (devMenu.has(key)) continue
       const renamed = item.text && devByText.get(`${item.where}|${norm(item.text)}`)
       push(renamed ? {
-        selector: item.where === 'футер' ? 'footer' : 'nav', severity: 'minor', confidence: 'heuristic',
-        found: `${item.where}: «${item.text}» ведёт на ${renamed.path}, на лайве — на ${item.path}`,
-        expected: `${item.path} или редирект с него`,
+        selector: item.where === 'footer' ? 'footer' : 'nav', severity: 'minor', confidence: 'heuristic',
+        found: `${item.where}: “${item.text}” points to ${renamed.path}, on live to ${item.path}`,
+        expected: `${item.path} or a redirect from it`,
       } : {
-        selector: item.where === 'футер' ? 'footer' : 'nav',
-        found: `${item.where}: пункт «${item.text || item.path}» (${item.path}) есть на лайве, нет на деве`,
-        expected: 'тот же пункт, если его не убрали намеренно',
+        selector: item.where === 'footer' ? 'footer' : 'nav',
+        found: `${item.where}: item “${item.text || item.path}” (${item.path}) is on live, missing on dev`,
+        expected: 'the same item, unless it was removed on purpose',
       })
     }
 
@@ -99,7 +99,7 @@ export default {
     for (const t of [...schemaTypes(live)].filter(t => !devTypes.has(t) && !MINOR_TYPES.has(t))) {
       push({
         selector: 'script[type="application/ld+json"]', confidence: 'heuristic',
-        found: `schema ${t} есть на лайве, нет на деве`, expected: 'та же разметка',
+        found: `schema ${t} is on live, missing on dev`, expected: 'the same markup',
       })
     }
 
@@ -110,7 +110,7 @@ export default {
     for (const h of goneHeadings) {
       push({
         selector: `h${h.level}`, severity: 'minor', confidence: 'heuristic',
-        found: `заголовок H${h.level} «${h.text}» есть на лайве, нет на деве`, expected: 'тот же блок, если его не убрали намеренно',
+        found: `heading H${h.level} “${h.text}” is on live, missing on dev`, expected: 'the same block, unless it was removed on purpose',
       })
     }
 
@@ -118,14 +118,14 @@ export default {
       if (!a || norm(a) === norm(b)) continue
       push({
         selector: `meta/${label}`, severity: 'minor', confidence: 'heuristic',
-        found: `${label} изменился: лайв «${a}» → дев «${b || '—'}»`, expected: 'как на лайве, если не меняли намеренно',
+        found: `${label} changed: live “${a}” → dev “${b || '—'}”`, expected: 'as on live, unless changed on purpose',
       })
     }
 
     if (live.logo && page.logo && fileOf(live.logo) !== fileOf(page.logo)) {
       push({
         selector: 'header img', severity: 'minor', confidence: 'heuristic',
-        found: `другой логотип: лайв ${fileOf(live.logo)}, дев ${fileOf(page.logo)}`, expected: 'тот же логотип',
+        found: `different logo: live ${fileOf(live.logo)}, dev ${fileOf(page.logo)}`, expected: 'the same logo',
       })
     }
     return out

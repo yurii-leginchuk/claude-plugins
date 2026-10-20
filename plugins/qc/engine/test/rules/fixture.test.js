@@ -79,14 +79,14 @@ test('E3 is the only rule this page trips, and it reports exactly what is on the
   assert.equal(e3.filter(f => f.severity === 'major').length, 0)
   assert.ok(e3.every(f => f.where), 'the report says where each link is, not just `a`')
 
-  const missingNoopener = e3.filter(f => /без rel=noopener/.test(f.found))
+  const missingNoopener = e3.filter(f => /without rel=noopener/.test(f.found))
   assert.equal(missingNoopener.length, 6)
   for (const f of missingNoopener) {
     assert.equal(f.severity, 'minor', 'implied noopener since 2021 -- hygiene, not a vulnerability')
     assert.equal(f.confidence, 'high', 'the absence is read straight off the markup')
   }
 
-  const styleCall = e3.filter(f => /без target/.test(f.found) && !/rel=noopener/.test(f.found))
+  const styleCall = e3.filter(f => /without target/.test(f.found) && !/rel=noopener/.test(f.found))
   assert.equal(styleCall.length, 1)
   assert.equal(styleCall[0].severity, 'minor')
   assert.equal(styleCall[0].confidence, 'heuristic', 'a per-client style preference, never a verdict mover')
@@ -102,7 +102,7 @@ test('E9 finds the office address in the body copy that is not a link', () => {
   // minor, since the page already links the profile once.
   const e9 = forRule('E9')
   assert.equal(e9.length, 1)
-  assert.equal(e9[0].found, 'адрес «11 Park Place» не кликабельный')
+  assert.equal(e9[0].found, 'address “11 Park Place” is not clickable')
   assert.equal(e9[0].confidence, 'heuristic')
   assert.equal(e9[0].severity, 'minor')
 })
@@ -126,11 +126,11 @@ test('G13 and E16 read the site inventory off the menu, footer and form', () => 
   // menu (heuristic: naming can be deliberate); two services in the menu are
   // missing from the footer list (major: visitors never see them there).
   assert.deepEqual(forRule('G13').map(f => f.found), [
-    'форма #gform_5: вариант «Residential» не совпадает с названием: услуга называется «Apartment & Home Cleaning» (/services/residential-cleaning)',
+    'form #gform_5: option “Residential” does not match the name: the service is called “Apartment & Home Cleaning” (/services/residential-cleaning)',
   ])
   assert.deepEqual(forRule('E16').map(f => f.found).sort(), [
-    'услуга «Disinfection & Sanitizing» (/services/disinfection-sanitizing) есть в меню, но нет в футере',
-    'услуга «Janitorial Cleaning» (/services/janitorial-cleaning) есть в меню, но нет в футере',
+    'service “Disinfection & Sanitizing” (/services/disinfection-sanitizing) is in the menu, but not in the footer',
+    'service “Janitorial Cleaning” (/services/janitorial-cleaning) is in the menu, but not in the footer',
   ])
   assert.ok(forRule('G13').every(f => f.confidence === 'heuristic'))
   assert.ok(forRule('E16').every(f => f.severity === 'major' && f.confidence === 'high'))
@@ -236,7 +236,7 @@ test('audited as dev with a known production host, I14 flags the unreplaced prod
   }, { only: ['I14'] })
   assert.ok(devFindings.length > 0, 'the page links and images point at cleaningny.com')
   assert.ok(devFindings.every(f => f.severity === 'critical'))
-  assert.ok(devFindings.some(f => /ссылка на прод/.test(f.found)))
+  assert.ok(devFindings.some(f => /link to prod/.test(f.found)))
 })
 
 test('audited as dev with no known production host, I14 stays silent rather than guessing', async () => {

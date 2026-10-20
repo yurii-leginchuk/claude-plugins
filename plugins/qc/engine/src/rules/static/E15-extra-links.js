@@ -17,7 +17,7 @@ const LEGAL = /privacy|terms|policy|accessibility|hipaa|notice/i
 
 export default {
   id: 'E15',
-  title: 'Лишняя ссылка',
+  title: 'Unneeded link',
   severity: 'minor',
   engine: 'static',
   check(page) {
@@ -40,14 +40,14 @@ export default {
       if (l.region === 'main' && !raw.includes('#') && pathKey(l.href) === here && !/\/(category|tag|author)\//.test(here)) {
         push(`self|${l.text}`, {
           link: l,
-          found: `ссылка на эту же страницу${l.text ? `: «${l.text}»` : ' (картинка)'}`,
-          expected: 'без ссылки или ссылка на другую страницу',
+          found: `link to the same page${l.text ? `: “${l.text}”` : ' (image)'}`,
+          expected: 'no link, or a link to another page',
         })
       }
       if (DATE.test(l.text || '')) {
         push(`date|${l.text}`, {
           link: l, confidence: 'heuristic',
-          found: `дата кликабельна: «${l.text}» → ${l.href}`, expected: 'дата без ссылки',
+          found: `date is clickable: “${l.text}” → ${l.href}`, expected: 'date without a link',
         })
       }
       if (landing && !raw.startsWith('#') && pathKey(l.href) !== here && !LEGAL.test(l.href) && !classifyGoogleLink(raw)) {
@@ -56,8 +56,8 @@ export default {
         if (l.internal && isLandingPath(target)) continue
         push(`lp|${target}`, {
           link: l, confidence: 'heuristic',
-          found: `ссылка уводит с PPC-лендинга: ${l.href}`,
-          expected: 'на лендинге только телефон, форма и якоря',
+          found: `link leads away from the PPC landing page: ${l.href}`,
+          expected: 'the landing page has only the phone, the form and anchors',
         })
       }
     }

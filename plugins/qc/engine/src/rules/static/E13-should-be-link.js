@@ -29,7 +29,7 @@ const hasAuthorPages = (site) => {
 
 export default {
   id: 'E13',
-  title: 'Должно быть ссылкой, но не ссылка',
+  title: 'Should be a link, but is not',
   severity: 'major',
   engine: 'static',
   check(page, site) {
@@ -60,8 +60,8 @@ function phones(rule, page) {
     if (bare <= 0) continue
     out.push(finding(rule, page, {
       selector: 'body',
-      found: `телефон ${raw} в тексте без tel:-ссылки`,
-      occurrences: `${bare} из ${n}`,
+      found: `phone ${raw} in text without a tel: link`,
+      occurrences: `${bare} of ${n}`,
       where: whereInText(page, raw),
       expected: `<a href="tel:+${key}">${raw}</a>`,
     }))
@@ -80,9 +80,9 @@ function bylines(rule, page, site) {
     seen.add(name)
     out.push(finding(rule, page, {
       selector: 'body', severity: 'minor', confidence: 'heuristic',
-      found: `автор/рецензент «${name}» без ссылки на страницу автора`,
+      found: `author/reviewer “${name}” without a link to the author page`,
       where: whereInText(page, name),
-      expected: 'имя ссылкой на страницу автора',
+      expected: 'name linked to the author page',
     }))
   }
   return out
@@ -109,8 +109,8 @@ function paths(rule, page, site) {
     const exists = existing.has(key)
     out.push(finding(rule, page, {
       selector: 'body', where: whereInText(page, shown),
-      found: exists ? `путь ${shown} напечатан текстом, а не ссылкой` : `путь ${shown} напечатан текстом, и такой страницы на сайте нет`,
-      expected: exists ? `текст-ссылка на ${path}` : 'ссылка на существующую страницу или убрать отсылку',
+      found: exists ? `path ${shown} is printed as text, not a link` : `path ${shown} is printed as text, and the site has no such page`,
+      expected: exists ? `text link to ${path}` : 'link to an existing page or remove the reference',
     }))
   }
   return out

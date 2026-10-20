@@ -2,7 +2,7 @@ import { finding } from '../index.js'
 
 export default {
   id: 'I13',
-  title: 'Favicon страницы',
+  title: 'Page favicon',
   severity: 'minor',
   engine: 'static',
   check(page, site) {
@@ -14,7 +14,7 @@ export default {
       // because it isn't a PageDoc field. So "no favicon" here is an
       // inference from missing markup, not a confirmed missing/broken icon.
       return [finding(this, page, {
-        selector: 'head', found: 'favicon не объявлен', expected: '<link rel="icon">',
+        selector: 'head', found: 'favicon not declared', expected: '<link rel="icon">',
         confidence: 'heuristic',
       })]
     }
@@ -35,12 +35,12 @@ export default {
       byHref.get(i.href).add(i.rel || 'icon')
     }
     const list = [...byHref.entries()]
-      .map(([href, rels]) => `${[...rels].join('/')} ${href} (HTTP ${status.get(href).status || 'нет ответа'})`)
+      .map(([href, rels]) => `${[...rels].join('/')} ${href} (HTTP ${status.get(href).status || 'no response'})`)
       .join(', ')
     return [finding(this, page, {
       selector: 'link[rel~=icon]',
-      found: `favicon не отдаёт 200: ${list}`,
-      expected: 'все объявленные favicon отдают 200',
+      found: `favicon does not return 200: ${list}`,
+      expected: 'every declared favicon returns 200',
     })]
   },
 }

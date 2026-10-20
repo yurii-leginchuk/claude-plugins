@@ -106,7 +106,7 @@ const majority = (groups) => [...groups].sort((a, b) => b[1].length - a[1].lengt
 
 export default {
   id: 'H16',
-  title: 'Факты на сайте противоречат друг другу',
+  title: 'Facts on the site contradict each other',
   severity: 'minor',
   engine: 'static',
   confidence: 'heuristic',
@@ -129,8 +129,8 @@ export default {
       for (const y of c.years.filter(y => y.url === page.url && Math.abs(y.years - top.years) > 1)) {
         push({
           selector: 'body', where: whereInText(page, y.raw),
-          found: `«${y.raw}» (≈${y.years} лет), а на других страницах «${top.items[0].raw}» (≈${top.years} лет)`,
-          expected: `одна цифра стажа по всему сайту, например «${top.items[0].raw}»`,
+          found: `“${y.raw}” (≈${y.years} years), while other pages say “${top.items[0].raw}” (≈${top.years} years)`,
+          expected: `one years-of-experience figure across the whole site, e.g. “${top.items[0].raw}”`,
         })
       }
     }
@@ -143,8 +143,8 @@ export default {
       if (n < 3 || k.n === n) continue
       push({
         selector: 'body', where: whereInText(page, k.raw),
-        found: `в тексте «${k.raw}», а страниц в разделе ${k.what}: ${n}`,
-        expected: `«${n} ${k.what}» или убрать число`,
+        found: `text says “${k.raw}”, but the ${k.what} section has ${n} pages`,
+        expected: `“${n} ${k.what}” or remove the number`,
       })
     }
 
@@ -156,8 +156,8 @@ export default {
       if (mine) {
         push({
           selector: 'body', where: whereInText(page, mine.raw.replace(/^schema: /, '')),
-          found: `часы работы: «${mine.raw}» здесь, а «${other.raw}» на ${other.url}`,
-          expected: 'одни часы работы по всему сайту (или уточнить, что 24/7 — только экстренная линия)',
+          found: `opening hours: “${mine.raw}” here, but “${other.raw}” on ${other.url}`,
+          expected: 'the same opening hours across the whole site (or clarify that 24/7 is only the emergency line)',
         })
       }
     }
@@ -172,8 +172,8 @@ export default {
         if (!mine) continue
         push({
           selector: 'body', where: whereInText(page, mine.raw),
-          found: `цена «${service}»: ${mine.raw} здесь, а $${topPrice} на ${topItems[0].url}`,
-          expected: 'одна цена услуги по всему сайту',
+          found: `price of “${service}”: ${mine.raw} here, but $${topPrice} on ${topItems[0].url}`,
+          expected: 'one price per service across the whole site',
         })
       }
     }
@@ -186,8 +186,8 @@ export default {
         if (role === topRole || !pages.has(page.url)) continue
         push({
           selector: 'body', where: whereInText(page, name),
-          found: `${name} — «${role}» здесь, а «${topRole}» на ${[...topPages][0]}`,
-          expected: 'одна должность человека по всему сайту',
+          found: `${name} is “${role}” here, but “${topRole}” on ${[...topPages][0]}`,
+          expected: 'one job title per person across the whole site',
         })
       }
     }

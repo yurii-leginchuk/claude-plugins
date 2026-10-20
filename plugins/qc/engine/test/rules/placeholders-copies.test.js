@@ -16,23 +16,23 @@ test('H6: placeholder images, copy-doc markers and schema placeholders, once eac
     <script type="application/ld+json">{"@type":"LocalBusiness","address":{"streetAddress":"Insert Street Address Here"}}</script>`)
   const f = H6.check(p)
   assert.deepEqual(f.map(x => x.found), [
-    'картинка-заглушка: файл gray-placeholder.png',
-    'alt описывает заглушку: «Generic gray circular placeholder icon»',
-    'заглушка в тексте: «[LINK PLACEHOLDER]»',
-    'заглушка в schema: «Insert Street Address Here»',
+    'placeholder image: file gray-placeholder.png',
+    'alt describes a placeholder: “Generic gray circular placeholder icon”',
+    'placeholder in text: “[LINK PLACEHOLDER]”',
+    'placeholder in schema: “Insert Street Address Here”',
   ])
   assert.equal(f[1].confidence, 'heuristic', 'the alt alone is not proof')
   assert.equal(f[2].severity, 'critical')
   assert.deepEqual(H6.check(page('/b/', '<main><p>Insert your card here? No, we bill monthly.</p><img src="/a.jpg" alt="Office"></main>')).map(x => x.found),
-    ['заглушка в тексте: «Insert your card here»'], 'the marker shape is what counts')
+    ['placeholder in text: “Insert your card here”'], 'the marker shape is what counts')
 })
 
 test('K17: a post signed by PA Dev or admin, in the byline or the schema; a real author is fine', () => {
   const p = page('/blog/x/', `<main><a href="/author/pa-dev/">Author PA Dev</a></main>
     <script type="application/ld+json">{"@type":"Article","author":{"@type":"Person","name":"admin"}}</script>`)
   assert.deepEqual(K17.check(p).map(x => x.found), [
-    'автор «PA Dev» — служебный аккаунт, а не человек',
-    'автор «admin» в schema — служебный аккаунт, а не человек',
+    'author “PA Dev” is a service account, not a person',
+    'author “admin” in schema is a service account, not a person',
   ])
   assert.deepEqual(K17.check(page('/blog/y/', '<main><a href="/author/jane-roe/">Jane Roe</a></main>')), [])
 })
@@ -46,8 +46,8 @@ test('I22: working copies WordPress publishes outside the sitemap, and links to 
   }
   const f = I22.check(home, site)
   assert.deepEqual(f.map(x => x.found), [
-    'ссылка на рабочую копию /services/office-dev',
-    'опубликована рабочая копия /locations/bronx-dev («Bronx - Site»), её нет в sitemap, но она открыта и индексируется',
+    'link to a working copy /services/office-dev',
+    'published working copy /locations/bronx-dev (“Bronx - Site”), it is not in the sitemap, but it is open and indexable',
   ])
   assert.deepEqual(I22.check(page('/about/', ''), site), [], 'site-level copies are reported once, on the home page')
   assert.equal(I22.check(home, { ...site, env: 'dev' })[0].severity, 'minor')
@@ -59,8 +59,8 @@ test('E13: a path typed into the copy, to an existing page and to none; slashes 
     <p><a href="/about/">/about/</a></p></main>`)
   const site = { pages: [p, page('/services/car-dealership-cleaning/', ''), page('/about/', '')] }
   assert.deepEqual(E13.check(p, site).map(x => x.found), [
-    'путь /services/car-dealership-cleaning/ напечатан текстом, а не ссылкой',
-    'путь /services/hospital-medical-cleaning/ напечатан текстом, и такой страницы на сайте нет',
+    'path /services/car-dealership-cleaning/ is printed as text, not a link',
+    'path /services/hospital-medical-cleaning/ is printed as text, and the site has no such page',
   ])
 })
 

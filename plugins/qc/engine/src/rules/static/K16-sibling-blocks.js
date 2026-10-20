@@ -11,11 +11,11 @@ const MIN_SIBLINGS = 4
 const SHARE = 0.75
 
 const FEATURES = {
-  'форма': (p) => (p.forms || []).length > 0,
-  'блок FAQ': (p) => (p.headings || []).some(h => /faq|frequently asked/i.test(h.text)),
-  'телефон-ссылка в контенте': (p) => (p.links || []).some(l => l.protocol === 'tel:' && l.region === 'main'),
-  'карта': (p) => (p.mapEmbeds || []).length > 0,
-  'блок отзывов': (p) => (p.headings || []).some(h => /review|testimonial/i.test(h.text)),
+  'a form': (p) => (p.forms || []).length > 0,
+  'an FAQ block': (p) => (p.headings || []).some(h => /faq|frequently asked/i.test(h.text)),
+  'a phone link in the content': (p) => (p.links || []).some(l => l.protocol === 'tel:' && l.region === 'main'),
+  'a map': (p) => (p.mapEmbeds || []).length > 0,
+  'a reviews block': (p) => (p.headings || []).some(h => /review|testimonial/i.test(h.text)),
 }
 
 const siblingsOf = (site, page) => {
@@ -31,7 +31,7 @@ const siblingsOf = (site, page) => {
 
 export default {
   id: 'K16',
-  title: 'Нет блока, который есть у соседних страниц раздела',
+  title: 'Missing a block that sibling pages in the section have',
   severity: 'minor',
   engine: 'static',
   confidence: 'heuristic',
@@ -44,8 +44,8 @@ export default {
     const out = []
     const report = (what, n, example, expected) => out.push(finding(this, page, {
       selector: null,
-      found: `на ${n} из ${M} страниц раздела есть ${what}, здесь нет`,
-      expected: expected || `добавить ${what}, как на ${pathKey(example.url)}`,
+      found: `${n} of ${M} pages in the section have ${what}, this one does not`,
+      expected: expected || `add ${what}, as on ${pathKey(example.url)}`,
     }))
     for (const [what, has] of Object.entries(FEATURES)) {
       const withIt = others.filter(has)
@@ -60,8 +60,8 @@ export default {
     if (topId && mine.length && !mine.includes(topId) && n / others.length >= SHARE) {
       out.push(finding(this, page, {
         selector: 'form',
-        found: `на ${n} из ${M} страниц раздела форма #${topId}, здесь другая (#${mine.filter(Boolean).join(', #') || 'без id'})`,
-        expected: `поставить форму #${topId}, как на соседних страницах`,
+        found: `${n} of ${M} pages in the section use form #${topId}, this one uses another (#${mine.filter(Boolean).join(', #') || 'no id'})`,
+        expected: `use form #${topId}, as on the sibling pages`,
       }))
     }
     return out

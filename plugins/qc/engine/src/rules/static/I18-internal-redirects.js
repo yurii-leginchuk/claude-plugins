@@ -12,7 +12,7 @@ const SKIP_PATH = /^\/(wp-admin|wp-login\.php|my-account|cart|checkout)\b/
 
 export default {
   id: 'I18',
-  title: 'Внутренняя ссылка через редирект',
+  title: 'Internal link through a redirect',
   severity: 'minor',
   engine: 'static',
   check(page, site) {
@@ -31,7 +31,7 @@ export default {
       out.push(finding(this, page, {
         link: l,
         found: `${l.href} → ${s.finalUrl}`,
-        expected: `ссылка сразу на ${s.finalUrl}`,
+        expected: `link straight to ${s.finalUrl}`,
       }))
     }
     return out

@@ -2,7 +2,7 @@ import { finding } from '../index.js'
 
 export default {
   id: 'S1',
-  title: 'JSON-LD не парсится',
+  title: 'JSON-LD does not parse',
   severity: 'major',
   engine: 'static',
   check(page, _site) {
@@ -10,8 +10,8 @@ export default {
       .filter(b => !b.ok)
       .map(b => finding(this, page, {
         selector: 'script[type="application/ld+json"]',
-        found: b.error || 'ошибка разбора',
-        expected: 'валидный JSON-LD',
+        found: b.error || 'parse error',
+        expected: 'valid JSON-LD',
       }))
   },
 }

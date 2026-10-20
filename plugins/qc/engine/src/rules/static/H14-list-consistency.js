@@ -39,7 +39,7 @@ function groups(site) {
 
 export default {
   id: 'H14',
-  title: 'Список отличается от такого же на других страницах',
+  title: 'List differs from the same list on other pages',
   severity: 'minor',
   engine: 'static',
   confidence: 'heuristic',
@@ -59,16 +59,16 @@ export default {
       for (const [item, n] of grp.freq) {
         if (!mine.has(item) && n / total >= SHARE) {
           out.push(finding(this, page, {
-            selector: 'ul', found: `в списке «${l.heading}» нет «${label.get(item)}», хотя он есть на ${n} из ${total} страниц`,
-            where: `контент · под заголовком «${l.heading}»`, expected: `добавить «${label.get(item)}» в список`,
+            selector: 'ul', found: `list “${l.heading}” is missing “${label.get(item)}”, though it is on ${n} of ${total} pages`,
+            where: `content · under heading “${l.heading}”`, expected: `add “${label.get(item)}” to the list`,
           }))
         }
       }
       for (const item of mine) {
         if (grp.freq.get(item) === 1) {
           out.push(finding(this, page, {
-            selector: 'ul', severity: 'note', found: `в списке «${l.heading}» есть «${label.get(item)}», которого нет на остальных ${total - 1} страницах`,
-            where: `контент · под заголовком «${l.heading}»`, expected: 'одинаковый список на всех страницах, если отличие не намеренное',
+            selector: 'ul', severity: 'note', found: `list “${l.heading}” has “${label.get(item)}”, which the other ${total - 1} pages do not have`,
+            where: `content · under heading “${l.heading}”`, expected: 'the same list on every page, unless the difference is intentional',
           }))
         }
       }

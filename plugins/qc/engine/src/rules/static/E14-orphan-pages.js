@@ -34,7 +34,7 @@ function inbound(site) {
 
 export default {
   id: 'E14',
-  title: 'Страница-сирота: на неё нет внутренних ссылок',
+  title: 'Orphan page: no internal links point to it',
   severity: 'minor',
   engine: 'static',
   check(page, site) {
@@ -45,8 +45,8 @@ export default {
     if (inbound(site).get(key)?.size) return []
     return [finding(this, page, {
       selector: null,
-      found: `ни одна из ${site.pages.length - 1} других страниц не ссылается на ${key}`,
-      expected: 'ссылка из меню, футера или соседних страниц',
+      found: `none of the ${site.pages.length - 1} other pages link to ${key}`,
+      expected: 'a link from the menu, footer or related pages',
     })]
   },
 }

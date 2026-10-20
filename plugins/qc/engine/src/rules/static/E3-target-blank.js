@@ -4,7 +4,7 @@ const LEGAL = /privacy|terms|policy|conditions/i
 
 export default {
   id: 'E3',
-  title: 'Правила target=_blank для внутренних и внешних ссылок',
+  title: 'target=_blank rules for internal and external links',
   severity: 'major',
   engine: 'static',
   check(page, _site) {
@@ -17,8 +17,8 @@ export default {
       if (l.inForm && LEGAL.test(`${l.href} ${l.text || ''}`)) {
         if (!blank) {
           out.push(finding(this, page, {
-            link: l, found: `ссылка «${l.text || l.raw}» в форме открывается в той же вкладке — заполненная форма потеряется`,
-            expected: 'target="_blank" rel="noopener" (в Gravity Forms: в HTML согласия добавить target="_blank")',
+            link: l, found: `link “${l.text || l.raw}” in a form opens in the same tab, so the filled-in form is lost`,
+            expected: 'target="_blank" rel="noopener" (in Gravity Forms: add target="_blank" in the consent HTML)',
           }))
         }
         continue
@@ -28,8 +28,8 @@ export default {
         // new tab. This is a real, actionable defect -- stays at the rule's
         // default major/high.
         out.push(finding(this, page, {
-          link: l, found: `внутренняя ссылка с target=_blank: ${l.raw}`,
-          expected: 'убрать target="_blank" (в Elementor: снять «Open in new window»)',
+          link: l, found: `internal link with target=_blank: ${l.raw}`,
+          expected: 'remove target="_blank" (in Elementor: untick “Open in new window”)',
         }))
       }
       if (!l.internal && !blank) {
@@ -37,7 +37,7 @@ export default {
         // preference, not a defect -- demoted to minor and marked heuristic
         // so it never moves the verdict.
         out.push(finding(this, page, {
-          link: l, found: `внешняя ссылка без target: ${l.raw}`,
+          link: l, found: `external link without target: ${l.raw}`,
           expected: 'target=_blank rel="noopener"',
           severity: 'minor',
           confidence: 'heuristic',
@@ -52,7 +52,7 @@ export default {
         // because the absence is directly observed from markup, not
         // inferred. Do NOT re-escalate this back to major/critical.
         out.push(finding(this, page, {
-          link: l, found: `внешняя ссылка без rel=noopener: ${l.raw}`,
+          link: l, found: `external link without rel=noopener: ${l.raw}`,
           expected: 'rel="noopener"',
           severity: 'minor',
         }))

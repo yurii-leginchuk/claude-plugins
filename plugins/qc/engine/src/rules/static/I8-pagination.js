@@ -8,7 +8,7 @@ const PAGED_QUERY = /[?&]paged?=(\d+)/i
 
 export default {
   id: 'I8',
-  title: 'Пагинация: индексация и номер страницы',
+  title: 'Pagination: indexing and page number',
   severity: 'major',
   engine: 'static',
   // I8 deliberately says NOTHING about canonical. It used to flag
@@ -28,7 +28,7 @@ export default {
     const out = []
     const pageNumber = Number((path || query)[1])
 
-    // Taxonomy I8, "номер страницы отсутствует в URL": on WordPress the page
+    // Taxonomy I8, "page number missing from the URL": on WordPress the page
     // number belongs in the path (/blog/page/2/). A `?paged=N` query
     // parameter means pretty pagination permalinks are not in effect, which
     // leaves the same listing reachable under two URL shapes. Directly
@@ -38,12 +38,12 @@ export default {
       out.push(finding(this, page, {
         severity: 'minor',
         selector: 'url',
-        found: `номер страницы в query-параметре: ${page.url}`,
-        expected: 'номер страницы сегментом пути, например /blog/page/2/',
+        found: `page number in a query parameter: ${page.url}`,
+        expected: 'page number as a path segment, e.g. /blog/page/2/',
       }))
     }
 
-    // Taxonomy I8, "страницы не индексируются". Page 1 is an ordinary page and
+    // Taxonomy I8, "pages are not indexed". Page 1 is an ordinary page and
     // is not this rule's business; pages 2+ are the ones whose robots
     // directives decide whether the deeper items in a listing stay reachable.
     if (pageNumber >= 2) {
@@ -51,7 +51,7 @@ export default {
       if (robots.index === false) {
         out.push(finding(this, page, {
           selector: 'meta[name=robots]',
-          found: `страница пагинации ${pageNumber} закрыта от индексации: ${robots.raw || 'noindex'}`,
+          found: `pagination page ${pageNumber} is closed to indexing: ${robots.raw || 'noindex'}`,
           expected: 'index, follow',
         }))
       }
@@ -60,7 +60,7 @@ export default {
         // listed on pages 2+, even when the page itself is indexable.
         out.push(finding(this, page, {
           selector: 'meta[name=robots]',
-          found: `страница пагинации ${pageNumber} закрыта от обхода ссылок: ${robots.raw || 'nofollow'}`,
+          found: `pagination page ${pageNumber} is closed to link crawling: ${robots.raw || 'nofollow'}`,
           expected: 'index, follow',
         }))
       }

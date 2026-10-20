@@ -4,14 +4,14 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
-const ZONE = { header: 'хедер', nav: 'меню', footer: 'футер', breadcrumbs: 'хлебные крошки', main: 'контент' }
+const ZONE = { header: 'header', nav: 'menu', footer: 'footer', breadcrumbs: 'breadcrumbs', main: 'content' }
 
 // Where a link is on the page, in words a person can search for.
 export function describeLink(l) {
   return [
     ZONE[l.region] || null,
-    l.section ? `под заголовком «${l.section}»` : null,
-    l.text ? `текст ссылки «${l.text.slice(0, 80)}»` : 'ссылка без текста (картинка или иконка)',
+    l.section ? `under heading “${l.section}”` : null,
+    l.text ? `link text “${l.text.slice(0, 80)}”` : 'link without text (image or icon)',
   ].filter(Boolean).join(' · ')
 }
 
@@ -39,7 +39,7 @@ export function whereInText(page, needle) {
     from = i
   }
   const snippet = `…${text.slice(Math.max(0, at - 60), at + needle.length + 60).trim()}…`
-  return [inChrome(at) ? 'хедер/футер' : 'контент', section ? `под заголовком «${section.slice(0, 80)}»` : null, snippet]
+  return [inChrome(at) ? 'header/footer' : 'content', section ? `under heading “${section.slice(0, 80)}”` : null, snippet]
     .filter(Boolean).join(' · ')
 }
 
@@ -61,7 +61,7 @@ export function finding(rule, page, props) {
     ...rest,
     // header/nav/footer/breadcrumbs/main/chrome: the report files a defect
     // in site chrome under global errors, fixed once for every page.
-    zone: rest.zone ?? (link ? link.region : (String(rest.where || '').startsWith('хедер/футер') ? 'chrome' : null)),
+    zone: rest.zone ?? (link ? link.region : (String(rest.where || '').startsWith('header/footer') ? 'chrome' : null)),
   }
 }
 

@@ -42,7 +42,7 @@ function statesIn(text) {
 
 export default {
   id: 'H12',
-  title: 'Упоминается чужой штат или город',
+  title: 'Another state or city is mentioned',
   severity: 'minor',
   engine: 'static',
   confidence: 'heuristic',
@@ -86,8 +86,8 @@ function places(rule, page, site) {
       for (const [where, value] of fields) {
         if (value && o.re.test(value)) {
           out.push(finding(rule, page, {
-            selector: `meta/${where}`, found: `${where} страницы «${own.name}» упоминает «${o.label}»: «${value}»`,
-            expected: `${where} про «${own.name}»`,
+            selector: `meta/${where}`, found: `${where} of page “${own.name}” mentions “${o.label}”: “${value}”`,
+            expected: `${where} about “${own.name}”`,
           }))
         }
       }
@@ -95,17 +95,17 @@ function places(rule, page, site) {
         if (o.re.test(c) && !phraseOf(own.slug).re.test(c)) {
           out.push(finding(rule, page, {
             selector: 'script[type="application/ld+json"]',
-            found: `картинка записи (featured image) страницы «${own.name}» подписана про «${o.label}»: «${c}»`,
-            where: 'schema (Yoast primaryimage / Service image) — на странице её не видно, она в превью и поиске',
-            expected: `поставить странице свою featured image или сменить подпись/alt картинки в медиатеке на «${own.name}»`,
+            found: `featured image of page “${own.name}” is captioned about “${o.label}”: “${c}”`,
+            where: 'schema (Yoast primaryimage / Service image): not visible on the page, shown in previews and search',
+            expected: `give the page its own featured image or change the image caption/alt in the media library to “${own.name}”`,
           }))
         }
       }
       for (const a of alts) {
         if (o.re.test(a.alt) && !phraseOf(own.slug).re.test(a.alt) && srcsOn(o.url).has(a.src)) {
           out.push(finding(rule, page, {
-            selector: a.selector, found: `картинка со страницы «${o.label}» вместе с её alt: «${a.alt}»`,
-            where: `контент · картинка ${a.src.split('/').pop()}`, expected: `своя картинка и alt про «${own.name}»`,
+            selector: a.selector, found: `image from page “${o.label}” together with its alt: “${a.alt}”`,
+            where: `content · image ${a.src.split('/').pop()}`, expected: `own image and alt about “${own.name}”`,
           }))
         }
       }
@@ -118,9 +118,9 @@ function places(rule, page, site) {
     if (!named.length || named.length > MAX_OTHER_PLACES) return
     for (const o of named) {
       out.push(finding(rule, page, {
-        selector: 'body', found: `на странице «${own.name}» упоминается «${o.label}»`,
+        selector: 'body', found: `page “${own.name}” mentions “${o.label}”`,
         where: whereInText(page, copy.match(o.re)[0]),
-        expected: `«${own.name}», если упоминание не намеренное`,
+        expected: `“${own.name}”, unless the mention is intentional`,
       }))
     }
   }
@@ -152,8 +152,8 @@ function states(rule, page, site) {
   const ownLabel = [...own].join(', ')
   return [...mentioned].filter(s => !own.has(s) && !linked.has(s)).map(s => finding(rule, page, {
     selector: 'body',
-    found: `на странице про ${ownLabel} упоминается ${s}`,
+    found: `page about ${ownLabel} mentions ${s}`,
     where: whereInText(page, s),
-    expected: `только ${ownLabel}, если упоминание не намеренное`,
+    expected: `only ${ownLabel}, unless the mention is intentional`,
   }))
 }

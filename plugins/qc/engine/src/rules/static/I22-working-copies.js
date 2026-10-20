@@ -19,7 +19,7 @@ const lastSlug = (url) => {
 
 export default {
   id: 'I22',
-  title: 'Опубликованы рабочие копии страниц',
+  title: 'Working copies of pages are published',
   severity: 'major',
   engine: 'static',
   check(page, site) {
@@ -29,8 +29,8 @@ export default {
     for (const l of page.links || []) {
       if (!l.internal || !l.href || !COPY.test(lastSlug(l.href))) continue
       out.push(finding(this, page, {
-        link: l, severity, found: `ссылка на рабочую копию ${pathKey(l.href)}`,
-        expected: 'ссылка на основную страницу',
+        link: l, severity, found: `link to a working copy ${pathKey(l.href)}`,
+        expected: 'link to the main page',
       }))
     }
     const home = (site?.pages || []).find(p => pathKey(p.url) === '/') || site?.pages?.[0]
@@ -44,8 +44,8 @@ export default {
         seen.add(key)
         out.push(finding(this, page, {
           selector: 'body', severity, zone: 'chrome',
-          found: `опубликована рабочая копия ${key}${c.title ? ` («${String(c.title).replace(/<[^>]+>/g, '').slice(0, 60)}»)` : ''}${c.inSitemap ? ' — она в sitemap' : ', её нет в sitemap, но она открыта и индексируется'}`,
-          expected: 'снять с публикации (черновик/приватная) или 301 на основную страницу',
+          found: `published working copy ${key}${c.title ? ` (“${String(c.title).replace(/<[^>]+>/g, '').slice(0, 60)}”)` : ''}${c.inSitemap ? ', it is in the sitemap' : ', it is not in the sitemap, but it is open and indexable'}`,
+          expected: 'unpublish (draft/private) or 301 to the main page',
         }))
       }
     }
