@@ -12,6 +12,7 @@ import { homedir } from 'node:os'
 import { reviewedRun } from './review.js'
 import { defectIdentity, verdict, countDistinct } from './report/json.js'
 import { scopeOf } from './report/html.js'
+import { spotText } from './browser/evidence.js'
 import { categoryOf } from './report/category.js'
 
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
@@ -50,6 +51,7 @@ export function buildPayload(run) {
     if (f.page && !g.pages.has(f.page)) g.pages.set(f.page, f.where || null)
     if (f.breakpoint != null) g.breakpoints.add(f.breakpoint)
     if (f.shot && existsSync(f.shot)) g.shots.add(f.shot)
+    if (!g.spot && f.spot) g.spot = spotText(f.spot, f.shotWidth)
   }
   const files = new Map()
   const defects = [...groups.values()].filter(g => g.code).map(g => {
@@ -60,7 +62,7 @@ export function buildPayload(run) {
       engine: g.engine, check: g.check, category: g.category, found: g.found, expected: g.expected, selector: g.selector, review: g.review,
       scope: scopeOf({ zones: g.zones, pages, region: g.region }, input.pages),
       pages: pages.map(url => ({ url, where: g.pages.get(url) })), page_count: pages.length,
-      breakpoints: [...g.breakpoints].sort((a, b) => a - b), evidence: [...g.shots].map(s => basename(s)),
+      breakpoints: [...g.breakpoints].sort((a, b) => a - b), evidence: [...g.shots].map(s => basename(s)), spot: g.spot || '',
     }
   })
   const checks = manual.checks.map(c => {
@@ -92,7 +94,7 @@ export function nonEnglishFields(payload) {
   scan(payload.about, 'about')
   scan(payload.env_reason, 'env_reason')
   for (const d of payload.defects) {
-    for (const k of ['title', 'found', 'expected', 'selector']) scan(d[k], `${d.code}.${k}`)
+    for (const k of ['title', 'found', 'expected', 'selector', 'spot']) scan(d[k], `${d.code}.${k}`)
     scan(d.review?.note, `${d.code}.review.note`)
     d.pages.forEach((p, i) => scan(p.where, `${d.code}.pages.${i}.where`))
   }

@@ -72,6 +72,12 @@ test('H14 flags an item most pages list and this one misses, and an item only th
   assert.deepEqual(H14.check(pages[0], { pages }), [])
 })
 
+test('H14 leaves alone lists that only share a heading (recipes)', () => {
+  const list = (items) => [{ heading: 'Ingredients', region: 'main', items }]
+  const pages = [['1 scoop', 'banana', 'mango'], ['1 scoop', 'kale', 'ginger'], ['1 scoop', 'cherries', 'milk']].map((it, i) => page(`/r${i}/`, { lists: list(it) }))
+  for (const p of pages) assert.deepEqual(H14.check(p, { pages }), [])
+})
+
 test('H17 flags a placeholder og:site_name on the homepage and an ALL-CAPS brand once', () => {
   const home = page('/', { siteName: 'Site', title: 'Home | Opura', text: 'Why Choose Opura For Office Cleaning. OPURA is here.' })
   const a = page('/a/', { title: 'A | Opura', text: 'Opura Professional Cleaning Services. OPURA again. liberty. Opura’s team. Opura Opura' })

@@ -31,6 +31,11 @@ function groups(site) {
     if (byPage.size < MIN_PAGES) continue
     const freq = new Map()
     for (const items of byPage.values()) for (const i of items) freq.set(i, (freq.get(i) || 0) + 1)
+    // Only one list kept on many pages: most of its items are shared. Lists
+    // that merely share a heading («Ingredients» on every recipe) differ by design.
+    const common = [...freq.values()].filter(n => n / byPage.size >= SHARE).length
+    const avg = [...byPage.values()].reduce((a, s) => a + s.size, 0) / byPage.size
+    if (common < avg / 2) continue
     out.set(h, { byPage, freq })
   }
   index.set(site, out)

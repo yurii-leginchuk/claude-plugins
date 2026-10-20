@@ -75,6 +75,8 @@ function manualOf(review, dir) {
           rule: d.rule, title: d.title || MANUAL_TITLES[d.rule], severity: d.severity, confidence: 'high', engine: 'claude',
           check: m.check, manual: i, page, breakpoint: width, category: CATEGORIES.includes(d.category) ? d.category : (m.check === 'content' ? 'copy' : 'dev'), selector: d.selector || null, found: d.found, expected: d.expected,
           where: d.where || null, zone: m.check === 'menu' ? 'header' : null,
+          // the defect card shows its own picture: d.shot picks one of the check's shots, the first by default
+          ...(shots.length ? { shot: join(dir, shots[d.shot] || shots[0]) } : {}),
           review: { verdict: 'confirmed', note: m.check === 'content' ? 'found by Claude while reading the pages' : 'checked by Claude in Playwright' },
         })
       }
@@ -181,8 +183,8 @@ export function applyReview(host, reviewPath) {
   const { dir, findings, input } = runOf(host)
   const review = JSON.parse(readFileSync(reviewPath, 'utf8'))
   attachEvidence(host, findings)
-  inlineScreenshots(findings)
   const { kept, rejected, manual, byIdentity } = sortByReview(dir, findings, review)
+  inlineScreenshots([...kept, ...rejected])
   const html = renderReport({ ...input, findings: kept, rejected, siteSummary: review.summary || null, manualChecks: manual.checks, ids: idsFor(findings, input.pages) })
   writeFileSync(join(dir, 'report.html'), html)
   writeFileSync(join(dir, 'review.json'), JSON.stringify(review, null, 2))

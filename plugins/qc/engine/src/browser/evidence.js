@@ -1,9 +1,13 @@
 // `qc evidence <host>`: a picture of the spot for every distinct defect of the
-// latest run, so the reader sees where to look. The browser rules already crop
-// theirs; for the rest, the example page is opened in Chromium, the spot found
+// latest run, so the reader sees where to look. The example page is opened in
+// Chromium at the width the defect was found at, the spot found
 // (a link by its href, an element by a precise selector, a text by the words
 // around it in `where`, a quote from `found`, an image by alt or src),
-// outlined, and cropped. Claude then looks at every crop while reviewing.
+// outlined with the rest of the page dimmed, and cropped with its surroundings
+// (the whole screen width on a phone), so the reader recognises the place.
+// The browser pass's own crops are tight to the element and replaced; one is
+// kept only when the spot cannot be found again. Claude then looks at every
+// crop while reviewing.
 //
 // Pictures live at ~/.qc-cache/<host>/evidence/<sha1(identity)>.webp with an
 // index (evidence.json: identity -> {path, status, page, width}), so a later
@@ -18,16 +22,27 @@ import { snapshotDir, latestRunDir } from '../crawl/store.js'
 import { defectIdentity } from '../report/json.js'
 
 export const EVIDENCE_WIDTH = 1440
-const PAD = 48
-const MAX_H = 720
-const MIN_W = 640
-const MIN_H = 240
+const PAD = 160
+const MAX_H = 760
+const MIN_W = 1000
+const MIN_H = 420
+// Desktop crops are scaled down to keep the report light; phone ones stay 1:1.
+const DESKTOP_SCALE = 0.72
 const MOBILE = 360
 const INVISIBLE = /^(head|html|title)$|^(meta|script|link)\b|script\[|meta\[/i
 const GENERIC = /^(body|html|main|a|div|span|p|li|ul|section|img|svg)$/i
 
 const sha = (s) => createHash('sha1').update(String(s)).digest('hex').slice(0, 16)
 const indexPath = (host) => join(snapshotDir(host), 'evidence.json')
+
+/** «footer · link “Shop now” · at 320 px»: where a person looks for the spot. */
+export function spotText(spot, width) {
+  if (!spot) return ''
+  if (spot.note) return `no picture: ${spot.note}`
+  // A name made from an icon's class («search icon») is ours, not the page's words: no quotes.
+  const what = !spot.label ? (spot.kind || '') : !spot.kind && /\bicon$/.test(spot.label) ? spot.label : `${spot.kind ? spot.kind + ' ' : ''}“${spot.label}”`
+  return [spot.region, what, width ? `at ${width} px` : ''].filter(Boolean).join(' · ')
+}
 
 export function loadEvidence(host) {
   const p = indexPath(host)
@@ -42,8 +57,11 @@ export function attachEvidence(host, findings) {
     const e = ev[defectIdentity(f)]
     if (!e) continue
     f.evidenceStatus = e.status
+    delete f.spot
+    if (e.spot) f.spot = e.spot
+    else if (e.why) f.spot = { note: e.why }
     const ours = !f.shot || f.shot.includes(join(snapshotDir(host), 'evidence'))
-    if (ours && e.status === 'ok' && e.path && existsSync(e.path)) { f.shot = e.path; f.shotWidth = e.width }
+    if (e.status === 'ok' && e.path && existsSync(e.path)) { f.shot = e.path; f.shotWidth = e.width; delete f.shotDataUri }
     else if (ours && e.status !== 'ok') { delete f.shot; delete f.shotWidth; delete f.shotDataUri }
   }
   return findings
@@ -66,6 +84,8 @@ export function needles(f) {
   const out = []
   const found = String(f.found || '')
   const quoted = [...found.matchAll(/[“"«]([^”"»]{3,120})[”"»]/g)].map(m => m[1].replace(/…$/, '').trim())
+  // H14 quotes the list's heading, then the item: the item is the spot.
+  if (f.rule === 'H14') quoted.reverse()
   const urls = [...found.matchAll(/https?:\/\/[^\s”"»)]+/g)].map(m => m[0].replace(/[.,;:]+$/, ''))
   const paths = [...found.matchAll(/(?<![\w.:/-])\/(?:[a-z0-9-]+\/){1,4}/g)].map(m => m[0])
   const phones = [...found.matchAll(/\+?\d[\d\s().-]{8,}\d/g)].map(m => m[0].trim())
@@ -83,7 +103,7 @@ export function needles(f) {
 
 // Runs in the page; self-contained. Finds the spot, outlines it, returns its
 // box -- or {hidden} when the spot is there but nobody can see it.
-export function locateSpot({ sel, href, linkText, needles: ns, cores = [], notInLinks = false, notInChrome = false }) {
+export function locateSpot({ sel, href, linkText, needles: ns, cores = [], notInLinks = false, notInChrome = false, pastEdge = false }) {
   const vis = (e) => {
     const r = e.getBoundingClientRect()
     if (r.width < 3 || r.height < 3) return false
@@ -111,6 +131,14 @@ export function locateSpot({ sel, href, linkText, needles: ns, cores = [], notIn
   if (!el && linkText) {
     el = pick([...document.querySelectorAll('a, button')].filter(a => norm(a.textContent) === norm(linkText) && (!href || a.getAttribute('href') === href)))
     if (el) how = 'link text'
+  }
+  // Past the screen edge: of all the matches, the one that sticks out.
+  if (!el && sel && pastEdge) {
+    try { el = [...document.querySelectorAll(sel)].find(e => ok(e) && e.getBoundingClientRect().right > document.documentElement.clientWidth + 1) || null } catch { el = null }
+    if (el) how = 'selector, past the edge'
+    // Nothing sticks out on a fresh load (it showed only in the resize sweep):
+    // any other match would point at the wrong thing.
+    else return { hidden: 'nothing goes past the screen edge on a fresh load at this width; it showed in the resize sweep' }
   }
   if (!el && precise) {
     try { el = [...document.querySelectorAll(sel)].find(ok) || null } catch { el = null }
@@ -179,12 +207,51 @@ export function locateSpot({ sel, href, linkText, needles: ns, cores = [], notIn
       }
     }
   }
-  target.scrollIntoView({ block: 'center', inline: 'nearest' })
+  // A pinned header is photographed at the top of the page, where it belongs;
+  // other pinned bars are hidden so they do not land in the middle of a crop.
+  const pinned = (e) => { for (let p = e; p && p !== document.body; p = p.parentElement) { if (/fixed|sticky/.test(getComputedStyle(p).position)) return p } return null }
+  const own = pinned(target)
+  if (own) window.scrollTo(0, 0)
+  else target.scrollIntoView({ block: 'center', inline: 'nearest' })
+  for (const e of document.body.querySelectorAll('*')) {
+    if (e === own || e.contains(target) || !/fixed|sticky/.test(getComputedStyle(e).position)) continue
+    e.setAttribute('data-qc-hid', e.style.visibility || '')
+    e.style.visibility = 'hidden'
+  }
   const r = target.getBoundingClientRect()
   target.setAttribute('data-qc-ev', target.getAttribute('style') || '')
-  target.style.outline = '3px solid #e0245e'
-  target.style.outlineOffset = '3px'
-  return { x: r.left + window.scrollX, y: r.top + window.scrollY, w: r.width, h: r.height, how, docW: document.documentElement.scrollWidth }
+  target.style.outline = '4px solid #e0245e'
+  target.style.outlineOffset = '4px'
+  // A spotlight: everything around the spot is dimmed.
+  const veil = document.createElement('div')
+  veil.setAttribute('data-qc-veil', '')
+  const top = r.top + window.scrollY - 8
+  const left = r.left + window.scrollX - 8
+  Object.assign(veil.style, {
+    position: 'absolute', zIndex: 2147483647, pointerEvents: 'none', borderRadius: '6px',
+    top: top + 'px', left: left + 'px', width: (r.width + 16) + 'px', height: (r.height + 16) + 'px',
+    boxShadow: '0 0 0 4px #e0245e, 0 0 0 99999px rgba(15, 20, 30, .45)',
+  })
+  document.body.appendChild(veil)
+  // What a person would call it, and where on the page it is.
+  const named = el.closest('a, button, [role=button], img, input, select, textarea, label, h1, h2, h3, h4, h5, h6, li, p') || el
+  // The visible words first; an aria-label like «Opens in a new tab» is a hint, not a name.
+  const hint = /^(opens?|open) in a new (tab|window)\.?$/i
+  const words = (e) => [e.innerText, e.getAttribute('alt'), e.getAttribute('aria-label'), e.getAttribute('title'), e.getAttribute('placeholder')]
+    .map(v => String(v || '').replace(/\s+/g, ' ').trim()).find(v => v && !hint.test(v)) || ''
+  let label = words(target) || words(named)
+  if (!label) {
+    const svg = named.querySelector && named.querySelector('svg, i[class*=icon], [class*=icon]')
+    const cls = String((svg && svg.getAttribute('class')) || named.getAttribute('class') || '').match(/(?:fa|eicon|icon)-([a-z-]+)/)
+    label = cls && !/^(wrapper|box|list|container|inner)$/.test(cls[1]) ? `${cls[1].replace(/-/g, ' ')} icon` : (svg ? 'icon' : '')
+  }
+  const kind = { A: 'link', BUTTON: 'button', IMG: 'image', INPUT: 'field', SELECT: 'field', TEXTAREA: 'field', H1: 'heading', H2: 'heading', H3: 'heading', H4: 'heading', H5: 'heading', H6: 'heading' }[named.tagName] || (named.getAttribute('role') === 'button' ? 'button' : '')
+  const region = el.closest('header, [data-elementor-type=header]') ? 'header'
+    : el.closest('footer, [data-elementor-type=footer]') ? 'footer'
+      : el.closest('[role=dialog], .elementor-popup-modal, .jet-popup, [class*=popup], [class*=modal]') ? 'popup'
+        : el.closest('nav') ? 'menu' : 'page content'
+  const spot = { region, kind, label: label.slice(0, 70) }
+  return { x: r.left + window.scrollX, y: r.top + window.scrollY, w: r.width, h: r.height, how, spot, docW: document.documentElement.scrollWidth }
 }
 
 function clearSpot() {
@@ -197,17 +264,23 @@ function clearSpot() {
   }
   const mark = document.querySelector('[data-qc-mark]')
   if (mark) mark.replaceWith(...mark.childNodes)
+  document.querySelectorAll('[data-qc-veil]').forEach(v => v.remove())
+  document.querySelectorAll('[data-qc-hid]').forEach(e => { e.style.visibility = e.getAttribute('data-qc-hid'); e.removeAttribute('data-qc-hid') })
 }
 
 async function crop(page, box, width, path) {
-  const w = Math.min(width, Math.max(MIN_W, Math.ceil(box.w + PAD * 2)))
-  const x = Math.max(0, Math.min(Math.floor(box.x + box.w / 2 - w / 2), Math.max(0, box.docW - w)))
-  const h = Math.min(MAX_H, Math.max(MIN_H, Math.ceil(box.h + PAD * 2)))
+  // On a phone or tablet the whole screen width, so the place is recognisable.
+  const phone = width < 1024
+  // Past the right edge (a horizontal-scroll defect): widen to show how far.
+  const w = phone ? Math.min(box.docW, Math.max(width, Math.ceil(box.x + box.w + 24))) : Math.min(width, Math.max(MIN_W, Math.ceil(box.w + PAD * 2)))
+  const x = phone ? 0 : Math.max(0, Math.min(Math.floor(box.x + box.w / 2 - w / 2), Math.max(0, box.docW - w)))
+  const h = Math.min(MAX_H, Math.max(phone ? 560 : MIN_H, Math.ceil(box.h + PAD * 2)))
   const y = Math.max(0, Math.floor(box.y + box.h / 2 - h / 2))
+  const scale = phone ? 1 : DESKTOP_SCALE
   const cdp = await page.context().newCDPSession(page)
   try {
     const { data } = await cdp.send('Page.captureScreenshot', {
-      format: 'webp', quality: 70, captureBeyondViewport: true, clip: { x, y, width: Math.max(1, w), height: Math.max(1, h), scale: 1 },
+      format: 'webp', quality: 70, captureBeyondViewport: true, clip: { x, y, width: Math.max(1, w), height: Math.max(1, h), scale },
     })
     writeFileSync(path, Buffer.from(data, 'base64'))
   } finally {
@@ -228,9 +301,9 @@ export async function captureEvidence(host, { force = false, launchBrowserImpl =
   const todo = []
   const summary = { defects: byIdentity.size, captured: 0, already: 0, browserShots: 0, invisible: 0, notFound: [] }
   for (const [identity, f] of byIdentity) {
-    // A crop the browser pass took stays; one of ours is redone with --force.
+    // Ours are redone with --force; a browser-pass crop stays only as a fallback.
     const ours = f.shot && f.shot.includes(`${join(snapshotDir(host), 'evidence')}`)
-    if (f.shot && !ours) { summary.browserShots++; continue }
+    if (f.shot && !ours) summary.browserShots++
     if (ours && force) { delete f.shot; delete f.shotWidth; delete f.shotDataUri }
     if (index[identity]?.status === 'ok' && existsSync(index[identity].path)) { summary.already++; continue }
     if (INVISIBLE.test(String(f.selector || '')) || f.zone === 'head' || f.rule === 'X1' || /screen-reader|screen-only|skip-link/.test(String(f.selector || ''))) {
@@ -238,7 +311,8 @@ export async function captureEvidence(host, { force = false, launchBrowserImpl =
       summary.invisible++
       continue
     }
-    todo.push({ identity, f, width: f.breakpoint || EVIDENCE_WIDTH })
+    // At the width it was found at: a 320 px overflow does not exist at 1440.
+    todo.push({ identity, f, width: f.shotWidth || f.breakpoint || EVIDENCE_WIDTH })
   }
   const groups = new Map()
   for (const t of todo) {
@@ -259,7 +333,7 @@ export async function captureEvidence(host, { force = false, launchBrowserImpl =
           const sel = f.selector && !GENERIC.test(f.selector) ? f.selector : null
           const args = {
             sel, href: f.locate?.href || null, linkText: f.locate?.text || null, needles: needles(f), cores: cores(f),
-            notInLinks: f.rule === 'E13', notInChrome: f.zone === 'main' || f.selector === 'main',
+            notInLinks: f.rule === 'E13', notInChrome: f.zone === 'main' || f.selector === 'main', pastEdge: ['C1', 'C8'].includes(f.rule),
           }
           let box = null
           try { box = await page.evaluate(locateSpot, args) } catch { box = null }
@@ -291,7 +365,7 @@ export async function captureEvidence(host, { force = false, launchBrowserImpl =
               await crop(page, box, w, path)
               await page.evaluate(clearSpot).catch(() => {})
             }
-            index[identity] = { status: 'ok', path, page: f.page, width: w, how: box.how }
+            index[identity] = { status: 'ok', path, page: f.page, width: w, how: box.how, spot: box.spot }
             summary.captured++
           }
           done++

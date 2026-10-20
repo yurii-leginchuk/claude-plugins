@@ -1,3 +1,4 @@
+import { spotText } from '../browser/evidence.js'
 import { rollUp, verdict, countDistinct, defectIdentity } from './json.js'
 import { STALENESS_WARNING_DAYS } from '../lib/snapshot-ttl.js'
 import { UNNAMED_REGION_PREFIX } from '../browser/regions.js'
@@ -102,6 +103,8 @@ padding:2px 8px;border-radius:6px;border:1px solid currentColor}
 .cnt{margin-left:auto;color:var(--mut);font-size:13px}
 .body{padding:0 14px 14px;font-size:14px}
 .defect{padding:10px 0;border-top:1px solid var(--line)}
+.look{font-size:15px;overflow-wrap:anywhere}
+.defect img[alt=""]{border:1px solid var(--line);border-radius:6px;max-width:min(100%,760px)!important}
 .defect:first-child{border-top:0;padding-top:0}
 .kv{margin:8px 0}.kv code{background:var(--bg);border:1px solid var(--line);
 border-radius:5px;padding:1px 6px;font-size:13px;word-break:break-all}
@@ -219,7 +222,7 @@ function renderManual(manualChecks, claudeFindings) {
     }
     return `<div class="menu-row"><p class="kv"><span class="chip ${cls}">${esc(label)}</span>${m.width != null ? ` <b>${esc(m.width)} px</b> ·` : ''} ${rich(m.page)}</p>
 ${m.checked ? `<p class="kv">${rich(m.checked)}</p>` : ''}
-${defs.map(f => `<div class="defect"${f.id ? ` id="${esc(f.id)}"` : ''} data-cat="${esc(categoryOf(f))}"><p class="kv">${f.id ? `<a class="did" href="#${esc(f.id)}">${esc(f.id)}</a> ` : ''}<span class="cat cat-${esc(categoryOf(f))}">${esc(categoryOf(f))}</span> <span class="chip ${CHIP[f.severity] || 'note'}">${esc(f.severity)}</span> ${esc(f.rule)} · ${esc(f.title)}</p><p class="kv">found: ${rich(f.found)}</p>${f.where ? `<p class="kv">where: ${rich(f.where)}</p>` : ''}<p class="kv">expected: ${rich(f.expected)}</p>${f.pages.length > 1 ? `<ul class="pages">${f.pages.map(p => `<li>${rich(p)}</li>`).join('')}</ul>` : ''}</div>`).join('')}
+${defs.map(f => `<div class="defect"${f.id ? ` id="${esc(f.id)}"` : ''} data-cat="${esc(categoryOf(f))}"><p class="kv">${f.id ? `<a class="did" href="#${esc(f.id)}">${esc(f.id)}</a> ` : ''}<span class="cat cat-${esc(categoryOf(f))}">${esc(categoryOf(f))}</span> <span class="chip ${CHIP[f.severity] || 'note'}">${esc(f.severity)}</span> ${esc(f.rule)} · ${esc(f.title)}</p><p class="kv"><b>Problem:</b> ${rich(f.found)}</p>${f.where ? `<p class="kv">where: ${rich(f.where)}</p>` : ''}<p class="kv"><b>Fix:</b> ${rich(f.expected)}</p>${f.pages.length > 1 ? `<ul class="pages">${f.pages.map(p => `<li>${rich(p)}</li>`).join('')}</ul>` : ''}</div>`).join('')}
 ${(m.shots || []).length ? `<div class="strip">${m.shots.map((src, i) => thumb(src, `${m.width != null ? `${m.width} px · ` : ''}${i + 1}`, m.width || 768)).join('')}</div>` : ''}</div>`
   }).join('')}</div></details>`
   }).join('')
@@ -356,12 +359,13 @@ function renderDefect(d, ctx = {}) {
         <div class="kv">${did ? `<a class="did" href="#${esc(did)}">${esc(did)}</a> ` : ''}<span class="cat cat-${esc(cat)}">${esc(cat)}</span></div>
         ${d.example?.review ? `<div class="kv review review-${esc(d.example.review.verdict)}">Claude: ${esc(REVIEW_LABEL[d.example.review.verdict] || d.example.review.verdict)}${d.example.review.note ? ` — ${rich(d.example.review.note)}` : ''}</div>` : ''}
         ${String(d.scope || '').startsWith('template:') ? `<div class="kv">section: <code>${esc(d.scope.slice(9))}</code></div>` : ''}
-        <div class="kv">found: <code>${rich(d.found)}</code></div>
-        ${d.expected ? `<div class="kv">expected: <code>${rich(d.expected)}</code></div>` : ''}
-        <div class="kv">selector: <code>${esc(d.selector)}</code></div>
+        ${d.example?.spot ? `<div class="kv look"><b>Where to look:</b> ${esc(spotText(d.example.spot, shotWidth))}${shownPages[0] ? ` on ${rich(shownPages[0])}` : ''}</div>` : ''}
+        ${shotHtml}
+        <div class="kv"><b>Problem:</b> ${rich(d.found)}</div>
+        ${d.expected ? `<div class="kv"><b>Fix:</b> ${rich(d.expected)}</div>` : ''}
+        <div class="kv sub">selector: <code>${esc(d.selector)}</code></div>
         ${breakpointsHtml}
         ${regionHtml}
-        ${shotHtml}
         <ul class="pages">${shownPages.map(p => `<li>${rich(p)}${d.where?.[p] ? `<div class="where">${rich(d.where[p])}</div>` : ''}</li>`).join('')}</ul>
         ${hiddenCount > 0 ? `<p class="kv">…and ${hiddenCount} more pages not shown (list limit)</p>` : ''}
       </div>`

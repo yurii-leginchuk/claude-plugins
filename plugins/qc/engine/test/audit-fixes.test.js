@@ -135,7 +135,7 @@ test('stateOfAddress reads the state after the street line', () => {
 })
 
 test('qc findings lists distinct defects with ids, qc review moves false positives out of the verdict', () => withCache(async () => {
-  const { listFindings, applyReview } = await import('../src/review.js')
+  const { listFindings, applyReview, reviewedRun } = await import('../src/review.js')
   const { writeFileSync: write } = await import('node:fs')
   const out = await audit(base, { fresh: true })
   const listed = listFindings(host)
@@ -177,6 +177,8 @@ test('qc findings lists distinct defects with ids, qc review moves false positiv
   assert.ok(readFileSync(join(out.runDir, 'visual', 'manual-0-0.png')))
   const manualHtml = readFileSync(withManual.reportPath, 'utf8')
   assert.match(manualHtml, /menu sticks out 40 px on the right/)
+  const m1 = reviewedRun(host).kept.find(x => x.id === 'M1')
+  assert.equal(m1.shot, join(out.runDir, 'visual', 'manual-0-0.png'), 'a manual defect carries its check screenshot, so the card and qc push show it')
   assert.match(manualHtml, /Contradictions in the text/)
   // Every defect carries the id `qc findings` gave it, manual ones M1…, and the report can find them.
   for (const d of listFindings(host).defects.filter(x => x.id !== e4.id)) assert.match(manualHtml, new RegExp(`id="${d.id}"`), d.id)
