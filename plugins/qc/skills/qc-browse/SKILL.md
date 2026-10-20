@@ -131,6 +131,11 @@ Every check is recorded as one entry per page × width in the review file's `man
 
 `ok` entries go in too — the report shows what was looked at, not only what broke.
 
+**Name a page as a link.** In `found`, `expected`, `checked` and review notes, every page you
+mention is written `[Brooklyn](https://site/locations/brooklyn/)` (paths like `/services/x/` and
+full URLs become links on their own); the report renders them clickable. Quotes from the site
+stay in «…» as they are.
+
 **Timing is not a defect for what the visitor opens themselves.** A popup, a submenu or an
 accordion opens on the visitor's click; by the time they reach for its close button or next item,
 everything has loaded. If something fails only in the first second or two after it opened, wait

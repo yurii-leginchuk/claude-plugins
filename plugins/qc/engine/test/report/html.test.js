@@ -182,7 +182,7 @@ test('truncates a rule group page list at 200 and says so visibly', () => {
   // Scope the count to the rule group's own <ul class="pages"> list — the
   // same pages also appear (uncapped separately) in the page index table below.
   const listSegment = out.match(/<ul class="pages">([\s\S]*?)<\/ul>/)[1]
-  const shown = [...listSegment.matchAll(/https:\/\/ex\.com\/page-\d+/g)]
+  const shown = [...listSegment.matchAll(/<li>/g)]
   assert.ok(shown.length <= 200, `page list should be capped at 200, saw ${shown.length}`)
   assert.match(out, /ещё 50/) // visible truncation notice for the remaining 50 pages
 })
@@ -456,7 +456,7 @@ test('two different found values under one rule+severity both reach the HTML', (
     host: 'ex.com', env: 'prod', envReason: '', pages: 2, findings,
     diff: { fixed: [], remaining: [], added: findings }, snapshotAgeDays: 0, source: 'sitemap',
   })
-  assert.match(out, /HTTP 404: https:\/\/ex\.com\/gone/)
+  assert.match(out.replace(/<[^>]+>/g, ''), /HTTP 404: https:\/\/ex\.com\/gone/)
   assert.match(out, /janitorial-cleaning/)
   assert.match(out, /a\.first/)
   assert.match(out, /a\.second/)

@@ -402,3 +402,15 @@ test("Claude's menu defects render in the menu block and count toward the verdic
   assert.doesNotMatch(html.split('Ручные проверки Claude')[0], /нет пункта «Blog»/, 'not repeated in the static groups')
   assert.match(html, /Не проверялось вручную: Попапы/)
 })
+
+test('every page, path and URL the report names is a link', () => {
+  const html = renderReport({
+    ...base, findings: [{ ...f(), engine: 'static', rule: 'E13', confidence: 'high', severity: 'major', selector: 'body', page: 'https://ex.com/a/',
+      found: 'путь /services/x/ напечатан текстом, как на [Brooklyn](https://ex.com/locations/brooklyn/) и https://ex.com/b/.' }],
+  })
+  assert.match(html, /<a href="https:\/\/ex\.com\/services\/x\/" target="_blank" rel="noopener">\/services\/x\/<\/a>/)
+  assert.match(html, /<a href="https:\/\/ex\.com\/locations\/brooklyn\/"[^>]*>Brooklyn<\/a>/)
+  assert.match(html, /<a href="https:\/\/ex\.com\/b\/"[^>]*>https:\/\/ex\.com\/b\/<\/a>\./, 'trailing punctuation stays outside the link')
+  assert.match(html, /<li><a href="https:\/\/ex\.com\/a\/"/, 'the page list links its pages')
+  assert.doesNotMatch(renderReport({ ...base, findings: [{ ...f(), found: '[x](javascript:alert(1))' }] }), /href="javascript/)
+})

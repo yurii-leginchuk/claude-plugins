@@ -170,7 +170,7 @@ test('qc findings lists distinct defects with ids, qc review moves false positiv
   const manualHtml = readFileSync(withManual.reportPath, 'utf8')
   assert.match(manualHtml, /меню вылезает справа на 40 px/)
   assert.match(manualHtml, /Противоречия в тексте/)
-  assert.match(manualHtml, /<li>https:\/\/ex\.com\/b\/<\/li>/, 'a content defect lists every page it names')
+  assert.match(manualHtml, /<li><a href="https:\/\/ex\.com\/b\/"/, 'a content defect lists every page it names')
   assert.throws(() => { write(file, JSON.stringify({ manual: [{ check: 'menu', page: 'https://ex.com/', width: 360, status: 'defect', defects: [{ rule: 'H16', severity: 'major', found: 'a', expected: 'b' }] }] })); applyReview(host, file) }, /rule для menu должен быть/)
   assert.throws(() => { write(file, JSON.stringify({ manual: [{ check: 'popup', page: 'https://ex.com/', status: 'ok' }] })); applyReview(host, file) }, /нужен width/)
 }))

@@ -141,7 +141,8 @@ command.
      (global / template / page) and up to three example pages with `where`.
    - Judge each defect: all critical and major ones, and every heuristic (cap ~60, most severe
      first; leave the rest unreviewed and say so). Verdicts: `confirmed`, `false-positive`, `unsure`,
-     each with a one-line note in Russian saying why («номер в FAQ действительно без tel:»,
+     each with a one-line note in Russian saying why — a page it names written as a link,
+     `[Newark](https://site/locations/newark/)` («номер в FAQ действительно без tel:»,
      «email-защита Cloudflare, в браузере это mailto»). Where the entry alone is not enough, open the
      page and look at that spot only. **A defect that carries `verify` is settled in Playwright, the
      way `verify` says** (bot-blocked links opened in a real browser, `href="#"` clicked to see if

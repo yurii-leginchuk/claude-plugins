@@ -11,6 +11,28 @@ const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;')
 
+// Every page, path or URL the report names is a link to it: «[Brooklyn](url)»
+// written by Claude, a bare https:// URL, or a site path «/services/x/»
+// (resolved against the audited site, set per render in renderReport).
+let ORIGIN = null
+const LINK = /\[([^\]\n]{1,120})\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<>"'«»)\]]+)|(?<![\w./:-])(\/(?:[a-z0-9]+(?:-[a-z0-9]+)*\/){1,4})(?![\w-])/g
+const anchor = (href, label) => `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(label)}</a>`
+function rich(s) {
+  const str = String(s ?? '')
+  let out = ''
+  let last = 0
+  for (const m of str.matchAll(LINK)) {
+    out += esc(str.slice(last, m.index))
+    last = m.index + m[0].length
+    if (m[1]) out += anchor(m[2], m[1])
+    else if (m[3]) {
+      const url = m[3].replace(/[.,;:!?]+$/, '')
+      out += anchor(url, url) + esc(m[3].slice(url.length))
+    } else out += ORIGIN ? anchor(ORIGIN + m[4], m[4]) : esc(m[4])
+  }
+  return out + esc(str.slice(last))
+}
+
 const CHIP = { critical: 'crit', major: 'maj', minor: 'min', note: 'note' }
 const LABEL = { critical: 'Critical', major: 'Major', minor: 'Minor', note: 'Note' }
 
@@ -92,6 +114,8 @@ border-radius:0 8px 8px 0;font-size:13px;color:var(--mut);margin:12px 0}
 table{width:100%;border-collapse:collapse;font-size:13px}
 .scroll{overflow-x:auto}
 th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--line)}
+.wrap a{color:inherit;text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1px}
+.wrap a:hover{text-decoration-thickness:2px}
 .vis-page{border-top:1px solid var(--line);padding:12px 0}
 .vis-page .kv{margin:0 0 8px}
 .strip{display:flex;gap:12px;overflow-x:auto;padding-bottom:6px;align-items:flex-start}
@@ -121,7 +145,7 @@ function renderVisual(visual) {
   }
   return `<h2>Визуальная проверка — все страницы на всех ширинах</h2>
 <div class="note-box heuristic">Скриншоты всей страницы на каждой ширине, даже там, где дефектов не найдено, — чтобы глазами пролистать сайт. Нажмите на миниатюру, чтобы открыть в полный размер.</div>
-${visual.map(v => `<div class="vis-page"><p class="kv"><code>${esc(v.url)}</code></p><div class="strip">${v.shots.map(s =>
+${visual.map(v => `<div class="vis-page"><p class="kv">${rich(v.url)}</p><div class="strip">${v.shots.map(s =>
     thumb(s.src, `${s.width} px${s.cut ? ' (обрезано)' : ''}`, s.width)).join('')}</div></div>`).join('')}`
 }
 
@@ -152,9 +176,9 @@ function renderManual(manualChecks, claudeFindings) {
       if (d) d.pages.push(f.page)
       else defs.push({ ...f, pages: [f.page] })
     }
-    return `<div class="menu-row"><p class="kv"><span class="chip ${cls}">${esc(label)}</span>${m.width != null ? ` <b>${esc(m.width)} px</b> ·` : ''} <code>${esc(m.page)}</code></p>
-${m.checked ? `<p class="kv">${esc(m.checked)}</p>` : ''}
-${defs.map(f => `<div class="defect"><p class="kv"><span class="chip ${CHIP[f.severity] || 'note'}">${esc(f.severity)}</span> ${esc(f.rule)} · ${esc(f.title)}</p><p class="kv">найдено: ${esc(f.found)}</p>${f.where ? `<p class="kv">где: ${esc(f.where)}</p>` : ''}<p class="kv">ожидается: ${esc(f.expected)}</p>${f.pages.length > 1 ? `<ul class="pages">${f.pages.map(p => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}</div>`).join('')}
+    return `<div class="menu-row"><p class="kv"><span class="chip ${cls}">${esc(label)}</span>${m.width != null ? ` <b>${esc(m.width)} px</b> ·` : ''} ${rich(m.page)}</p>
+${m.checked ? `<p class="kv">${rich(m.checked)}</p>` : ''}
+${defs.map(f => `<div class="defect"><p class="kv"><span class="chip ${CHIP[f.severity] || 'note'}">${esc(f.severity)}</span> ${esc(f.rule)} · ${esc(f.title)}</p><p class="kv">найдено: ${rich(f.found)}</p>${f.where ? `<p class="kv">где: ${rich(f.where)}</p>` : ''}<p class="kv">ожидается: ${rich(f.expected)}</p>${f.pages.length > 1 ? `<ul class="pages">${f.pages.map(p => `<li>${rich(p)}</li>`).join('')}</ul>` : ''}</div>`).join('')}
 ${(m.shots || []).length ? `<div class="strip">${m.shots.map((src, i) => thumb(src, `${m.width != null ? `${m.width} px · ` : ''}${i + 1}`, m.width || 768)).join('')}</div>` : ''}</div>`
   }).join('')}`).join('')
   const rest = missing.length ? `<p class="sub">Не проверялось вручную: ${missing.map(([, t]) => esc(t)).join(', ')}.</p>` : ''
@@ -261,15 +285,15 @@ function renderDefect(d, ctx = {}) {
 
   return `
       <div class="defect">
-        ${d.example?.review ? `<div class="kv review review-${esc(d.example.review.verdict)}">Claude: ${esc(REVIEW_LABEL[d.example.review.verdict] || d.example.review.verdict)}${d.example.review.note ? ` — ${esc(d.example.review.note)}` : ''}</div>` : ''}
+        ${d.example?.review ? `<div class="kv review review-${esc(d.example.review.verdict)}">Claude: ${esc(REVIEW_LABEL[d.example.review.verdict] || d.example.review.verdict)}${d.example.review.note ? ` — ${rich(d.example.review.note)}` : ''}</div>` : ''}
         ${String(d.scope || '').startsWith('template:') ? `<div class="kv">раздел: <code>${esc(d.scope.slice(9))}</code></div>` : ''}
-        <div class="kv">найдено: <code>${esc(d.found)}</code></div>
-        ${d.expected ? `<div class="kv">ожидается: <code>${esc(d.expected)}</code></div>` : ''}
+        <div class="kv">найдено: <code>${rich(d.found)}</code></div>
+        ${d.expected ? `<div class="kv">ожидается: <code>${rich(d.expected)}</code></div>` : ''}
         <div class="kv">селектор: <code>${esc(d.selector)}</code></div>
         ${breakpointsHtml}
         ${regionHtml}
         ${shotHtml}
-        <ul class="pages">${shownPages.map(p => `<li>${esc(p)}${d.where?.[p] ? `<div class="where">${esc(d.where[p])}</div>` : ''}</li>`).join('')}</ul>
+        <ul class="pages">${shownPages.map(p => `<li>${rich(p)}${d.where?.[p] ? `<div class="where">${rich(d.where[p])}</div>` : ''}</li>`).join('')}</ul>
         ${hiddenCount > 0 ? `<p class="kv">…и ещё ${hiddenCount} страниц не показано (ограничение списка)</p>` : ''}
       </div>`
 }
@@ -365,6 +389,7 @@ export function renderReport({
   // is indistinguishable from a genuinely clean site. A thrown TypeError is
   // impossible to miss; a false all-clear is not. No HTML is produced below
   // this check when findings is unusable.
+  try { ORIGIN = new URL(`https://${host}`).origin } catch { ORIGIN = null }
   if (!Array.isArray(findings)) {
     const received = findings === null ? 'null' : findings === undefined ? 'undefined' : typeof findings
     throw new TypeError(`renderReport requires findings to be an array, got ${received}`)
@@ -459,7 +484,7 @@ export function renderReport({
           ? `<ul>${shownFailed.map(x => {
               const url = typeof x === 'string' ? x : (x && x.url) || ''
               const err = typeof x === 'string' ? '' : (x && x.error) || ''
-              return `<li><code>${esc(url)}</code>${err ? ` — ${esc(err)}` : ''}</li>`
+              return `<li>${rich(url)}${err ? ` — ${esc(err)}` : ''}</li>`
             }).join('')}${hiddenFailed > 0 ? `<li>…и ещё ${esc(hiddenFailed)}</li>` : ''}</ul>`
           : '') +
         ` Повторный запуск <code>qc browse ${esc(host)}</code> пробует их снова — <code>--force</code> для этого не нужен.</div>`
@@ -569,7 +594,7 @@ ${rejectedHtml}
 <h2>Страницы</h2>
 ${uniquePages.length ? `<div class="scroll"><table><tr><th>Страница</th><th>Находок</th></tr>
 ${shownPages.map(p =>
-  `<tr><td>${esc(p)}</td><td>${list.filter(f => f.page === p).length}</td></tr>`).join('')}
+  `<tr><td>${rich(p)}</td><td>${list.filter(f => f.page === p).length}</td></tr>`).join('')}
 </table></div>
 ${hiddenPageCount > 0 ? `<p class="kv">…и ещё ${hiddenPageCount} страниц не показано (ограничение индекса)</p>` : ''}` : '<p class="sub">Нет страниц с находками.</p>'}
 </div>${hasShots ? LIGHTBOX : ''}</body></html>`
