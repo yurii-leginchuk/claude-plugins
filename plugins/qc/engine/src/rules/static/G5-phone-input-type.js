@@ -2,7 +2,7 @@ import { finding } from '../index.js'
 
 export default {
   id: 'G5',
-  title: 'Поле телефона не type=tel',
+  title: 'Phone field is not type=tel',
   severity: 'minor',
   engine: 'static',
   check(page, _site) {
@@ -18,7 +18,7 @@ export default {
         if (f.fieldType === 'phone' && f.inputType !== 'tel') {
           out.push(finding(this, page, {
             selector: f.selector,
-            found: `type=${f.inputType || '(нет)'}`,
+            found: `type=${f.inputType || '(none)'}`,
             expected: 'type="tel"',
           }))
         }

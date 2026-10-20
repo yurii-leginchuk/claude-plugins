@@ -20,7 +20,7 @@ function fragmentOf(raw) {
 
 export default {
   id: 'F12',
-  title: 'Якорная ссылка никуда не ведёт',
+  title: 'Anchor link leads nowhere',
   severity: 'major',
   engine: 'static',
   check(page, site) {
@@ -45,8 +45,8 @@ export default {
         if (raw === '#' && l.region === 'main' && l.text) {
           push(`#|${l.selector}|${l.text}`, {
             link: l, confidence: 'heuristic', severity: 'minor',
-            found: `ссылка-заглушка href="#": «${l.text}»`,
-            expected: 'настоящая ссылка или кнопка',
+            found: `placeholder link href="#": “${l.text}”`,
+            expected: 'a real link or a button',
           })
         }
         continue
@@ -62,11 +62,11 @@ export default {
         // A broken "Skip to content" is an accessibility defect nobody sees.
         ...(/^skip to/i.test(l.text || '') ? { severity: 'minor' } : {}),
         found: samePage
-          ? `якорь #${frag}: на странице нет элемента с таким id`
-          : `ссылка ${raw}: на странице ${pathKey(l.href)} нет элемента #${frag}`,
+          ? `anchor #${frag}: the page has no element with this id`
+          : `link ${raw}: page ${pathKey(l.href)} has no element #${frag}`,
         expected: /^skip to/i.test(l.text || '')
-          ? `добавить id="${frag}" на <main> или основной контейнер страницы`
-          : `задать CSS ID «${frag}» нужной секции (Elementor: Advanced → CSS ID) или поменять ссылку`,
+          ? `add id="${frag}" to <main> or the main container of the page`
+          : `set CSS ID “${frag}” on the right section (Elementor: Advanced → CSS ID) or change the link`,
       })
     }
     return out

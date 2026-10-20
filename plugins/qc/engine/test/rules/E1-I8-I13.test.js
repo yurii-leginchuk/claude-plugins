@@ -21,7 +21,7 @@ test('E1 flags an internal link returning 404', () => {
 test('E1 flags a double slash in the path', () => {
   const p = page({ links: [{ raw: '//about', href: 'https://ex.com//about', internal: true, selector: 'a' }] })
   const site = { linkStatus: new Map([['https://ex.com//about', { status: 200, ok: true }]]) }
-  assert.ok(E1.check(p, site).some(x => /двойной слэш/.test(x.found)))
+  assert.ok(E1.check(p, site).some(x => /double slash/.test(x.found)))
 })
 
 test('E1 stays silent for healthy links', () => {
@@ -65,7 +65,7 @@ test('I8 flags a noindex paginated page (pages 2+ must stay indexable)', () => {
   assert.equal(f[0].rule, 'I8')
   assert.equal(f[0].severity, 'major')
   assert.equal(f[0].selector, 'meta[name=robots]')
-  assert.match(f[0].found, /закрыта от индексации/)
+  assert.match(f[0].found, /closed to indexing/)
 })
 
 test('I8 flags a nofollow paginated page (the crawl path to the listed items is cut)', () => {
@@ -75,7 +75,7 @@ test('I8 flags a nofollow paginated page (the crawl path to the listed items is 
   })
   const f = I8.check(p, {})
   assert.equal(f.length, 1)
-  assert.match(f[0].found, /закрыта от обхода ссылок/)
+  assert.match(f[0].found, /closed to link crawling/)
 })
 
 test('I8 reports both robots clauses when a paginated page is noindex,nofollow', () => {
@@ -108,7 +108,7 @@ test('I8 flags a page number carried in a query parameter instead of the URL pat
   assert.equal(f.length, 1)
   assert.equal(f[0].severity, 'minor')
   assert.equal(f[0].confidence, 'high')
-  assert.match(f[0].found, /query-параметре/)
+  assert.match(f[0].found, /query parameter/)
 })
 
 test('I13 flags a missing favicon', () => {
@@ -180,7 +180,7 @@ for (const status of [400, 401, 403, 405, 429]) {
     assert.equal(f[0].severity, 'note')
     assert.equal(f[0].confidence, 'heuristic')
     assert.match(f[0].found, new RegExp(String(status)))
-    assert.match(f[0].found, /ручная проверка|вручную/, 'wording should signal this needs manual confirmation, not read as a confirmed defect')
+    assert.match(f[0].found, /manual check|manually/, 'wording should signal this needs manual confirmation, not read as a confirmed defect')
   })
 }
 
@@ -264,8 +264,8 @@ test('I8 recognizes query-string pagination (?paged=N), not just /page/N/', () =
   })
   const f = I8.check(p, {})
   assert.equal(f.length, 2, 'the query-parameter clause plus the noindex clause')
-  assert.ok(f.some(x => /query-параметре/.test(x.found)))
-  assert.ok(f.some(x => /закрыта от индексации/.test(x.found)))
+  assert.ok(f.some(x => /query parameter/.test(x.found)))
+  assert.ok(f.some(x => /closed to indexing/.test(x.found)))
 })
 
 // --- Judgement call 4: at most one favicon finding per page ---

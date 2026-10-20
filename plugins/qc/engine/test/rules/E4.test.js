@@ -42,7 +42,7 @@ test('11+ digits without + (tel:18556078758): high confidence', () => {
 test('bare 10-digit (tel:7189690845): heuristic confidence', () => {
   const f = rule.check(pageWith(['tel:7189690845']), {})
   assert.equal(f.length, 1)
-  assert.equal(f[0].expected, 'tel:+<код страны><10 цифр>')
+  assert.equal(f[0].expected, 'tel:+<country code><10 digits>')
   assert.equal(f[0].confidence, 'heuristic')
 })
 
@@ -50,7 +50,7 @@ test('too few digits (tel:123): high confidence, generic placeholder', () => {
   const f = rule.check(pageWith(['tel:123']), {})
   assert.equal(f.length, 1)
   assert.equal(f[0].found, 'tel:123')
-  assert.equal(f[0].expected, 'tel:+<код страны><номер>')
+  assert.equal(f[0].expected, 'tel:+<country code><number>')
   assert.equal(f[0].confidence, 'high')
 })
 
@@ -58,7 +58,7 @@ test('+ with insufficient digits (tel:+1234567): high confidence, generic placeh
   const f = rule.check(pageWith(['tel:+1234567']), {})
   assert.equal(f.length, 1)
   assert.equal(f[0].found, 'tel:+1234567')
-  assert.equal(f[0].expected, 'tel:+<код страны><номер>')
+  assert.equal(f[0].expected, 'tel:+<country code><number>')
   assert.equal(f[0].confidence, 'high')
 })
 
@@ -66,7 +66,7 @@ test('too many digits (tel:12345678901234567): high confidence, generic placehol
   const f = rule.check(pageWith(['tel:12345678901234567']), {})
   assert.equal(f.length, 1)
   assert.equal(f[0].found, 'tel:12345678901234567')
-  assert.equal(f[0].expected, 'tel:+<код страны><номер>')
+  assert.equal(f[0].expected, 'tel:+<country code><number>')
   assert.equal(f[0].confidence, 'high')
 })
 
@@ -74,7 +74,7 @@ test('empty tel (tel:): high confidence, generic placeholder', () => {
   const f = rule.check(pageWith(['tel:']), {})
   assert.equal(f.length, 1)
   assert.equal(f[0].found, 'tel:')
-  assert.equal(f[0].expected, 'tel:+<код страны><номер>')
+  assert.equal(f[0].expected, 'tel:+<country code><number>')
   assert.equal(f[0].confidence, 'high')
 })
 

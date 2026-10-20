@@ -54,7 +54,7 @@ function isFirstPage(site, page, f) {
 
 export default {
   id: 'G13',
-  title: 'Варианты в форме не совпадают с услугами и локациями сайта',
+  title: 'Form options do not match the site services and locations',
   severity: 'major',
   engine: 'static',
   confidence: 'heuristic',
@@ -62,8 +62,8 @@ export default {
     if (!page.forms?.length || !site?.pages) return []
     const profile = buildProfile(site)
     const kinds = [
-      { re: SERVICE_FIELD, what: 'услуга', list: inventory(site, profile.services, profile.services.items) },
-      { re: LOCATION_FIELD, what: 'локация', list: inventory(site, profile.locations, profile.locations.items) },
+      { re: SERVICE_FIELD, what: 'service', list: inventory(site, profile.services, profile.services.items) },
+      { re: LOCATION_FIELD, what: 'location', list: inventory(site, profile.locations, profile.locations.items) },
     ]
     const out = []
     for (const f of page.forms) {
@@ -82,9 +82,9 @@ export default {
 
 function compare(rule, page, form, field, options, { what, list }) {
   const label = (field.label || '').replace(/\*?\(Required\)$/i, '').replace(/\*$/, '').trim()
-  const where = `${form.id ? `форма #${form.id} · ` : ''}поле «${label}»`
+  const where = `${form.id ? `form #${form.id} · ` : ''}field “${label}”`
   // The form id leads `found`: two forms with the same wrong option are two fixes.
-  const tag = form.id ? `форма #${form.id}: ` : ''
+  const tag = form.id ? `form #${form.id}: ` : ''
   const at = (props) => finding(rule, page, { selector: field.selector, where, ...props, found: tag + props.found })
   const out = []
   const covered = new Set()
@@ -99,23 +99,23 @@ function compare(rule, page, form, field, options, { what, list }) {
       if (name) {
         out.push(at({
           severity: 'minor',
-          found: `вариант «${o}» не совпадает с названием: ${what} называется «${name}» (${bySlug.path})`,
-          expected: `переименовать вариант в «${name}»`,
+          found: `option “${o}” does not match the name: the ${what} is called “${name}” (${bySlug.path})`,
+          expected: `rename the option to “${name}”`,
         }))
       }
       continue
     }
     out.push(at({
-      found: `вариант «${o}» не соответствует ни одной странице (${what})`,
-      expected: `убрать вариант «${o}» или проверить, не убрали ли эту услугу/локацию с сайта`,
+      found: `option “${o}” matches no page (${what})`,
+      expected: `remove option “${o}” or check whether this service/location was removed from the site`,
     }))
   }
   for (const s of list) {
     if (covered.has(s)) continue
     const name = [...s.names][0] || s.page || s.slug
     out.push(at({
-      found: `в поле нет варианта «${name}» (${s.path})`,
-      expected: `добавить вариант «${name}» в поле «${label}»`,
+      found: `the field has no option “${name}” (${s.path})`,
+      expected: `add option “${name}” to field “${label}”`,
     }))
   }
   return out

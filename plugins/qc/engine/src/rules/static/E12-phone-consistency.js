@@ -27,7 +27,7 @@ const MIN_MAJORITY_PAGES = 3
 
 export default {
   id: 'E12',
-  title: 'Телефон не совпадает с остальным сайтом или с фактами',
+  title: 'Phone number does not match the rest of the site or the facts',
   severity: 'major',
   engine: 'static',
   check(page, site) {
@@ -49,16 +49,16 @@ function againstFacts(rule, page, facts) {
     out.push(finding(rule, page, { selector, found, expected, ...extra }))
   }
   for (const l of page.links || []) {
-    if (l.protocol === 'tel:') report(phoneKey(l.raw), l.selector, `номер не из фактов сайта: ${l.raw}`, { link: l })
+    if (l.protocol === 'tel:') report(phoneKey(l.raw), l.selector, `number not in the site facts: ${l.raw}`, { link: l })
   }
   // A number in the copy may be someone else's on purpose (the SAMHSA
   // helpline on every rehab site), so only tel: links and schema are certain.
   for (const p of textPhones(page.text)) {
-    report(p.key, 'body', `номер в тексте не из фактов сайта: ${p.raw}`, { confidence: 'heuristic', where: whereInText(page, p.raw) })
+    report(p.key, 'body', `number in text not in the site facts: ${p.raw}`, { confidence: 'heuristic', where: whereInText(page, p.raw) })
   }
   for (const block of page.jsonLdRaw || []) {
     for (const m of block.matchAll(JSONLD_PHONE)) {
-      report(phoneKey(m[1]), 'script[type="application/ld+json"]', `telephone в schema не из фактов сайта: ${m[1]}`)
+      report(phoneKey(m[1]), 'script[type="application/ld+json"]', `telephone in schema not in the site facts: ${m[1]}`)
     }
   }
   return out
@@ -85,8 +85,8 @@ function againstSite(rule, page, phones) {
     seen.add(key)
     out.push(finding(rule, page, {
       link: l,
-      found: `${l.raw} встречается на ${urls.size} стр., а +${majorityKey} — на ${majorityPages}`,
-      expected: `+${majorityKey}, если это не номер отдельной локации`,
+      found: `${l.raw} appears on ${urls.size} pages, while +${majorityKey} appears on ${majorityPages}`,
+      expected: `+${majorityKey}, unless this is the number of a separate location`,
       confidence: 'heuristic',
     }))
   }

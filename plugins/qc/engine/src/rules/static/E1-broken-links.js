@@ -10,7 +10,7 @@ const BOT_BLOCKED_STATUSES = new Set([400, 401, 403, 405, 429])
 
 export default {
   id: 'E1',
-  title: 'Битые ссылки',
+  title: 'Broken links',
   severity: 'critical',
   engine: 'static',
   check(page, site) {
@@ -30,10 +30,10 @@ export default {
       } catch { /* path/host stay empty; malformed URL is not this branch's concern */ }
       if (path.includes('//')) {
         out.push(finding(this, page, {
-          link: l, found: `двойной слэш в URL: ${l.href}`,
+          link: l, found: `double slash in URL: ${l.href}`,
           // A pasted absolute URL after a relative one ("/a/https://x/a/"):
           // the second URL is the one meant.
-          expected: /^https?:\/\/.+https?:\/\//.test(l.href) ? l.href.slice(l.href.lastIndexOf('http')) : 'корректный путь',
+          expected: /^https?:\/\/.+https?:\/\//.test(l.href) ? l.href.slice(l.href.lastIndexOf('http')) : 'a valid path',
         }))
       }
       if (!status) continue
@@ -46,8 +46,8 @@ export default {
         // own site is still our problem).
         out.push(finding(this, page, {
           link: l,
-          found: `HTTP ${s.status || 'нет ответа'}: ${l.href}`,
-          expected: 'рабочая ссылка',
+          found: `HTTP ${s.status || 'no response'}: ${l.href}`,
+          expected: 'a working link',
           severity: 'critical',
         }))
         continue
@@ -68,8 +68,8 @@ export default {
         // confirmed defect.
         out.push(finding(this, page, {
           link: l,
-          found: `внешний хост${host ? ` ${host}` : ''} вернул HTTP ${s.status} -- похоже на блокировку автоматического запроса (бот-защита), а не битую ссылку; требуется ручная проверка перехода по ссылке: ${l.href}`,
-          expected: 'подтвердить вручную переходом по ссылке в браузере',
+          found: `external host${host ? ` ${host}` : ''} returned HTTP ${s.status} -- looks like the automated request was blocked (bot protection), not a broken link; needs a manual check by following the link: ${l.href}`,
+          expected: 'confirm manually by following the link in a browser',
           severity: 'note',
           confidence: 'heuristic',
         }))
@@ -89,8 +89,8 @@ export default {
       // always fix someone else's site.
       out.push(finding(this, page, {
         link: l,
-        found: `внешний хост${host ? ` ${host}` : ''} вернул HTTP ${s.status}, это не ошибка на стороне клиента: ${l.href}`,
-        expected: 'рабочая ссылка',
+        found: `external host${host ? ` ${host}` : ''} returned HTTP ${s.status}, this is not a client-side error: ${l.href}`,
+        expected: 'a working link',
         severity: 'major',
       }))
     }

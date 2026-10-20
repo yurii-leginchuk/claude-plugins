@@ -30,7 +30,7 @@ function h1Index(site) {
 
 export default {
   id: 'I21',
-  title: 'Страница не про то, что в её URL, или дубль H1',
+  title: 'Page is not about what its URL says, or duplicate H1',
   severity: 'minor',
   engine: 'static',
   check(page, site) {
@@ -61,10 +61,10 @@ export default {
           out.push(finding(this, page, {
             selector: 'h1', severity: source ? 'major' : 'minor', confidence: 'heuristic',
             found: source
-              ? `H1 «${h1}» — тема другой страницы (${new URL(source.url).pathname}); похоже, страница скопирована`
-              : `страница ${path} с H1 «${h1}»: URL и заголовки про разное`,
-            where: `H1 «${h1}» · title «${page.title || '—'}»`,
-            expected: source ? `H1 про то же, что title: «${String(page.title).split(/\s[|–—]\s/)[0]}»` : `H1 и title про «${slug.replace(/-/g, ' ')}», или поменять URL`,
+              ? `H1 “${h1}” is the topic of another page (${new URL(source.url).pathname}); the page looks copied`
+              : `page ${path} has H1 “${h1}”: the URL and the headings are about different things`,
+            where: `H1 “${h1}” · title “${page.title || '—'}”`,
+            expected: source ? `H1 about the same thing as the title: “${String(page.title).split(/\s[|–—]\s/)[0]}”` : `H1 and title about “${slug.replace(/-/g, ' ')}”, or change the URL`,
           }))
         }
       }
@@ -73,9 +73,9 @@ export default {
     if (same.length > 1) {
       out.push(finding(this, page, {
         selector: 'h1',
-        found: `одинаковый H1 «${h1}» на ${same.length} страницах`,
+        found: `same H1 “${h1}” on ${same.length} pages`,
         where: same.map(u => new URL(u).pathname).join(', '),
-        expected: 'свой H1 у каждой страницы',
+        expected: 'a unique H1 on every page',
       }))
     }
     return out

@@ -19,7 +19,7 @@ test('I21 flags a page whose H1 and title are about something else than its URL'
   const f = I21.check(copied, { pages: [copied] })
   assert.equal(f.length, 1)
   assert.equal(f[0].confidence, 'heuristic')
-  assert.match(f[0].found, /страница \/services\/carpet-cleaning\/ с H1 «Floor Polishing»/)
+  assert.match(f[0].found, /page \/services\/carpet-cleaning\/ has H1 “Floor Polishing”/)
   const ok = page('/services/carpet-cleaning/', { headings: h1('Carpet Cleaning in NYC'), title: 'x' })
   assert.deepEqual(I21.check(ok, { pages: [ok] }), [])
   const titleOnly = page('/services/carpet-cleaning/', { headings: h1('Fresh Floors'), title: 'Carpet Cleaning | Opura' })
@@ -34,8 +34,8 @@ test('I21 flags the same H1 on two pages, not on paginated archives', () => {
   const p2 = page('/blog/page/2/', { headings: h1('Blog') })
   const p1 = page('/blog/', { headings: h1('Blog') })
   const site = { pages: [a, b, p1, p2] }
-  assert.equal(I21.check(a, site).filter(f => /одинаковый H1/.test(f.found)).length, 1)
-  assert.deepEqual(I21.check(p1, site).filter(f => /одинаковый H1/.test(f.found)), [])
+  assert.equal(I21.check(a, site).filter(f => /same H1/.test(f.found)).length, 1)
+  assert.deepEqual(I21.check(p1, site).filter(f => /same H1/.test(f.found)), [])
 })
 
 test('H12 flags another location on a location page: copy, title, alt; not a link or a list', () => {
@@ -48,10 +48,10 @@ test('H12 flags another location on a location page: copy, title, alt; not a lin
   })
   const pages = [bronx, loc('brooklyn', { images: [{ alt: 'Brooklyn office', src: `${O}/up/office.jpg` }] }), loc('staten-island'), loc('manhattan')]
   const found = H12.check(bronx, { pages }).map(f => f.found)
-  assert.ok(found.some(f => /^title страницы .* упоминает «Brooklyn»/.test(f)))
-  assert.ok(found.includes('картинка со страницы «Brooklyn» вместе с её alt: «Brooklyn office»'))
+  assert.ok(found.some(f => /^title of page .* mentions “Brooklyn”/.test(f)))
+  assert.ok(found.includes('image from page “Brooklyn” together with its alt: “Brooklyn office”'))
   assert.ok(!found.some(f => /skyline/.test(f)), 'a photo used only here is description')
-  assert.ok(found.includes('на странице «Cleaning in bronx» упоминается «Brooklyn»'))
+  assert.ok(found.includes('page “Cleaning in bronx” mentions “Brooklyn”'))
   assert.ok(!found.some(f => /Staten Island/.test(f)), 'a link to another location is navigation')
 
   const areas = loc('manhattan', { text: 'We also serve Brooklyn, Staten Island and the Bronx.' })
@@ -65,8 +65,8 @@ test('H14 flags an item most pages list and this one misses, and an item only th
   pages.push(page('/d/', { lists: list(['Aetna', 'Cigna', 'Humana', 'Tricare']) }))
   const f = H14.check(pages[3], { pages })
   assert.deepEqual(f.map(x => x.found), [
-    'в списке «Insurances We Accept» нет «MaineCare», хотя он есть на 3 из 4 страниц',
-    'в списке «Insurances We Accept» есть «Tricare», которого нет на остальных 3 страницах',
+    'list “Insurances We Accept” is missing “MaineCare”, though it is on 3 of 4 pages',
+    'list “Insurances We Accept” has “Tricare”, which the other 3 pages do not have',
   ])
   assert.equal(f[1].severity, 'note')
   assert.deepEqual(H14.check(pages[0], { pages }), [])
@@ -77,11 +77,11 @@ test('H17 flags a placeholder og:site_name on the homepage and brand variants on
   const a = page('/a/', { title: 'A | Opura', text: 'Opura Professional Cleaning Services. OPURA again. liberty. Opura’s team. Opura Opura' })
   const site = { pages: [home, a] }
   assert.deepEqual(H17.check(home, site).map(f => f.found), [
-    'og:site_name = «Site»',
-    'бренд написан как «OPURA», основное написание — «Opura»',
+    'og:site_name = “Site”',
+    'brand is written as “OPURA”, the main spelling is “Opura”',
   ])
   assert.deepEqual(H17.check(a, site).map(f => f.found), [
-    'бренд написан как «Opura Professional Cleaning Services», основное написание — «Opura»',
+    'brand is written as “Opura Professional Cleaning Services”, the main spelling is “Opura”',
   ])
 })
 
@@ -101,6 +101,6 @@ test('H12: a featured image captioned for another location is reported from sche
     jsonLdRaw: ['{"@type":"ImageObject","caption":"Brooklyn Bridge at dusk with Manhattan skyline"}'],
   })
   const f = H12x.check(bronx, { pages: [brooklyn, bronx, mk('manhattan'), mk('queens')] })
-  assert.ok(f.every(x => !/вместе с её alt/.test(x.found)), 'an image without src is not "the same picture"')
+  assert.ok(f.every(x => !/together with its alt/.test(x.found)), 'an image without src is not "the same picture"')
   assert.ok(f.some(x => /featured image/.test(x.found) && /Brooklyn/.test(x.found)))
 })

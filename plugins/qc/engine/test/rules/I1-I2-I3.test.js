@@ -10,13 +10,13 @@ const page = (headings) => ({ url: 'https://ex.com/a', headings })
 test('I1 flags a missing h1', () => {
   const f = I1.check(page([h(2)]), {})
   assert.equal(f.length, 1)
-  assert.equal(f[0].found, 'H1 не найден')
+  assert.equal(f[0].found, 'H1 not found')
 })
 
 test('I1 flags multiple h1', () => {
   const f = I1.check(page([h(1), h(1)]), {})
   assert.equal(f.length, 1)
-  assert.equal(f[0].found, 'H1 на странице: 2')
+  assert.equal(f[0].found, 'H1 on the page: 2')
 })
 
 test('I1 accepts exactly one h1', () => {
@@ -45,7 +45,7 @@ test('I3 accepts a text h1', () => {
 test('I1 reports missing H1 when page has no headings at all', () => {
   const f = I1.check(page([]), {})
   assert.equal(f.length, 1)
-  assert.equal(f[0].found, 'H1 не найден')
+  assert.equal(f[0].found, 'H1 not found')
 })
 
 test('I2 handles page with no headings without crashing', () => {

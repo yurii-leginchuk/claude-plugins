@@ -2,7 +2,7 @@ import { finding } from '../index.js'
 
 export default {
   id: 'G3',
-  title: 'Обязательное поле без пометки',
+  title: 'Required field without a marker',
   severity: 'minor',
   engine: 'static',
   check(page, _site) {
@@ -12,7 +12,7 @@ export default {
       for (const f of form.fields || []) {
         if (f.required && !f.markedRequired) {
           out.push(finding(this, page, {
-            selector: f.selector, found: 'поле обязательное, но без звёздочки', expected: '* в подписи поля',
+            selector: f.selector, found: 'field is required but has no asterisk', expected: '* in the field label',
           }))
         }
       }

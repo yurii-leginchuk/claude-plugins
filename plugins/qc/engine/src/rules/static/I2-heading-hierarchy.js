@@ -2,7 +2,7 @@ import { finding } from '../index.js'
 
 export default {
   id: 'I2',
-  title: 'Дыры в иерархии заголовков',
+  title: 'Gaps in the heading hierarchy',
   severity: 'major',
   engine: 'static',
   check(page, _site) {
@@ -12,7 +12,7 @@ export default {
       if (prev !== null && h.level > prev + 1) {
         out.push(finding(this, page, {
           selector: h.selector,
-          found: `пропущен уровень: h${prev} → h${h.level}`,
+          found: `skipped level: h${prev} → h${h.level}`,
           expected: `h${prev + 1}`,
         }))
       }

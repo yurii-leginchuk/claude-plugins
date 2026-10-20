@@ -8,7 +8,7 @@ const LEAD = /^(?:author|by|posted by|written by)\s*:?\s*/i
 
 export default {
   id: 'K17',
-  title: 'Автор поста — служебный аккаунт',
+  title: 'Post author is a service account',
   severity: 'major',
   engine: 'static',
   check(page, _site) {
@@ -26,8 +26,8 @@ export default {
     }
     return [...names.values()].map(({ name, link, schema }) => finding(this, page, {
       ...(link ? { link } : { selector: 'script[type="application/ld+json"]' }),
-      found: `автор «${name}»${schema && !link ? ' в schema' : ''} — служебный аккаунт, а не человек`,
-      expected: 'настоящий автор (Users → профиль: имя и отображаемое имя) или бренд',
+      found: `author “${name}”${schema && !link ? ' in schema' : ''} is a service account, not a person`,
+      expected: 'a real author (Users → profile: name and display name) or the brand',
     }))
   },
 }

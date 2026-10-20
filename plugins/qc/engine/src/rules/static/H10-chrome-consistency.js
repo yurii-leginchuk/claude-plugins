@@ -34,21 +34,21 @@ function diff(mine, ref) {
   const missing = [...b].filter(w => !a.has(w)).slice(0, SHOW_WORDS)
   const extra = [...a].filter(w => !b.has(w)).slice(0, SHOW_WORDS)
   return [
-    missing.length ? `нет: ${missing.join(', ')}` : null,
-    extra.length ? `лишнее: ${extra.join(', ')}` : null,
+    missing.length ? `missing: ${missing.join(', ')}` : null,
+    extra.length ? `extra: ${extra.join(', ')}` : null,
   ].filter(Boolean).join('; ')
 }
 
 export default {
   id: 'H10',
-  title: 'Общий блок отличается от остального сайта',
+  title: 'Shared block differs from the rest of the site',
   severity: 'major',
   engine: 'static',
   confidence: 'heuristic',
   check(page, site) {
     if (!site?.pages || site.pages.length < MIN_MAJORITY_PAGES + 1) return []
     const out = []
-    for (const [field, label, selector] of [['footerText', 'Футер', 'footer'], ['headerText', 'Хедер', 'header']]) {
+    for (const [field, label, selector] of [['footerText', 'Footer', 'footer'], ['headerText', 'Header', 'header']]) {
       const mine = (page[field] || '').trim()
       if (!mine) continue
       const v = variants(site, field)
@@ -59,8 +59,8 @@ export default {
       if (!d) continue
       out.push(finding(this, page, {
         selector,
-        found: `${label} отличается от ${refCount} других страниц (${d})`,
-        expected: `${label.toLowerCase()} как на остальном сайте`,
+        found: `${label} differs from ${refCount} other pages (${d})`,
+        expected: `${label.toLowerCase()} as on the rest of the site`,
       }))
     }
     return out

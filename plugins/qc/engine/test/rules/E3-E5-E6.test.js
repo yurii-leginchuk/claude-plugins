@@ -33,7 +33,7 @@ test('E3 flags an external target=_blank link missing rel=noopener at minor/high
   assert.equal(f.length, 1)
   assert.equal(f[0].severity, 'minor')
   assert.equal(f[0].confidence, 'high')
-  assert.match(f[0].found, /без rel=noopener/)
+  assert.match(f[0].found, /without rel=noopener/)
 })
 
 test('E3 accepts a correct external link', () => {
@@ -111,7 +111,7 @@ test('E6 does not flag an email that appears only inside JSON-LD or a form confi
     html: `<html><head>
       <script type="application/ld+json">{"@type":"Organization","email":"info@ex.com"}</script>
       </head><body>
-      <p>Свяжитесь с нами по телефону.</p>
+      <p>Contact us by phone.</p>
       <script>var gf_global = {"notification_email":"admin@ex.com"};</script>
       </body></html>`,
   })
@@ -121,7 +121,7 @@ test('E6 does not flag an email that appears only inside JSON-LD or a form confi
 test('E6 still flags a bare email in real body copy', () => {
   const doc = parsePage({
     url: 'https://ex.com/a',
-    html: '<html><body><p>Пишите на info@ex.com</p></body></html>',
+    html: '<html><body><p>Write to info@ex.com</p></body></html>',
   })
   const f = E6.check(doc, {})
   assert.equal(f.length, 1)

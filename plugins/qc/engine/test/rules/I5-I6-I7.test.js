@@ -46,7 +46,7 @@ test('I6 flags a duplicate title across the site', () => {
   const site = { index: buildIndex(pages) }
   const f = I6.check(pages[0], site)
   assert.equal(f.length, 1)
-  assert.match(f[0].found, /дубль/)
+  assert.match(f[0].found, /duplicate/)
 })
 
 test('I6 flags Home in the homepage title', () => {
@@ -72,7 +72,7 @@ test('I5 flags canonical differing only by trailing slash with explicit message'
   const f = I5.check(mk({ url: 'https://ex.com/about', canonical: 'https://ex.com/about/' }), {})
   assert.equal(f.length, 1)
   assert.equal(f[0].expected, 'https://ex.com/about')
-  assert.match(f[0].found, /canonical с лишним слешем/)
+  assert.match(f[0].found, /canonical with an extra slash/)
   assert.match(f[0].found, /https:\/\/ex\.com\/about\//)
 })
 
@@ -100,7 +100,7 @@ test('I6 detects duplicates when one has padded whitespace', () => {
   const site = { index: buildIndex(pages) }
   const f = I6.check(pages[1], site)
   assert.equal(f.length, 1)
-  assert.match(f[0].found, /дубль/)
+  assert.match(f[0].found, /duplicate/)
 })
 
 test('I7 detects duplicates when one has padded whitespace', () => {

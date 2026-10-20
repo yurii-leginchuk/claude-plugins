@@ -6,7 +6,7 @@ const CLEAN = /^tel:\+\d{8,15}$/
 
 export default {
   id: 'E4',
-  title: 'Формат tel: в HTML',
+  title: 'tel: format in HTML',
   severity: 'major',
   engine: 'static',
   check(page, _site) {
@@ -75,12 +75,12 @@ export default {
         confidence = 'high'
       } else if (digits.length === 10 && !hasPlus) {
         // Exactly 10 digits, no country code: must infer it
-        expected = 'tel:+<код страны><10 цифр>'
+        expected = 'tel:+<country code><10 digits>'
         confidence = 'heuristic'
       } else {
         // Too few, too many, empty, or + with wrong digit count: defect is certain
         // but we cannot propose a specific number
-        expected = 'tel:+<код страны><номер>'
+        expected = 'tel:+<country code><number>'
         confidence = 'high'
       }
 

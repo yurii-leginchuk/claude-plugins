@@ -54,7 +54,7 @@ function variants(site, brand) {
 
 export default {
   id: 'H17',
-  title: 'Название бренда',
+  title: 'Brand name',
   severity: 'minor',
   engine: 'static',
   check(page, site) {
@@ -63,8 +63,8 @@ export default {
     if (pathKey(page.url) === '/' && (!page.siteName || GENERIC.test(page.siteName.trim()))) {
       out.push(finding(this, page, {
         selector: 'meta[property="og:site_name"]',
-        found: page.siteName ? `og:site_name = «${page.siteName}»` : 'нет og:site_name',
-        expected: brand ? `og:site_name = «${brand}» (Yoast: Settings → Site basics → Site name)` : 'название бренда в og:site_name',
+        found: page.siteName ? `og:site_name = “${page.siteName}”` : 'no og:site_name',
+        expected: brand ? `og:site_name = “${brand}” (Yoast: Settings → Site basics → Site name)` : 'brand name in og:site_name',
       }))
     }
     if (!brand || !site?.pages) return out
@@ -72,8 +72,8 @@ export default {
       if (first !== page.url) continue
       out.push(finding(this, page, {
         selector: 'body', confidence: 'heuristic',
-        found: `бренд написан как «${phrase}», основное написание — «${brand}»`,
-        where: whereInText(page, phrase), expected: `«${brand}», если другое написание не намеренное`,
+        found: `brand is written as “${phrase}”, the main spelling is “${brand}”`,
+        where: whereInText(page, phrase), expected: `“${brand}”, unless the other spelling is intentional`,
       }))
     }
     return out

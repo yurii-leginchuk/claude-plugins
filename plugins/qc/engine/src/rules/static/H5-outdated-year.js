@@ -14,7 +14,7 @@ const YEAR = /\b(20[12]\d)\b/g
 
 export default {
   id: 'H5',
-  title: 'Устаревший год',
+  title: 'Outdated year',
   severity: 'minor',
   engine: 'static',
   check(page, site) {
@@ -24,7 +24,7 @@ export default {
     const latest = years.length ? Math.max(...years) : null
     if (latest !== null && latest < now) {
       out.push(finding(this, page, {
-        selector: 'footer', found: `© ${latest} в копирайте`, expected: `© ${now} (или текущий год автоматически)`,
+        selector: 'footer', found: `© ${latest} in the copyright`, expected: `© ${now} (or the current year automatically)`,
       }))
     }
     if (isPost(page)) return out
@@ -37,7 +37,7 @@ export default {
         seen.add(y)
         out.push(finding(this, page, {
           selector: where === 'H1' ? 'h1' : `meta/${where}`, confidence: 'heuristic',
-          found: `год ${y} в ${where}: «${value}»`, expected: `${now} или без года`,
+          found: `year ${y} in ${where}: “${value}”`, expected: `${now} or no year`,
         }))
       }
     }

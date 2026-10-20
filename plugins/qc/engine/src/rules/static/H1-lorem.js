@@ -4,7 +4,7 @@ const LOREM = /\b(lorem ipsum|dolor sit amet|consectetur adipiscing)\b/i
 
 export default {
   id: 'H1',
-  title: 'Оставшийся Lorem ipsum',
+  title: 'Leftover Lorem ipsum',
   severity: 'critical',
   engine: 'static',
   check(page, _site) {
@@ -14,7 +14,7 @@ export default {
     return [finding(this, page, {
       selector: 'body',
       found: (page.text || '').slice(at, m.index + 80).trim(),
-      expected: 'реальный текст',
+      expected: 'real text',
     })]
   },
 }

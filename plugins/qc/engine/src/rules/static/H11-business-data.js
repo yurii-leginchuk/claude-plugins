@@ -23,7 +23,7 @@ const TEXT_RATING = [
 
 export default {
   id: 'H11',
-  title: 'Данные бизнеса не совпадают с фактами (email, рейтинг)',
+  title: 'Business data does not match the facts (email, rating)',
   severity: 'major',
   engine: 'static',
   check(page, site) {
@@ -43,12 +43,12 @@ function emails(rule, page, facts) {
     const e = email.toLowerCase().split('?')[0]
     if (!e || allowed.has(e) || FILE_EXT.test(e) || seen.has(e)) return
     seen.add(e)
-    out.push(finding(rule, page, { selector, found: `email не из фактов сайта (${where}): ${e}`, expected }))
+    out.push(finding(rule, page, { selector, found: `email not in the site facts (${where}): ${e}`, expected }))
   }
   for (const l of page.links || []) {
     if (l.protocol === 'mailto:') report(l.raw.replace(/^mailto:/i, ''), l.selector, 'mailto')
   }
-  for (const m of String(page.text || '').matchAll(EMAIL)) report(m[0], 'body', 'текст')
+  for (const m of String(page.text || '').matchAll(EMAIL)) report(m[0], 'body', 'text')
   for (const block of page.jsonLdRaw || []) {
     for (const m of block.matchAll(JSONLD_EMAIL)) report(m[1], 'script[type="application/ld+json"]', 'schema')
   }
@@ -57,7 +57,7 @@ function emails(rule, page, facts) {
 
 function rating(rule, page, facts) {
   if (facts.rating === null) return []
-  const expected = `рейтинг ${facts.rating}`
+  const expected = `rating ${facts.rating}`
   const differs = (v) => Math.abs(Number(v) - facts.rating) >= 0.05
   const out = []
   const seen = new Set()
@@ -66,7 +66,7 @@ function rating(rule, page, facts) {
       if (!differs(m[1]) || seen.has(`ld${m[1]}`)) continue
       seen.add(`ld${m[1]}`)
       out.push(finding(rule, page, {
-        selector: 'script[type="application/ld+json"]', found: `ratingValue в schema: ${m[1]}`, expected,
+        selector: 'script[type="application/ld+json"]', found: `ratingValue in schema: ${m[1]}`, expected,
       }))
     }
   }
@@ -77,7 +77,7 @@ function rating(rule, page, facts) {
       if (!differs(m[1]) || seen.has(`tx${m[1]}`)) continue
       seen.add(`tx${m[1]}`)
       out.push(finding(rule, page, {
-        selector: 'body', found: `рейтинг в тексте: «${m[0].trim()}»`, expected, confidence: 'heuristic',
+        selector: 'body', found: `rating in text: “${m[0].trim()}”`, expected, confidence: 'heuristic',
       }))
     }
   }

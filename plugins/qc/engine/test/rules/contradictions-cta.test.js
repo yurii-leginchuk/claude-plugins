@@ -27,7 +27,7 @@ test('H16: years of experience disagree with "since"', () => {
   assert.deepEqual(H16.check(pages[1], site), [])
   const f = H16.check(pages[2], site)
   assert.equal(f.length, 1)
-  assert.match(f[0].found, /«15 years of experience» \(≈15 лет\)/)
+  assert.match(f[0].found, /“15 years of experience” \(≈15 years\)/)
   assert.equal(f[0].confidence, 'heuristic')
 })
 
@@ -36,7 +36,7 @@ test('H16: "N services" against the service pages', () => {
   const home = page('/', { text: 'We offer 12 services across NYC.' })
   const f = H16.check(home, { pages: [home, ...svc], now: NOW })
   assert.equal(f.length, 1)
-  assert.match(f[0].found, /«12 services», а страниц в разделе services: 4/)
+  assert.match(f[0].found, /text says “12 services”, but the services section has 4 pages/)
 })
 
 test('H16: 24/7 against office hours, reported on the rarer side', () => {
@@ -57,8 +57,8 @@ test('H16: one service, two prices; one person, two titles', () => {
   const team2 = page('/about/', { text: 'Jane Roe – Program Manager' })
   const site = { pages: [svc, other, team, team2], now: NOW }
   const f = H16.check(other, site)
-  assert.ok(f.some(x => /Jane Roe — «Clinical Director»/.test(x.found)))
-  assert.ok(f.some(x => /цена «Deep Clean»/.test(x.found)) || H16.check(svc, site).some(x => /цена/.test(x.found)))
+  assert.ok(f.some(x => /Jane Roe is “Clinical Director”/.test(x.found)))
+  assert.ok(f.some(x => /price of “Deep Clean”/.test(x.found)) || H16.check(svc, site).some(x => /price/.test(x.found)))
 })
 
 test('E17: CTA text that does not do what it says', () => {
@@ -81,10 +81,10 @@ test('E17: CTA text that does not do what it says', () => {
   })
   const found = E17.check(p, { pages: [contact, about, p] }).map(f => f.found)
   assert.deepEqual(found, [
-    '«Call Now» не звонит, а ведёт на /contact/',
-    '«Book an appointment» ведёт на /about, а там нет формы записи',
-    '«Get Directions» не открывает карту, а ведёт на /locations/',
-    '«Download menu» обещает файл, а ведёт на страницу /menu/',
+    '“Call Now” does not call, it points to /contact/',
+    '“Book an appointment” points to /about, but there is no booking form there',
+    '“Get Directions” does not open a map, it points to /locations/',
+    '“Download menu” promises a file, but points to page /menu/',
   ])
 })
 
@@ -92,7 +92,7 @@ test('E17: "see our X page" when there is no such page', () => {
   const pricing = page('/pricing/', { title: 'Pricing | Ex' })
   const p = page('/x/', { text: 'Please see our pricing page or visit our careers page for jobs.' })
   const f = E17.check(p, { pages: [pricing, p] })
-  assert.deepEqual(f.map(x => x.found), ['текст отсылает к странице «careers», такой страницы нет'])
+  assert.deepEqual(f.map(x => x.found), ['text refers to a “careers” page, but no such page exists'])
 })
 
 test('both rules stay silent on the real fixture page', () => {

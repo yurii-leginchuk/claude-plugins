@@ -84,9 +84,9 @@ test('H9 is silent without banned terms', () => {
 
 test('H9 finds a retired term in copy and schema, whole word, any case', () => {
   const p = page({ text: 'We offer EQUINE therapy and yoga.', jsonLdRaw: ['{"name":"Equine Therapy"}'] })
-  const f = H9.check(p, { facts: facts({ banned: [{ term: 'equine', note: 'услуга убрана' }] }) })
+  const f = H9.check(p, { facts: facts({ banned: [{ term: 'equine', note: 'service removed' }] }) })
   assert.equal(f.length, 2)
-  assert.equal(f[0].expected, 'убрать: услуга убрана')
+  assert.equal(f[0].expected, 'remove: service removed')
 })
 
 test('H9 keeps the hit count out of found, so a shared menu stays one distinct defect', () => {

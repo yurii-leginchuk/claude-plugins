@@ -21,15 +21,15 @@ import { isDevHost } from '../../lib/env.js'
 // every external link on the site.
 export default {
   id: 'I14',
-  title: 'Ссылки на чужое окружение (дев на проде, прод на деве)',
+  title: 'Links to the other environment (dev on prod, prod on dev)',
   severity: 'critical',
   engine: 'static',
   check(page, site) {
-    if (site?.env === 'prod') return checkTargets(this, page, isDevHost, 'дев')
+    if (site?.env === 'prod') return checkTargets(this, page, isDevHost, 'dev')
     if (site?.env === 'dev') {
       const prodHost = site?.prodHost
       if (!prodHost) return []
-      return checkTargets(this, page, (host) => sameHost(`https://${host}`, `https://${prodHost}`), 'прод')
+      return checkTargets(this, page, (host) => sameHost(`https://${host}`, `https://${prodHost}`), 'prod')
     }
     return []
   },
@@ -42,14 +42,14 @@ export default {
 // (foo.patest.website.evil.com) is a different host entirely.
 function checkTargets(rule, page, isForeign, label) {
   const out = []
-  const expected = label === 'дев' ? 'боевой домен' : 'дев-домен или относительный путь'
+  const expected = label === 'dev' ? 'the production domain' : 'the dev domain or a relative path'
 
   for (const l of page.links || []) {
     if (!l.href) continue
     const host = hostOf(l.href)
     if (host && isForeign(host)) {
       out.push(finding(rule, page, {
-        link: l, found: `ссылка на ${label}: ${l.href}`, expected,
+        link: l, found: `link to ${label}: ${l.href}`, expected,
       }))
     }
   }
@@ -58,7 +58,7 @@ function checkTargets(rule, page, isForeign, label) {
     const host = hostOf(i.src)
     if (host && isForeign(host)) {
       out.push(finding(rule, page, {
-        selector: i.selector, found: `картинка с ${label}а: ${i.src}`, expected,
+        selector: i.selector, found: `image from ${label}: ${i.src}`, expected,
       }))
     }
   }

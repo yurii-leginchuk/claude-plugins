@@ -31,12 +31,12 @@ const inRoot = (href, sec) => {
 const cache = new WeakMap()
 
 function places(site, sec, hub) {
-  const at = { меню: new Map(), футер: new Map(), hub: new Map() }
+  const at = { menu: new Map(), footer: new Map(), hub: new Map() }
   for (const p of site.pages) {
     const isHub = hub && pathKey(p.url) === pathKey(hub)
     for (const l of p.links || []) {
       if (!l.internal || !l.href || !inRoot(l.href, sec)) continue
-      const place = ['header', 'nav'].includes(l.region) ? 'меню' : l.region === 'footer' ? 'футер'
+      const place = ['header', 'nav'].includes(l.region) ? 'menu' : l.region === 'footer' ? 'footer'
         : isHub && l.region === 'main' ? 'hub' : null
       if (place && !at[place].has(pathKey(l.href))) at[place].set(pathKey(l.href), { text: l.text, link: l })
     }
@@ -50,28 +50,28 @@ function analyse(site) {
   const crawled = new Set(site.pages.map(p => pathKey(p.url)))
   const home = site.pages.find(p => pathKey(p.url) === '/') || site.pages[0]
   const result = []
-  for (const [kind, sec] of [['услуга', profile.services], ['локация', profile.locations]]) {
+  for (const [kind, sec] of [['service', profile.services], ['location', profile.locations]]) {
     const at = places(site, sec, sec.hub)
     const anchor = (sec.hub && site.pages.find(p => pathKey(p.url) === pathKey(sec.hub))) || home
     const hub = sec.hub ? pathKey(sec.hub) : null
-    // "в меню / в футере / на странице /services" and "в меню / в футер / на страницу …"
-    const label = (place) => place === 'hub' ? hub && `на странице ${hub}` : place === 'футер' ? 'в футере' : 'в меню'
-    const into = (place) => place === 'hub' ? `на страницу ${hub}` : place === 'футер' ? 'в футер' : 'в меню'
+    // "in the menu / in the footer / on page /services" and "to the menu / to the footer / to page …"
+    const label = (place) => place === 'hub' ? hub && `on page ${hub}` : place === 'footer' ? 'in the footer' : 'in the menu'
+    const into = (place) => place === 'hub' ? `to page ${hub}` : place === 'footer' ? 'to the footer' : 'to the menu'
     const known = new Map(sec.items.filter(it => it.path).map(it => [it.path, it.name]))
     for (const m of Object.values(at)) for (const [path, v] of m) if (!known.has(path)) known.set(path, v.text)
     for (const [path, name] of known) {
       const present = Object.keys(at).filter(pl => at[pl].has(path))
-      const shown = at.меню.get(path)?.text || at.футер.get(path)?.text || name
+      const shown = at.menu.get(path)?.text || at.footer.get(path)?.text || name
       for (const place of Object.keys(at)) {
         if (at[place].size < MIN_LIST || at[place].has(path) || !label(place)) continue
-        const where = present.length ? `есть ${present.map(label).join(', ')}` : 'страница есть на сайте'
+        const where = present.length ? `is ${present.map(label).join(', ')}` : 'the page exists on the site'
         result.push({
           page: anchor,
           props: {
-            selector: place === 'футер' ? 'footer' : place === 'меню' ? 'nav' : 'main',
-            zone: place === 'футер' ? 'footer' : place === 'меню' ? 'nav' : 'main',
-            found: `${kind} «${shown}» (${path}) ${where}, но нет ${label(place)}`,
-            expected: `добавить ссылку «${shown}» → ${path} ${into(place)}`,
+            selector: place === 'footer' ? 'footer' : place === 'menu' ? 'nav' : 'main',
+            zone: place === 'footer' ? 'footer' : place === 'menu' ? 'nav' : 'main',
+            found: `${kind} “${shown}” (${path}) ${where}, but not ${label(place)}`,
+            expected: `add link “${shown}” → ${path} ${into(place)}`,
           },
         })
       }
@@ -87,8 +87,8 @@ function analyse(site) {
           page: anchor,
           props: {
             link: v.link, severity: 'major',
-            found: `ссылка «${v.text}» ${label(place)} ведёт на ${path}, которой нет в sitemap`,
-            expected: 'ссылка на действующую страницу раздела или страница — в sitemap',
+            found: `link “${v.text}” ${label(place)} points to ${path}, which is not in the sitemap`,
+            expected: 'link to a live page of the section, or add the page to the sitemap',
           },
         })
       }
@@ -100,7 +100,7 @@ function analyse(site) {
 
 export default {
   id: 'E16',
-  title: 'Списки услуг и локаций не совпадают между меню, футером и разделом',
+  title: 'Service and location lists differ between the menu, the footer and the section',
   // A service the menu offers but the footer or the services page leaves
   // out is read straight off the markup and loses visitors: major, certain.
   severity: 'major',
@@ -118,8 +118,8 @@ export default {
         if (site.linkStatus?.get(l.href)?.ok === false) continue
         out.push(finding(this, page, {
           link: l, severity: 'major',
-          found: `пост ссылается на услугу вне sitemap: ${pathKey(l.href)}`,
-          expected: 'ссылка на действующую страницу услуги',
+          found: `post links to a service outside the sitemap: ${pathKey(l.href)}`,
+          expected: 'link to a live service page',
         }))
       }
     }

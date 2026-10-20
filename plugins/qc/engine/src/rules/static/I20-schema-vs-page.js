@@ -49,7 +49,7 @@ function parseBlocks(page) {
 
 export default {
   id: 'I20',
-  title: 'Schema не совпадает со страницей или фактами',
+  title: 'Schema does not match the page or the facts',
   severity: 'major',
   engine: 'static',
   check(page, site) {
@@ -78,18 +78,18 @@ export default {
         if (locs.length) {
           const match = locs.find(l => addressNorm(streetOf(l.address)).includes(s) || s.includes(addressNorm(streetOf(l.address))))
           if (pageLoc && match !== pageLoc) {
-            push({ found: `streetAddress в schema «${street}» не адрес этой локации`, expected: pageLoc.address })
+            push({ found: `streetAddress in schema “${street}” is not the address of this location`, expected: pageLoc.address })
           } else if (!match) {
-            push({ found: `streetAddress в schema «${street}» не из фактов`, expected: locs.map(l => l.address).join(' / ') })
+            push({ found: `streetAddress in schema “${street}” is not in the facts`, expected: locs.map(l => l.address).join(' / ') })
           }
         } else if (s.trim().split(' ').length >= 2 && !text.includes(s)) {
-          push({ confidence: 'heuristic', severity: 'minor', found: `адрес из schema «${street}» не встречается на странице`, expected: 'тот же адрес, что на странице' })
+          push({ confidence: 'heuristic', severity: 'minor', found: `address from schema “${street}” does not appear on the page`, expected: 'the same address as on the page' })
         }
       }
       if (typeof n.telephone === 'string' && !facts?.phones?.length) {
         const key = phoneKey(n.telephone)
         if (key && !telKeys.has(key) && !digits.includes(key.slice(1))) {
-          push({ confidence: 'heuristic', severity: 'minor', found: `телефон из schema ${n.telephone} не встречается на странице`, expected: 'тот же номер, что на странице' })
+          push({ confidence: 'heuristic', severity: 'minor', found: `phone from schema ${n.telephone} does not appear on the page`, expected: 'the same number as on the page' })
         }
       }
       const types = [].concat(n['@type'] || []).join(' ')
@@ -99,7 +99,7 @@ export default {
         const h = hostOf(v)
         if (!h || sameSite(h, hostOf(page.url)) || NOT_A_SITE.test(h)) continue
         if (site?.prodHost && sameSite(h, site.prodHost)) continue
-        push({ confidence: 'heuristic', found: `schema ссылается на чужой сайт: ${h}`, expected: 'адреса этого сайта' })
+        push({ confidence: 'heuristic', found: `schema links to another site: ${h}`, expected: 'URLs of this site' })
       }
     }
     return out

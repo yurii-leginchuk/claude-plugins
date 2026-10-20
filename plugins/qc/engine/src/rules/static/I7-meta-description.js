@@ -3,7 +3,7 @@ import { isThankYouUrl } from '../../lib/kinds.js'
 
 export default {
   id: 'I7',
-  title: 'Meta description страницы',
+  title: 'Page meta description',
   severity: 'minor',
   engine: 'static',
   check(page, site) {
@@ -12,15 +12,15 @@ export default {
 
     if (!description) {
       return [finding(this, page, {
-        selector: 'head', found: 'description отсутствует', expected: 'уникальный description',
+        selector: 'head', found: 'description missing', expected: 'a unique description',
       })]
     }
     const shared = isThankYouUrl(page.url) ? [] : (site?.index?.descriptions?.get(description) || []).filter(u => !isThankYouUrl(u))
     if (shared.length > 1) {
       return [finding(this, page, {
         selector: 'meta[name=description]',
-        found: `дубль description на ${shared.length} страницах`,
-        expected: 'уникальный description',
+        found: `duplicate description on ${shared.length} pages`,
+        expected: 'a unique description',
       })]
     }
     return []

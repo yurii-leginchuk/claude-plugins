@@ -33,11 +33,11 @@ const ADDRESS = /(?<![\d-])\b\d{2,6}\s+(?:[NSEW]\.?\s+)?(?:(?:[A-Z][a-z'-]+|\d+(
 const YEARLIKE = /^(199\d|20[0-3]\d)\s/
 
 const SEARCH_KIND = (raw) => /\/search/.test(new URL(raw).pathname) && !/\/maps/.test(new URL(raw).pathname)
-  ? 'поиск Google' : 'адрес на карте'
+  ? 'a Google search' : 'an address on the map'
 
 export default {
   id: 'E9',
-  title: 'Ссылки на Google Business Profile и карты',
+  title: 'Google Business Profile and map links',
   severity: 'major',
   engine: 'static',
   check(page, site) {
@@ -67,7 +67,7 @@ function locations(facts, resolved) {
 
 const label = (loc) => loc.name || loc.address || loc.url
 const expectedFor = (ctx) => ctx.pageLoc ? ctx.pageLoc.url
-  : ctx.locs.length === 1 ? ctx.locs[0].url : 'ссылка на профиль GBP нужной локации'
+  : ctx.locs.length === 1 ? ctx.locs[0].url : 'link to the GBP profile of the right location'
 
 // Compares a profile against the facts. A facts entry whose short link could
 // not be resolved (network) leaves its CID unknown, so mismatches are then
@@ -83,12 +83,12 @@ function checkKey(ctx, key, selector, what) {
     push(ctx, {
       selector, confidence,
       found: match
-        ? `${what} на странице локации «${label(ctx.pageLoc)}» ведёт на профиль другой локации «${label(match)}»`
-        : `${what} на странице локации «${label(ctx.pageLoc)}» ведёт на профиль не из фактов${name}`,
+        ? `${what} on the location page “${label(ctx.pageLoc)}” points to the profile of another location “${label(match)}”`
+        : `${what} on the location page “${label(ctx.pageLoc)}” points to a profile not in the facts${name}`,
       expected: ctx.pageLoc.url,
     })
   } else if (!match) {
-    push(ctx, { selector, confidence, found: `${what} ведёт на профиль не из фактов${name}`, expected: expectedFor(ctx) })
+    push(ctx, { selector, confidence, found: `${what} points to a profile not in the facts${name}`, expected: expectedFor(ctx) })
   }
 }
 
@@ -100,7 +100,7 @@ function links(ctx) {
     if (kind === 'search') {
       push(ctx, {
         link: l,
-        found: `ссылка ведёт на ${SEARCH_KIND(l.raw)}, а не на профиль GBP: ${l.raw}`,
+        found: `link points to ${SEARCH_KIND(l.raw)}, not to the GBP profile: ${l.raw}`,
         expected: expectedFor(ctx),
       })
       continue
@@ -108,15 +108,15 @@ function links(ctx) {
     if (kind === 'legacy') {
       push(ctx, {
         link: l, severity: 'minor',
-        found: `ссылка старого формата g.page, открывается через редирект: ${l.raw}`,
-        expected: 'прямая ссылка на профиль (maps.app.goo.gl/… из «Поделиться» в GBP)',
+        found: `old-format g.page link, opens through a redirect: ${l.raw}`,
+        expected: 'direct link to the profile (maps.app.goo.gl/… from “Share” in GBP)',
       })
     }
     const r = ctx.resolved.get(l.href)
     if ((kind === 'short' || kind === 'legacy') && r && r.status >= 400) {
       push(ctx, {
         link: l, severity: 'critical',
-        found: `ссылка на GBP не открывается (HTTP ${r.status}): ${l.raw}`, expected: expectedFor(ctx),
+        found: `GBP link does not open (HTTP ${r.status}): ${l.raw}`, expected: expectedFor(ctx),
       })
       continue
     }
@@ -125,7 +125,7 @@ function links(ctx) {
       if (k === 'search') {
         push(ctx, {
           link: l,
-          found: `короткая ссылка ведёт на ${SEARCH_KIND(r.finalUrl)}, а не на профиль GBP: ${l.raw}`,
+          found: `short link points to ${SEARCH_KIND(r.finalUrl)}, not to the GBP profile: ${l.raw}`,
           expected: expectedFor(ctx),
         })
         continue
@@ -133,14 +133,14 @@ function links(ctx) {
     }
     const key = linkKey(l.raw, l.href, ctx.resolved)
     ctx.resolvedName = r?.name ? ` (${r.name})` : ''
-    checkKey(ctx, key, l.selector, `ссылка ${l.raw}`)
+    checkKey(ctx, key, l.selector, `link ${l.raw}`)
   }
   ctx.resolvedName = ''
 }
 
 function embeds(ctx) {
   for (const src of ctx.page.mapEmbeds || []) {
-    checkKey(ctx, embedKey(src), 'iframe[src*="google"]', 'карта (iframe)')
+    checkKey(ctx, embedKey(src), 'iframe[src*="google"]', 'map (iframe)')
   }
 }
 
@@ -173,7 +173,7 @@ function addresses(ctx) {
       if (isProfileLink(x.l) || !x.l.href) continue
       push(ctx, {
         link: x.l, confidence,
-        found: `адрес «${street}» ведёт не на GBP: ${x.l.raw}`,
+        found: `address “${street}” does not point to GBP: ${x.l.raw}`,
         expected: loc?.url || expectedFor(ctx),
       })
     }
@@ -183,10 +183,10 @@ function addresses(ctx) {
       const href = loc?.url || linked.find(x => isProfileLink(x.l))?.l.raw
       push(ctx, {
         selector: 'body', confidence,
-        found: `адрес «${street}» не кликабельный`,
-        occurrences: `${inText - linked.length} из ${inText} упоминаний без ссылки`,
+        found: `address “${street}” is not clickable`,
+        occurrences: `${inText - linked.length} of ${inText} mentions without a link`,
         where: whereInText(ctx.page, street),
-        expected: href ? `обернуть адрес в <a href="${href}">${street}…</a>` : expectedFor(ctx),
+        expected: href ? `wrap the address in <a href="${href}">${street}…</a>` : expectedFor(ctx),
         ...(toProfile ? { severity: 'minor' } : {}),
       })
     }
@@ -229,8 +229,8 @@ function consistency(ctx, site) {
     if (key === topKey) continue
     push(ctx, {
       link: l, confidence: 'heuristic',
-      found: `«${l.text}» ведёт на другой профиль GBP, чем на ${topPages.size} других стр.: ${l.raw}`,
-      expected: 'одна ссылка на профиль для одной локации по всему сайту',
+      found: `“${l.text}” points to a different GBP profile than on ${topPages.size} other pages: ${l.raw}`,
+      expected: 'one profile link per location across the whole site',
     })
   }
 }

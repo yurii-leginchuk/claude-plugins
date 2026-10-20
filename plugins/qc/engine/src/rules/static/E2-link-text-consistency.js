@@ -52,7 +52,7 @@ function textIndex(site) {
 
 export default {
   id: 'E2',
-  title: 'Одинаковый текст ссылки ведёт в разные места',
+  title: 'Same link text points to different places',
   severity: 'major',
   engine: 'static',
   confidence: 'heuristic',
@@ -75,8 +75,8 @@ export default {
       seen.add(`${t}|${target}`)
       out.push(finding(this, page, {
         link: l,
-        found: `«${l.text}» ведёт на ${target}, а на ${topPages.size} других стр. — на ${topTarget}`,
-        expected: `${topTarget}, если эта ссылка не должна отличаться`,
+        found: `“${l.text}” points to ${target}, while on ${topPages.size} other pages it points to ${topTarget}`,
+        expected: `${topTarget}, unless this link is meant to differ`,
       }))
     }
     return out

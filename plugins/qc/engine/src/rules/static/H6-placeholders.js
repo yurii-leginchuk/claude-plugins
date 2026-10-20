@@ -9,7 +9,7 @@ const TEXT = /\[[^\]]{0,30}placeholder[^\]]{0,30}\]|\blink placeholder\b|\binser
 
 export default {
   id: 'H6',
-  title: 'Заглушка вместо контента',
+  title: 'Placeholder instead of content',
   severity: 'major',
   engine: 'static',
   check(page, _site) {
@@ -21,16 +21,16 @@ export default {
       const file = String(i.src || '').split('/').pop().split('?')[0]
       if (IMAGE.test(file)) {
         push(`img|${file}`, {
-          selector: i.selector, found: `картинка-заглушка: файл ${file}`,
-          expected: 'настоящее изображение или убрать блок',
+          selector: i.selector, found: `placeholder image: file ${file}`,
+          expected: 'a real image, or remove the block',
         })
       } else if (IMAGE.test(i.alt || '')) {
         // Only the alt says so: often a generated alt describing a decorative
         // shape («Ellipse-1.svg» → «gray circular placeholder icon»).
         push(`alt|${i.alt}`, {
           selector: i.selector, severity: 'minor', confidence: 'heuristic',
-          found: `alt описывает заглушку: «${i.alt}»`,
-          expected: 'если это настоящая заглушка — заменить картинку; если декоративная фигура — alt=""',
+          found: `alt describes a placeholder: “${i.alt}”`,
+          expected: 'if it is a real placeholder, replace the image; if it is a decorative shape, use alt=""',
         })
       }
     }
@@ -38,18 +38,18 @@ export default {
     for (const m of text.matchAll(TEXT)) {
       push(`text|${m[0].toLowerCase()}`, {
         selector: 'body', severity: 'critical', where: whereInText(page, m[0]),
-        found: `заглушка в тексте: «${m[0]}»`, expected: 'настоящий текст или ссылка',
+        found: `placeholder in text: “${m[0]}”`, expected: 'real text or a link',
       })
     }
     for (const field of ['title', 'metaDescription']) {
       const m = String(page[field] || '').match(new RegExp(TEXT.source, 'i'))
-      if (m) push(`${field}|${m[0]}`, { selector: 'head', found: `заглушка в ${field === 'title' ? 'title' : 'meta description'}: «${m[0]}»`, expected: 'настоящий текст' })
+      if (m) push(`${field}|${m[0]}`, { selector: 'head', found: `placeholder in ${field === 'title' ? 'title' : 'meta description'}: “${m[0]}”`, expected: 'real text' })
     }
     for (const raw of page.jsonLdRaw || []) {
       for (const m of String(raw).matchAll(new RegExp(TEXT.source, 'gi'))) {
         push(`schema|${m[0].toLowerCase()}`, {
-          selector: 'script[type="application/ld+json"]', found: `заглушка в schema: «${m[0]}»`,
-          expected: 'настоящее значение (адрес, телефон, название) или убрать поле',
+          selector: 'script[type="application/ld+json"]', found: `placeholder in schema: “${m[0]}”`,
+          expected: 'a real value (address, phone, name) or remove the field',
         })
       }
     }

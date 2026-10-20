@@ -28,7 +28,7 @@ function share(site) {
 
 export default {
   id: 'I10',
-  title: 'Хлебные крошки',
+  title: 'Breadcrumbs',
   severity: 'minor',
   engine: 'static',
   confidence: 'heuristic',
@@ -43,8 +43,8 @@ export default {
       if (s.total >= MIN_PAGES && s.withCrumbs / s.total >= SHARE && !isLandingPath(path) && !isThankYouUrl(page.url)) {
         out.push(finding(this, page, {
           selector: null,
-          found: `нет хлебных крошек, хотя они есть на ${s.withCrumbs} из ${s.total} страниц`,
-          expected: 'крошки как на остальных страницах',
+          found: `no breadcrumbs, though ${s.withCrumbs} of ${s.total} pages have them`,
+          expected: 'breadcrumbs as on the other pages',
         }))
       }
       return out
@@ -58,8 +58,8 @@ export default {
       if (!p || p === '/' || p === path || parents.has(p.split('?')[0])) continue
       out.push(finding(this, page, {
         selector: '[class*="breadcrumb"]',
-        found: `крошка «${item.text}» ведёт на ${p}, а страница лежит в ${[...parents].pop()}/`,
-        expected: `родительские разделы из URL: ${[...parents].join(' › ')}`,
+        found: `breadcrumb “${item.text}” points to ${p}, but the page sits in ${[...parents].pop()}/`,
+        expected: `parent sections from the URL: ${[...parents].join(' › ')}`,
       }))
     }
     return out

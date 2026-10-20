@@ -70,7 +70,7 @@ test('E2 flags the one page whose "Verify Insurance" goes elsewhere', () => {
   const f = E2.check(pages[5], site)
   assert.equal(f.length, 1)
   assert.equal(f[0].confidence, 'heuristic')
-  assert.match(f[0].found, /«Verify Insurance» ведёт на \/contact, а на 5 других стр\. — на \/verify-insurance/)
+  assert.match(f[0].found, /“Verify Insurance” points to \/contact, while on 5 other pages it points to \/verify-insurance/)
 })
 
 // --- F12 ----------------------------------------------------------------------
@@ -80,8 +80,8 @@ test('F12 flags a same-page anchor with no target and a cross-page one', () => {
   const p = page('/about/', { ids: ['team'], links: [link('#team'), link('#contact', 'Contact'), link('/#contact'), link('/#missing'), link('#top'), link('#elementor-action%3Aaction%3Dpopup')] })
   const f = F12.check(p, { pages: [home, p] })
   assert.deepEqual(f.map(x => x.found), [
-    'якорь #contact: на странице нет элемента с таким id',
-    'ссылка /#missing: на странице / нет элемента #missing',
+    'anchor #contact: the page has no element with this id',
+    'link /#missing: page / has no element #missing',
   ])
 })
 
@@ -99,7 +99,7 @@ test('H5 flags a stale copyright and a past year in a non-post title', () => {
   const p = page('/', { text: 'Footer © 2019-2025 Ex Inc.', title: 'Best Rehab in Texas 2025' })
   const f = H5.check(p, { now })
   assert.equal(f.length, 2)
-  assert.equal(f[0].found, '© 2025 в копирайте')
+  assert.equal(f[0].found, '© 2025 in the copyright')
   assert.equal(f[1].confidence, 'heuristic')
   assert.deepEqual(H5.check(page('/', { text: '© 2026 Ex' }), { now }), [])
   assert.equal(H5.check(page('/p/', { title: 'Recap 2024', isArticle: true }), { now }).length, 0)
@@ -115,7 +115,7 @@ test('H10 flags the page whose footer kept old copy', () => {
   pages.push(page('/old/', { footerText: 'Contact 12 Old Street Portland Insurance' }))
   const f = H10.check(pages[5], { pages })
   assert.equal(f.length, 1)
-  assert.match(f[0].found, /Футер отличается от 5 других страниц \(нет: 343, forest, ave, admissions; лишнее: 12, old, street\)/)
+  assert.match(f[0].found, /Footer differs from 5 other pages \(missing: 343, forest, ave, admissions; extra: 12, old, street\)/)
   assert.deepEqual(H10.check(pages[0], { pages }), [])
 })
 
@@ -128,7 +128,7 @@ test('E13 flags a visible phone with no tel: link, but not a fax', () => {
   })
   const f = E13.check(p, { pages: [p] })
   assert.equal(f.length, 1)
-  assert.equal(f[0].occurrences, '1 из 2')
+  assert.equal(f[0].occurrences, '1 of 2')
 })
 
 test('E13 flags an unlinked reviewer byline only on a site with author pages', () => {
@@ -147,8 +147,8 @@ test('K14 flags a fresh post missing from the listing and a wrong order', () => 
   const posts = [post('newest', '2026-10-01'), post('mid', '2026-09-01'), post('old', '2026-08-01'), post('oldest', '2026-07-01')]
   const listing = page('/blog/', { bodyClass: 'blog', links: [link('/blog/old/'), link('/blog/mid/'), link('/blog/oldest/')] })
   const f = K14.check(listing, { pages: [listing, ...posts] })
-  assert.match(f[0].found, /свежий пост не попал в листинг: «newest»/)
-  assert.match(f.at(-1).found, /порядок постов не по дате: «mid»/)
+  assert.match(f[0].found, /recent post is missing from the listing: “newest”/)
+  assert.match(f.at(-1).found, /posts are not in date order: “mid”/)
 })
 
 // --- K13 ----------------------------------------------------------------------
@@ -175,13 +175,13 @@ test('K13 compares a dev page with its live page: menu, footer, schema, headings
   }
   const f = K13.check(dev, { env: 'dev', pages: [dev], prod })
   const found = f.map(x => x.found)
-  assert.ok(found.includes('страница есть на лайве, на деве 404: /old-page'))
-  assert.ok(found.includes('меню: пункт «Admissions» (/admissions) есть на лайве, нет на деве'))
-  assert.ok(found.includes('футер: пункт «Careers» (/careers) есть на лайве, нет на деве'))
-  assert.ok(found.includes('меню: «Programs» ведёт на /our-programs, на лайве — на /programs'))
-  assert.ok(found.includes('schema MedicalClinic есть на лайве, нет на деве'))
-  assert.ok(found.includes('schema LocalBusiness есть на лайве, нет на деве'))
-  assert.ok(found.includes('заголовок H2 «Our Team» есть на лайве, нет на деве'))
+  assert.ok(found.includes('page exists on live, dev returns 404: /old-page'))
+  assert.ok(found.includes('menu: item “Admissions” (/admissions) is on live, missing on dev'))
+  assert.ok(found.includes('footer: item “Careers” (/careers) is on live, missing on dev'))
+  assert.ok(found.includes('menu: “Programs” points to /our-programs, on live to /programs'))
+  assert.ok(found.includes('schema MedicalClinic is on live, missing on dev'))
+  assert.ok(found.includes('schema LocalBusiness is on live, missing on dev'))
+  assert.ok(found.includes('heading H2 “Our Team” is on live, missing on dev'))
   assert.equal(f.find(x => /Admissions/.test(x.found)).confidence, 'high')
   assert.deepEqual(K13.check(dev, { env: 'prod', pages: [dev], prod }), [])
 })
@@ -204,13 +204,13 @@ test('E14 flags a sitemap page nothing links to, but not posts or the homepage',
 test('E15 flags a self-link in the body, a linked date and exit links on a PPC landing page', () => {
   const p = page('/services/detox/', { links: [link('/services/detox/', 'Detox'), link('/services/detox/#faq', 'FAQ'), link('/2026/05/01/', 'May 1, 2026'), link('/services/detox/', 'Home', { region: 'nav' })] })
   assert.deepEqual(E15.check(p).map(f => f.found), [
-    'ссылка на эту же страницу: «Detox»',
-    `дата кликабельна: «May 1, 2026» → ${O}/2026/05/01/`,
+    'link to the same page: “Detox”',
+    `date is clickable: “May 1, 2026” → ${O}/2026/05/01/`,
   ])
   const lp = page('/lp/detox/', { links: [link('/about/', 'About', { region: 'header' }), link('tel:+17185550000', 'Call'), link('/privacy-policy/', 'Privacy'), link('/lp/thanks/', 'Thanks'), link('https://facebook.com/ex', 'FB')] })
   assert.deepEqual(E15.check(lp).map(f => f.found), [
-    `ссылка уводит с PPC-лендинга: ${O}/about/`,
-    'ссылка уводит с PPC-лендинга: https://facebook.com/ex',
+    `link leads away from the PPC landing page: ${O}/about/`,
+    'link leads away from the PPC landing page: https://facebook.com/ex',
   ])
 })
 
@@ -225,7 +225,7 @@ test('I20 with facts: the schema address of a location page must be that locatio
   assert.deepEqual(I20.check(page('/portland/', { jsonLdRaw: [ld] }), { facts: f0 }), [])
   const f = I20.check(page('/bangor/', { jsonLdRaw: [ld] }), { facts: f0 })
   assert.equal(f.length, 1)
-  assert.match(f[0].found, /не адрес этой локации/)
+  assert.match(f[0].found, /is not the address of this location/)
 })
 
 test('I20 without facts: schema data absent from the page, and a URL of another site', () => {
@@ -233,9 +233,9 @@ test('I20 without facts: schema data absent from the page, and a URL of another 
   const p = page('/', { text: 'Visit 343 Forest Ave. Call (718) 969-0845', jsonLdRaw: [ld] })
   const f = I20.check(p, {})
   assert.deepEqual(f.map(x => x.found).sort(), [
-    'schema ссылается на чужой сайт: floridahelps.com',
-    'адрес из schema «1 Ocean Drive» не встречается на странице',
-    'телефон из schema (305) 555-0100 не встречается на странице',
+    'schema links to another site: floridahelps.com',
+    'address from schema “1 Ocean Drive” does not appear on the page',
+    'phone from schema (305) 555-0100 does not appear on the page',
   ].sort())
   assert.ok(f.every(x => x.confidence === 'heuristic'))
 })
@@ -250,7 +250,7 @@ test('I10 flags missing crumbs on a site that has them and a crumb outside the U
   const wrong = page('/programs/detox/', { breadcrumbs: crumbs([['Home', '/'], ['Services', '/services/']]) })
   const f = I10.check(wrong, { pages: [...pages, wrong] })
   assert.equal(f.length, 1)
-  assert.match(f[0].found, /«Services» ведёт на \/services, а страница лежит в \/programs\//)
+  assert.match(f[0].found, /“Services” points to \/services, but the page sits in \/programs\//)
   const right = page('/programs/detox/', { breadcrumbs: crumbs([['Home', '/'], ['Programs', '/programs/']]) })
   assert.deepEqual(I10.check(right, { pages: [...pages, right] }), [])
 })
@@ -261,7 +261,7 @@ test('H12 flags another state on a page about one state', () => {
   const p = page('/', { title: 'Texas Helps', text: 'Rehab across Texas. Call Connecticut admissions. West Virginia too.' })
   const f = H12.check(p, {})
   assert.deepEqual(f.map(x => x.found).sort(), [
-    'на странице про Texas упоминается Connecticut', 'на странице про Texas упоминается West Virginia',
+    'page about Texas mentions Connecticut', 'page about Texas mentions West Virginia',
   ])
   assert.deepEqual(H12.check(page('/', { text: 'Connecticut' }), {}), [], 'no own state, nothing to compare')
   const withFacts = H12.check(page('/', { text: 'Maine and Texas' }), { facts: facts({ states: ['Maine'], gbp: [{ url: 'https://maps.app.goo.gl/a', address: '1 Main St, Austin, TX 78701' }] }) })
@@ -273,8 +273,8 @@ test('findings say where they are: link zone, heading and text; copy snippet; a 
     <main><h2>Our Office</h2><p>Visit us at 11 Park Place, New York today.</p></main></body>` })
   assert.equal(p.links[0].section, null)
   const f = E9.check(p, { pages: [p], gbp: new Map() })
-  const bare = f.find(x => /не кликабельный/.test(x.found))
-  assert.match(bare.where, /^контент · под заголовком «Our Office» · …/)
+  const bare = f.find(x => /is not clickable/.test(x.found))
+  assert.match(bare.where, /^content · under heading “Our Office” · …/)
   assert.match(bare.where, /Visit us at 11 Park Place/)
-  assert.equal(bare.expected, 'обернуть адрес в <a href="https://maps.app.goo.gl/x">11 Park Place…</a>')
+  assert.equal(bare.expected, 'wrap the address in <a href="https://maps.app.goo.gl/x">11 Park Place…</a>')
 })

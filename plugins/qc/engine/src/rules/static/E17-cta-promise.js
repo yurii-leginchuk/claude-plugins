@@ -32,7 +32,7 @@ function expectation(text) {
 
 export default {
   id: 'E17',
-  title: 'Ссылка или текст обещают не то, что делают',
+  title: 'Link or text promises something it does not do',
   severity: 'minor',
   engine: 'static',
   confidence: 'heuristic',
@@ -54,32 +54,32 @@ export default {
       const raw = l.raw || ''
       if (kind === 'call' && l.protocol !== 'tel:') {
         push(`call|${text}|${raw}`, {
-          link: l, found: `«${text}» не звонит, а ведёт на ${raw}`,
-          expected: 'href="tel:+1…" с номером сайта',
+          link: l, found: `“${text}” does not call, it points to ${raw}`,
+          expected: 'href="tel:+1…" with the site phone number',
         })
       } else if (kind === 'email' && l.protocol !== 'mailto:' && !/contact|\/cdn-cgi\/l\/email-protection/i.test(raw)) {
         // Cloudflare's email obfuscation: a mailto: once its script runs.
         push(`email|${text}|${raw}`, {
-          link: l, found: `«${text}» не открывает почту, а ведёт на ${raw}`,
-          expected: 'href="mailto:…" с адресом сайта',
+          link: l, found: `“${text}” does not open email, it points to ${raw}`,
+          expected: 'href="mailto:…" with the site email address',
         })
       } else if (kind === 'book' && !isMenu(l) && l.internal && l.href && !BOOKING_HOSTS.test(raw)) {
         const target = byPath.get(pathKey(l.href))
         if (target && !(target.forms || []).length && !BOOKING_HOSTS.test(target.text || '')) {
           push(`book|${text}|${pathKey(l.href)}`, {
-            link: l, found: `«${text}» ведёт на ${pathKey(l.href)}, а там нет формы записи`,
-            expected: 'ссылка на страницу с формой или виджетом записи',
+            link: l, found: `“${text}” points to ${pathKey(l.href)}, but there is no booking form there`,
+            expected: 'link to a page with a booking form or widget',
           })
         }
       } else if (kind === 'map' && l.href && !classifyGoogleLink(raw) && !MAP_HOSTS.test(raw)) {
         push(`map|${text}|${raw}`, {
-          link: l, found: `«${text}» не открывает карту, а ведёт на ${raw}`,
-          expected: 'ссылка на профиль GBP (maps.app.goo.gl/…)',
+          link: l, found: `“${text}” does not open a map, it points to ${raw}`,
+          expected: 'link to the GBP profile (maps.app.goo.gl/…)',
         })
       } else if (kind === 'file' && l.href && !FILE.test(raw) && !/\/wp-content\/uploads\//.test(raw)) {
         push(`file|${text}|${raw}`, {
-          link: l, found: `«${text}» обещает файл, а ведёт на страницу ${raw}`,
-          expected: 'прямая ссылка на файл (.pdf и т. п.)',
+          link: l, found: `“${text}” promises a file, but points to page ${raw}`,
+          expected: 'direct link to the file (.pdf etc.)',
         })
       }
     }
@@ -94,8 +94,8 @@ export default {
         if (names.some(n => sameName(what, n) || n.toLowerCase().includes(what.toLowerCase()))) continue
         push(`promise|${what}`, {
           selector: 'body', where: whereInText(page, m[0]),
-          found: `текст отсылает к странице «${what}», такой страницы нет`,
-          expected: `создать страницу «${what}» или убрать отсылку`,
+          found: `text refers to a “${what}” page, but no such page exists`,
+          expected: `create the “${what}” page or remove the reference`,
         })
       }
     }

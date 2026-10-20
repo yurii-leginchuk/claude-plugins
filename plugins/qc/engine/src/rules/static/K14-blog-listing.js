@@ -24,7 +24,7 @@ const time = (p) => Date.parse(p.published) || 0
 
 export default {
   id: 'K14',
-  title: 'Листинг блога: пропущенные посты и порядок',
+  title: 'Blog listing: missing posts and order',
   severity: 'major',
   engine: 'static',
   check(page, site) {
@@ -45,16 +45,16 @@ export default {
       if (order.includes(p)) continue
       out.push(finding(this, page, {
         selector: null,
-        found: `свежий пост не попал в листинг: «${p.title || p.url}» (${p.published.slice(0, 10)})`,
-        expected: 'новые посты первыми в листинге',
+        found: `recent post is missing from the listing: “${p.title || p.url}” (${p.published.slice(0, 10)})`,
+        expected: 'newest posts first in the listing',
       }))
     }
     for (let i = 1; i < order.length; i++) {
       if (time(order[i]) <= time(order[i - 1])) continue
       out.push(finding(this, page, {
         selector: null, severity: 'minor', confidence: 'heuristic',
-        found: `порядок постов не по дате: «${order[i].title}» (${order[i].published.slice(0, 10)}) после «${order[i - 1].title}» (${order[i - 1].published.slice(0, 10)})`,
-        expected: 'от новых к старым',
+        found: `posts are not in date order: “${order[i].title}” (${order[i].published.slice(0, 10)}) after “${order[i - 1].title}” (${order[i - 1].published.slice(0, 10)})`,
+        expected: 'newest to oldest',
       }))
       break
     }

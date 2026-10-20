@@ -23,7 +23,7 @@ function snippet(text, index, length) {
 
 export default {
   id: 'H9',
-  title: 'Упоминание убранной услуги, локации или старых данных',
+  title: 'Mention of a removed service, location or old data',
   severity: 'major',
   engine: 'static',
   check(page, site) {
@@ -31,7 +31,7 @@ export default {
     if (!facts?.banned?.length || ignoredByFacts(facts, page.url)) return []
 
     const places = [
-      ['текст', 'body', page.text],
+      ['text', 'body', page.text],
       ['title', 'title', page.title],
       ['description', 'meta[name=description]', page.metaDescription],
       ['schema', 'script[type="application/ld+json"]', (page.jsonLdRaw || []).join('\n')],
@@ -50,8 +50,8 @@ export default {
           // rule + selector + found, and a term in the shared menu appears a
           // different number of times on every page -- with the count inside
           // `found`, one menu item became one "distinct" defect per page.
-          found: `«${term}» в ${where}: ${snippet(String(text), first.index, first[0].length)}`,
-          expected: note ? `убрать: ${note}` : 'убрать упоминание',
+          found: `“${term}” in ${where}: ${snippet(String(text), first.index, first[0].length)}`,
+          expected: note ? `remove: ${note}` : 'remove the mention',
           occurrences: hits.length,
         }))
       }

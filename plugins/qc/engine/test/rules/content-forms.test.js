@@ -151,7 +151,7 @@ test('S1 accepts valid JSON-LD', () => {
 test('H1 does not fire on Lorem ipsum that lives only inside inline script/style/template source', () => {
   const page = parsePage({
     url: 'https://ex.com/a',
-    html: `<html><body><h1>Уборка офисов</h1><p>Профессиональная уборка офисов в Нью-Йорке.</p>
+    html: `<html><body><h1>Office cleaning</h1><p>Professional office cleaning in New York.</p>
       <script>window.themeDemo = {"placeholder":"Lorem ipsum dolor sit amet, consectetur adipiscing elit"};</script>
       <style>.demo::after{content:"Lorem ipsum"}</style>
       <template><p>Lorem ipsum dolor sit amet</p></template>
@@ -163,7 +163,7 @@ test('H1 does not fire on Lorem ipsum that lives only inside inline script/style
 test('H1 still fires on Lorem ipsum in real body copy', () => {
   const page = parsePage({
     url: 'https://ex.com/a',
-    html: '<html><body><h1>Услуги</h1><p>Lorem ipsum dolor sit amet, consectetur adipiscing elit.</p></body></html>',
+    html: '<html><body><h1>Services</h1><p>Lorem ipsum dolor sit amet, consectetur adipiscing elit.</p></body></html>',
   })
   const f = H1.check(page, {})
   assert.equal(f.length, 1)

@@ -2,7 +2,7 @@ import { finding } from '../index.js'
 
 export default {
   id: 'I4',
-  title: 'Страница закрыта от индексации',
+  title: 'Page is closed to indexing',
   severity: 'critical',
   engine: 'static',
   check(page, site) {
