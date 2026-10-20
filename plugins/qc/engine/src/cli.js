@@ -17,6 +17,7 @@ import { buildIndex } from './parse/index.js'
 import { loadFacts } from './lib/facts.js'
 import { resolveGbpLinks, gbpTargets } from './lib/gbp.js'
 import { buildProfile } from './lib/profile.js'
+import { pageType } from './lib/page-type.js'
 import { SWEEP } from './browser/sweep.js'
 import { listFindings, applyReview, idsFor } from './review.js'
 import { buildProdCompare, loadProdCompare, saveProdCompare } from './crawl/prod.js'
@@ -545,11 +546,15 @@ export async function audit(input, flags, { fetchImpl } = {}) {
 
   // Full-page screenshots of every page (browse, pageshot.js), in crawl
   // order; copied next to the report so it and its pictures publish together.
+  const profile = buildProfile(site)
+  const pageByUrl = new Map(pages.map(p => [p.url, p]))
   const rowByUrl = new Map(browserRows.filter(r => !r.error).map(r => [r.url, r]))
   const visualFiles = []
   const visual = pages.map(p => rowByUrl.get(p.url)).filter(r => r && Array.isArray(r.shots) && r.shots.length)
     .map(r => ({
       url: r.url,
+      title: pageByUrl.get(r.url)?.title || '',
+      type: pageType(pageByUrl.get(r.url) || { url: r.url }, profile, facts),
       shots: r.shots.filter(s => s.path && existsSync(s.path)).map(s => {
         visualFiles.push(s.path)
         return { width: s.width, src: `visual/${basename(s.path)}`, cut: Boolean(s.cut) }
@@ -559,7 +564,7 @@ export async function audit(input, flags, { fetchImpl } = {}) {
 
   const reportInput = {
     host, env, envReason: reason, pages: pages.length, diff,
-    snapshotAgeDays: cacheAgeDays, source, sitemapStatus, browserCoverage, visual,
+    snapshotAgeDays: cacheAgeDays, source, sitemapStatus, browserCoverage, visual, ranAt: Date.now(),
   }
   const html = renderReport({ ...reportInput, findings, ids: idsFor(findings, pages.length) })
   const runDir = saveRun(host, findings, html, ranNow)
@@ -573,7 +578,6 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   }
   // For `qc review`, which re-renders this run with Claude's verdicts, and
   // for Claude, who reads the profile to describe the site.
-  const profile = buildProfile(site)
   writeFileSync(join(runDir, 'report-input.json'), JSON.stringify(reportInput))
   writeFileSync(join(runDir, 'profile.json'), JSON.stringify(profile, null, 2))
 

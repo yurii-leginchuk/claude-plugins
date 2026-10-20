@@ -1,6 +1,7 @@
 import { rollUp, verdict, countDistinct, defectIdentity } from './json.js'
 import { STALENESS_WARNING_DAYS } from '../lib/snapshot-ttl.js'
 import { UNNAMED_REGION_PREFIX } from '../browser/regions.js'
+import { TYPE_ORDER, TYPE_LABEL } from '../lib/page-type.js'
 
 // Escaping is the security boundary of this module: every interpolated value
 // originates from a crawled third-party page (found/expected/page/selector)
@@ -127,10 +128,11 @@ th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--line)}
 .vis-page .kv{margin:0 0 8px}
 .strip{display:flex;gap:12px;overflow-x:auto;padding-bottom:6px;align-items:flex-start}
 .thumb{flex:none;margin:0;font-size:12px;color:var(--mut);text-align:center}
-.thumb button{display:block;padding:0;border:1px solid var(--line);border-radius:6px;background:var(--card);
-cursor:zoom-in;overflow:hidden;height:280px}
-.thumb button:focus-visible{outline:2px solid var(--maj);outline-offset:2px}
-.thumb img{display:block;width:100%;height:100%;object-fit:cover;object-position:top}
+.shot-view{height:420px;overflow-y:auto;overflow-x:hidden;border:1px solid var(--line);border-radius:6px;background:var(--card);overscroll-behavior:contain}
+.shot-view:focus-visible{outline:2px solid var(--maj);outline-offset:2px}
+.shot-view img{display:block;width:100%;height:auto}
+.thumb figcaption button{font:inherit;color:var(--mut);background:none;border:0;padding:4px 2px;cursor:zoom-in;text-decoration:underline;text-underline-offset:2px}
+.thumb figcaption button:focus-visible{outline:2px solid var(--maj);outline-offset:1px}
 .menu-row{border-top:1px solid var(--line);padding:12px 0}
 .chip.ok{color:#2e7d4f}
 dialog.lb{max-width:96vw;max-height:94vh;padding:0;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
@@ -143,17 +145,34 @@ dialog.lb img{display:block;max-width:100%;margin:0 auto}
 // Thumbnail width per viewport width: a phone shot stays narrow, a desktop
 // one wide, all at the same height so a row reads as one strip.
 const thumbWidth = (w) => Math.round(Math.min(320, Math.max(110, Number(w) / 4.5)))
-const thumb = (src, label, w) => `<figure class="thumb"><button type="button" data-full="${esc(src)}" data-label="${esc(label)}" style="width:${thumbWidth(w)}px" aria-label="Открыть ${esc(label)}"><img loading="lazy" src="${esc(src)}" alt="${esc(label)}"></button><figcaption>${esc(label)}</figcaption></figure>`
+// A scrollable window onto a full-page picture; the windows of one row scroll
+// together (by the share scrolled, since the phone page is taller). The
+// caption opens the picture full size.
+const thumb = (src, label, w) => `<figure class="thumb" style="width:${thumbWidth(w)}px"><div class="shot-view" tabindex="0" role="region" aria-label="${esc(label)}, прокрутка"><img loading="lazy" src="${esc(src)}" alt="${esc(label)}"></div><figcaption><button type="button" data-full="${esc(src)}" data-label="${esc(label)}">${esc(label)} ↗</button></figcaption></figure>`
 
 // Every page at every width, defects or not -- what QA scrolls through by eye.
+// Folded, grouped by page type (each group folded too), with a filter by URL
+// or title; a closed group loads none of its pictures.
 function renderVisual(visual) {
   if (!Array.isArray(visual) || !visual.length) {
     return '<h2>Визуальная проверка</h2><p class="sub">Скриншотов страниц нет — браузерная проверка не снимала страницы (запустите <code>qc browse</code> этой версией).</p>'
   }
-  return `<h2>Визуальная проверка — все страницы на всех ширинах</h2>
-<div class="note-box heuristic">Скриншоты всей страницы на каждой ширине, даже там, где дефектов не найдено, — чтобы глазами пролистать сайт. Нажмите на миниатюру, чтобы открыть в полный размер.</div>
-${visual.map(v => `<div class="vis-page"><p class="kv">${rich(v.url)}</p><div class="strip">${v.shots.map(s =>
-    thumb(s.src, `${s.width} px${s.cut ? ' (обрезано)' : ''}`, s.width)).join('')}</div></div>`).join('')}`
+  const groups = new Map()
+  for (const v of visual) {
+    const t = TYPE_LABEL[v.type] ? v.type : 'other'
+    if (!groups.has(t)) groups.set(t, [])
+    groups.get(t).push(v)
+  }
+  const ordered = TYPE_ORDER.filter(t => groups.has(t))
+  const shots = visual.reduce((n, v) => n + v.shots.length, 0)
+  const page = (v) => `<div class="vis-page" data-find="${esc(`${v.url} ${v.title || ''}`.toLowerCase())}"><p class="kv">${rich(v.url)}${v.title ? ` <span class="sub">${esc(v.title)}</span>` : ''}</p><div class="strip">${v.shots.map(s =>
+    thumb(s.src, `${s.width} px${s.cut ? ' (обрезано)' : ''}`, s.width)).join('')}</div></div>`
+  return `<h2>Визуальная проверка</h2>
+<div class="find"><label for="qc-page-find">Найти страницу</label><input id="qc-page-find" name="qc-page-find" type="search" placeholder="часть адреса или заголовка" autocomplete="off" spellcheck="false"><span id="qc-page-msg" class="sub" aria-live="polite"></span></div>
+<details class="rule vis" id="qc-visual"><summary><b>Все страницы на всех ширинах</b><span class="cnt">${visual.length} страниц · ${shots} скриншотов</span></summary><div class="body">
+<p class="sub">Скриншоты всей страницы на каждой ширине, даже там, где дефектов не найдено, — чтобы глазами пролистать сайт. Окна одной страницы прокручиваются вместе; подпись под окном открывает снимок в полный размер.</p>
+${ordered.map(t => `<details class="rule vis-group" data-type="${esc(t)}"><summary><b>${esc(TYPE_LABEL[t])}</b><span class="cnt">${groups.get(t).length} страниц</span></summary><div class="body">${groups.get(t).map(page).join('')}</div></details>`).join('')}
+</div></details>`
 }
 
 const MANUAL_STATUS = { ok: ['ok', 'в порядке'], defect: ['crit', 'есть дефекты'], skipped: ['note', 'не проверено'] }
@@ -205,12 +224,21 @@ for(let p=el.parentElement;p;p=p.parentElement)if(p.tagName==='DETAILS')p.open=t
 el.scrollIntoView({block:'center'});el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');if(msg)msg.textContent=''}
 const f=document.getElementById('qc-find-form');if(f)f.addEventListener('submit',e=>{e.preventDefault();go(document.getElementById('qc-find').value)});
 document.addEventListener('click',e=>{const a=e.target.closest('a.did');if(a){e.preventDefault();go(a.getAttribute('href'),true)}});
-if(location.hash)go(location.hash,true)})()</script>`
+if(location.hash)go(location.hash,true);
+const pf=document.getElementById('qc-page-find'),pm=document.getElementById('qc-page-msg');
+if(pf)pf.addEventListener('input',()=>{const q=pf.value.trim().toLowerCase();let n=0;const vb=document.getElementById('qc-visual');if(q&&vb)vb.open=true;
+document.querySelectorAll('.vis-group').forEach(g=>{let hit=0;g.querySelectorAll('.vis-page').forEach(p=>{const ok=!q||p.dataset.find.includes(q);p.hidden=!ok;if(ok)hit++});
+g.hidden=q&&!hit;if(q)g.open=hit>0&&hit<=12;n+=hit});if(pm)pm.textContent=q?(n?'страниц: '+n:'ничего не найдено'):''})})()</script>`
 
 const LIGHTBOX = `<dialog class="lb" id="qc-lb"><div class="bar"><span id="qc-lb-t"></span><button type="button" id="qc-lb-x">Закрыть</button></div><img id="qc-lb-i" alt=""></dialog>
 <script>(()=>{const d=document.getElementById('qc-lb');if(!d||!d.showModal)return;const i=document.getElementById('qc-lb-i'),t=document.getElementById('qc-lb-t');
 document.addEventListener('click',e=>{const b=e.target.closest('[data-full]');if(!b)return;i.src=b.dataset.full;i.alt=b.dataset.label;t.textContent=b.dataset.label;d.showModal()});
-document.getElementById('qc-lb-x').onclick=()=>d.close();d.addEventListener('click',e=>{if(e.target===d)d.close()})})()</script>`
+document.getElementById('qc-lb-x').onclick=()=>d.close();d.addEventListener('click',e=>{if(e.target===d)d.close()})})();
+(()=>{let active=null;const grab=e=>{const v=e.target.closest&&e.target.closest('.shot-view');if(v)active=v};
+['wheel','touchstart','pointerdown','keydown','focusin'].forEach(t=>document.addEventListener(t,grab,{capture:true,passive:true}));
+document.addEventListener('scroll',e=>{const v=e.target;if(v!==active)return;const strip=v.closest('.strip');if(!strip)return;
+const max=v.scrollHeight-v.clientHeight;const k=max>0?v.scrollTop/max:0;
+strip.querySelectorAll('.shot-view').forEach(o=>{if(o!==v)o.scrollTop=k*(o.scrollHeight-o.clientHeight)})},true)})()</script>`
 
 // One distinct defect (rule + selector + normalized `found`, per
 // defectIdentity) with its own found/expected/selector and its own collapsed
@@ -407,6 +435,8 @@ export function renderReport({
   manualChecks = [],
   // identity -> «D12», the same ids `qc findings` prints
   ids = null,
+  // when the audit ran (ms); shown next to the domain
+  ranAt = null,
 }) {
   // Fail fast on malformed findings, matching the array contract rollUp/diffRuns
   // already enforce (src/report/json.js). Coercing bad input to [] here would
@@ -416,6 +446,7 @@ export function renderReport({
   // impossible to miss; a false all-clear is not. No HTML is produced below
   // this check when findings is unusable.
   try { ORIGIN = new URL(`https://${host}`).origin } catch { ORIGIN = null }
+  const qcDate = Number.isFinite(ranAt) ? new Date(ranAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' }) : null
   if (!Array.isArray(findings)) {
     const received = findings === null ? 'null' : findings === undefined ? 'undefined' : typeof findings
     throw new TypeError(`renderReport requires findings to be an array, got ${received}`)
@@ -587,8 +618,8 @@ ${rejectedGroups.map(g => renderGroup(g, ctx)).join('')}`
     const html = `<!doctype html>
 <html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>QC ${esc(host)}</title><style>${CSS}</style></head><body><div class="wrap">
-<h1>QC · ${esc(host)}</h1>
+<title>QC ${esc(host)}${qcDate ? ` ${esc(qcDate)}` : ''}</title><style>${CSS}</style></head><body><div class="wrap">
+<h1>QC · ${esc(host)}${qcDate ? ` · ${esc(qcDate)}` : ''}</h1>
 <p class="sub">среда: <b>${esc(env)}</b>${envReason ? ` (${esc(envReason)})` : ''} ·
 страниц: ${esc(pages)} · источник списка: ${esc(source)} ·
 снапшот: ${ageLabel}</p>

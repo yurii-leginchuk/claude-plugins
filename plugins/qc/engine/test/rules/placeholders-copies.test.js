@@ -80,3 +80,11 @@ test('listWpContent pages through the REST API and returns null when it is close
   assert.ok(!calls.some(u => u.includes('/media&')), 'attachments are not pages')
   assert.equal(await listWpContent(O, { fetchImpl: async () => ({ ok: false, status: 401 }) }), null)
 })
+
+test('pageType: facts first, then the profile, then the URL', async () => {
+  const { pageType } = await import('../../src/lib/page-type.js')
+  const profile = { services: { hub: `${O}/services/`, items: [{ url: `${O}/services/a/` }] }, locations: { hub: null, items: [{ url: `${O}/locations/x/` }] } }
+  const t = (path, o = {}) => pageType({ url: `${O}${path}`, ...o }, profile, { pages: { '/special': 'landing' } })
+  assert.deepEqual(['/', '/services/', '/services/a/', '/locations/x/', '/blog/', '/blog/post-1/', '/category/tips/', '/contact/thank-you/', '/privacy-policy/', '/about/', '/special/', '/x/'].map(p => t(p)),
+    ['home', 'service-hub', 'service', 'location', 'blog', 'post', 'blog', 'thank-you', 'legal', 'about', 'landing', 'other'])
+})

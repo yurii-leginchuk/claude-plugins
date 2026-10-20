@@ -370,11 +370,17 @@ test('stale browser rows are called out as stale, not as a partial pass to resum
 test('the visual block shows every page at every width, defects or not, with a lightbox', () => {
   const html = renderReport({
     ...base, findings: [],
-    visual: [{ url: 'https://ex.com/clean/', shots: [{ width: 360, src: 'visual/a.jpg' }, { width: 1440, src: 'visual/b.jpg', cut: true }] }],
+    visual: [{ url: 'https://ex.com/clean/', type: 'service', title: 'Clean', shots: [{ width: 360, src: 'visual/a.jpg' }, { width: 1440, src: 'visual/b.jpg', cut: true }] },
+      { url: 'https://ex.com/', type: 'home', shots: [{ width: 360, src: 'visual/c.webp' }] }],
   })
-  assert.match(html, /Визуальная проверка/)
+  assert.match(html, /<details class="rule vis" id="qc-visual">/, 'the block folds')
+  assert.ok(html.indexOf('data-type="home"') < html.indexOf('data-type="service"'), 'groups follow the page-type order')
+  assert.match(html, /<b>Услуги<\/b><span class="cnt">1 страниц<\/span>/)
+  assert.match(html, /id="qc-page-find"/)
+  assert.match(html, /data-find="https:\/\/ex\.com\/clean\/ clean"/)
   assert.match(html, /https:\/\/ex\.com\/clean\//)
   assert.match(html, /data-full="visual\/a\.jpg"/)
+  assert.match(html, /<div class="shot-view" tabindex="0" role="region"[^>]*><img loading="lazy" src="visual\/a\.jpg"/, 'a scrollable window, not a cropped thumbnail')
   assert.match(html, /1440 px \(обрезано\)/)
   assert.match(html, /id="qc-lb"/)
 })
@@ -413,4 +419,10 @@ test('every page, path and URL the report names is a link', () => {
   assert.match(html, /<a href="https:\/\/ex\.com\/b\/"[^>]*>https:\/\/ex\.com\/b\/<\/a>\./, 'trailing punctuation stays outside the link')
   assert.match(html, /<li><a href="https:\/\/ex\.com\/a\/"/, 'the page list links its pages')
   assert.doesNotMatch(renderReport({ ...base, findings: [{ ...f(), found: '[x](javascript:alert(1))' }] }), /href="javascript/)
+})
+
+test('the header names the domain and the date of the QC', () => {
+  const html = renderReport({ ...base, findings: [], ranAt: Date.UTC(2026, 9, 20, 12) })
+  assert.match(html, /<h1>QC · ex\.com · 20\.10\.2026<\/h1>/)
+  assert.match(html, /<title>QC ex\.com 20\.10\.2026<\/title>/)
 })

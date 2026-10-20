@@ -165,9 +165,9 @@ run only resolves links it has not seen, such as new entries in the facts file.
 
 ## Screenshots and Claude's manual checks
 
-`qc browse` saves a full-page JPEG of every page at every width (`~/.qc-cache/<host>/pages/`,
+`qc browse` saves a full-page WebP (q45, through Chromium; JPEG if that fails) of every page at every width (`~/.qc-cache/<host>/pages/`,
 cut at 12000 px). `qc audit` copies them into `<runDir>/visual/` and the report's «Визуальная
-проверка» block links them by relative path — publish them with `report.html`. The summary's
+проверка» block (folded, grouped by page type, with a page filter; the windows of one page scroll together) links them by relative path — publish them with `report.html`. The summary's
 `visual` says how many pages and files.
 
 The engine does not click. `qc review` accepts Claude's manual checks in the review file:
