@@ -12,8 +12,11 @@ import { discoverPages } from './crawl/discover.js'
 import { fetchAll } from './crawl/fetch.js'
 import { checkLinks } from './crawl/links.js'
 import { loadStrategySheet } from './crawl/sheet.js'
-import { parsePage } from './parse/page.js'
+import { parsePage, PARSE_VERSION } from './parse/page.js'
 import { buildIndex } from './parse/index.js'
+import { loadFacts } from './lib/facts.js'
+import { resolveGbpLinks, gbpTargets } from './lib/gbp.js'
+import { buildProdCompare, loadProdCompare, saveProdCompare } from './crawl/prod.js'
 import { runStaticRules, allRules } from './rules/index.js'
 import { allBrowserRules } from './rules/browser-index.js'
 import { diffRuns, verdict, countDistinct } from './report/json.js'
@@ -40,7 +43,7 @@ import { SNAPSHOT_TTL_MS } from './lib/snapshot-ttl.js'
 // was already fixed; it set the reuse TTL to the banner's own 7 days, which
 // made the banner unreachable instead of fixing it).
 
-const USAGE = `qc audit <site-url|sheet-url> [--fresh] [--env dev|prod] [--prod <url>] [--only IDs] [--skip IDs] [--concurrency n]
+const USAGE = `qc audit <site-url|sheet-url> [--fresh] [--env dev|prod] [--prod <url>] [--facts <file.json>] [--only IDs] [--skip IDs] [--concurrency n]
 qc browse <host|url> [--breakpoints a,b] [--pages n] [--force] [--concurrency n] [--headed] [--only IDs] [--skip IDs]
   note: in browse, --only/--skip filter only the PRINTED findings (all browser rules still run) --
   this is NOT the same as audit's --only/--skip, which control which rules execute
@@ -100,7 +103,11 @@ async function loadSheetTarget(sheetUrl, fetchImpl) {
   )]
   const prodHost = prodHosts.length === 1 ? prodHosts[0] : null
 
-  return { urls, source: `sheet:${sheet.sheet}`, pairedAsDev, prodHost }
+  // dev URL -> its live URL, for K13's dev/live comparison: a sheet often
+  // pairs /services/x-dev/ with /services/x/, which same-path guessing misses.
+  const pairs = new Map(sheet.rows.filter(r => r.devUrl && r.url).map(r => [r.devUrl, r.url]))
+
+  return { urls, source: `sheet:${sheet.sheet}`, pairedAsDev, prodHost, pairs }
 }
 
 // Reads a cached snapshot for `host` and returns it only if it is still
@@ -108,7 +115,14 @@ async function loadSheetTarget(sheetUrl, fetchImpl) {
 // stale snapshot, or a corrupted one -- all three simply mean "do a live
 // crawl instead", the difference being surfaced to the user as a warning
 // only for the corrupted case.
-function loadFreshSnapshot(host) {
+//
+// `wanted` is what THIS invocation asked to audit. A snapshot holds one page
+// set per host, so a sheet run after a whole-site run (or the reverse) must
+// not quietly report on the other page set: a whole-site audit answered from
+// a 10-row sheet snapshot can come back Pass. A snapshot parsed by an older
+// PARSE_VERSION is likewise re-crawled -- its PageDocs lack fields new rules
+// read, and those rules then report wrong things rather than nothing.
+function loadFreshSnapshot(host, wanted = null) {
   let snap
   try {
     snap = loadSnapshot(host)
@@ -120,7 +134,24 @@ function loadFreshSnapshot(host) {
   const ageMs = Date.now() - snap.meta.savedAt
   if (ageMs >= SNAPSHOT_TTL_MS) return null
   if (!snap.pages.length) return null
+  if (snap.meta.parseVersion !== PARSE_VERSION) {
+    console.error(`кэш для ${host} разобран старой версией парсера, выполняется свежий обход`)
+    return null
+  }
+  if (wanted && !sameTarget(snap.meta, wanted)) {
+    console.error(`кэш для ${host} сохранён для другого набора страниц, выполняется свежий обход`)
+    return null
+  }
   return { snap, ageDays: ageMs / 86400000 }
+}
+
+function sameTarget(meta, wanted) {
+  const cachedSheet = String(meta.source || '').startsWith('sheet:')
+  if (!wanted.urls) return !cachedSheet
+  if (!cachedSheet || !Array.isArray(meta.requestedUrls)) return false
+  const a = [...meta.requestedUrls].sort()
+  const b = [...wanted.urls].sort()
+  return a.length === b.length && a.every((u, i) => u === b[i])
 }
 
 // Reads each browser finding's `shot` file (a PNG on disk, written by
@@ -196,6 +227,8 @@ export async function audit(input, flags, { fetchImpl } = {}) {
     throw new Error(`--prod должен быть корректным URL продакшн-сайта, получено: ${prodUrl}`)
   }
 
+  const factsFlag = requireStringFlag(flags, 'facts', '--facts')
+
   const onlyIds = list(requireStringFlag(flags, 'only', '--only'))
   const skipIds = list(requireStringFlag(flags, 'skip', '--skip'))
   if (requireStringFlag(flags, 'only', '--only') !== null && !onlyIds.length) {
@@ -229,6 +262,11 @@ export async function audit(input, flags, { fetchImpl } = {}) {
     host = hostOf(input)
   }
   if (!host) throw new Error(`не удалось разобрать URL: ${input}`)
+
+  // Reference facts for E9/E12/H9/H11 (lib/facts.js). Loaded before any crawl
+  // so a malformed file fails the run in a second, not after ten minutes of
+  // fetching.
+  const facts = loadFacts(host, factsFlag)
 
   // The dev/prod pairing signal THIS invocation supplies, independent of
   // caching: either the sheet's Dev Link column (only known once the sheet
@@ -267,15 +305,18 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   // stale, rerun with --fresh" banner fires correctly. A stale snapshot
   // must never look identical to a fresh crawl in the output -- this is
   // what keeps that true.
-  const cached = flags.fresh ? null : loadFreshSnapshot(host)
+  const cached = flags.fresh ? null : loadFreshSnapshot(host, { urls: isSheet ? sheetTarget.urls : null })
 
+  let crawlStartedAt = Date.now()
+  let gbpKnown = new Map()
   let pages, linkStatus, source, sitemapStatus, pairedAsDev, pairedAsDevReason, prodHost
   let fromCache, cacheAgeDays, pagesRequested, pagesFailed, failedUrls
 
   if (cached) {
     const { snap, ageDays } = cached
     pages = snap.pages
-    linkStatus = new Map(snap.links.map(l => [l.url, { status: l.status, ok: l.ok, error: l.error }]))
+    linkStatus = new Map(snap.links.map(l => [l.url, { status: l.status, ok: l.ok, error: l.error, ...(l.finalUrl ? { finalUrl: l.finalUrl } : {}) }]))
+    gbpKnown = new Map((snap.meta.gbp || []).map(g => [g.url, g]))
     source = snap.meta.source
     sitemapStatus = snap.meta.sitemapStatus ?? null
     // The signal THIS invocation supplies must win over whatever the
@@ -313,6 +354,7 @@ export async function audit(input, flags, { fetchImpl } = {}) {
     prodHost = invocationProdHost
     if (!urls.length) throw new Error('не найдено ни одной страницы для аудита')
 
+    crawlStartedAt = Date.now()
     const fetched = await fetchAll(urls, { concurrency })
     pages = []
     failedUrls = []
@@ -358,7 +400,30 @@ export async function audit(input, flags, { fetchImpl } = {}) {
 
   const { env, reason } = detectEnv({ host, pages, pairedAsDev, pairedAsDevReason, override: envOverride })
 
-  const site = { host, env, prodHost, pages, index: buildIndex(pages), linkStatus }
+  // GBP short links -> the profile they open (E9). Only links the snapshot
+  // has not resolved yet go to the network, so a cached run normally makes
+  // none; links added to the facts file since the crawl still get resolved.
+  const gbp = await resolveGbpLinks(gbpTargets(pages, facts), {
+    known: gbpKnown, ...(fetchImpl ? { fetchImpl } : {}),
+  })
+
+  // Dev vs live (K13): only for a dev audit that knows production. Cached
+  // next to the snapshot on its own clock, so a cached dev run does not
+  // re-fetch the live site every time; --fresh rebuilds it.
+  let prod = null
+  if (env === 'dev' && prodHost) {
+    prod = flags.fresh ? null : loadProdCompare(host, prodHost)
+    if (!prod) {
+      prod = await buildProdCompare({
+        pages, prodHost, pairs: sheetTarget?.pairs, wholeSite: !isSheet, concurrency,
+      })
+      saveProdCompare(host, prod)
+    }
+  }
+
+  const site = {
+    host, env, prodHost, pages, index: buildIndex(pages), linkStatus, facts, gbp, source, prod,
+  }
   const staticFindings = await runStaticRules(pages, site, { only: onlyIds, skip: skipIds })
 
   // Task 10: merge in whatever `qc browse` has already recorded for this
@@ -374,7 +439,17 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   // then retried successfully legitimately carries two rows (see
   // store.js/latestBrowserResultsByUrl), and counting both would report it as
   // simultaneously done and failed.
-  const browserRows = [...latestBrowserResultsByUrl(host).values()]
+  // A browser row older than the crawl this report is built on describes a
+  // page as it was before: a horizontal scroll fixed since and re-crawled
+  // with --fresh must not keep failing the verdict. Rows written before
+  // `at` existed count as current for a cached run and stale after a fresh
+  // crawl. Stale rows are left out of findings and counted in coverage, so
+  // the summary can say "rerun qc browse".
+  const crawledAt = cached ? cached.snap.meta.savedAt : crawlStartedAt
+  const allBrowserRows = [...latestBrowserResultsByUrl(host).values()]
+  const isStale = (r) => (typeof r.at === 'number' ? r.at : (cached ? Infinity : 0)) < crawledAt
+  const browserRows = allBrowserRows.filter(r => !isStale(r))
+  const staleBrowserPages = allBrowserRows.length - browserRows.length
   const browserFindings = browserRows.flatMap(r => r.findings || [])
   inlineScreenshots(browserFindings)
   const findings = [...staticFindings, ...browserFindings]
@@ -411,8 +486,9 @@ export async function audit(input, flags, { fetchImpl } = {}) {
     // A corrupt snapshot is already the caller's problem elsewhere; the list
     // of excluded widths is not worth failing a whole report over.
   }
-  const browserCoverage = browserRows.length
+  const browserCoverage = allBrowserRows.length
     ? {
+        stalePages: staleBrowserPages,
         pagesDone: browserRows.filter(r => !r.error).length,
         pagesTotal: pages.length,
         pagesFailed: browserFailedRows.length,
@@ -422,14 +498,24 @@ export async function audit(input, flags, { fetchImpl } = {}) {
       }
     : null
 
+  // Compared only over static rules both runs executed: after a `--only E4`
+  // run every other rule's findings would otherwise read as fixed, and as
+  // new again on the next full run. Browser findings are always included.
   const prev = previousRun(host)
-  const diff = diffRuns(findings, prev?.findings || null)
+  const ranNow = validIds.filter(id => (!onlyIds.length || onlyIds.includes(id)) && !skipIds.includes(id))
+  const common = new Set(prev?.rules ? ranNow.filter(id => prev.rules.includes(id)) : ranNow)
+  const comparable = (f) => !validIds.includes(f.rule) || common.has(f.rule)
+  const diff = diffRuns(findings.filter(comparable), prev ? (prev.findings || []).filter(comparable) : null)
 
   if (!cached) {
     saveSnapshot(host, {
       meta: {
         host, env, envReason: reason, source, sitemapStatus, pairedAsDev, pairedAsDevReason,
-        prodHost,
+        prodHost, parseVersion: PARSE_VERSION,
+        ...(isSheet ? { requestedUrls: sheetTarget.urls } : {}),
+        // Network errors are not kept: a timeout must be retried next run,
+        // not remembered as "this link opens nothing".
+        gbp: [...gbp.values()].filter(g => g.status !== 0),
         pageCount: pages.length, pagesRequested, pagesFailed,
         failedUrls: failedUrls.slice(0, 50),
       },
@@ -442,7 +528,7 @@ export async function audit(input, flags, { fetchImpl } = {}) {
     host, env, envReason: reason, pages: pages.length, findings, diff,
     snapshotAgeDays: cacheAgeDays, source, sitemapStatus, browserCoverage,
   })
-  const runDir = saveRun(host, findings, html)
+  const runDir = saveRun(host, findings, html, ranNow)
 
   // `counts` deliberately excludes heuristic-confidence findings, matching
   // verdict()/rollUp()/renderReport() elsewhere in this engine: they are set
@@ -487,6 +573,20 @@ export async function audit(input, flags, { fetchImpl } = {}) {
     fromCache, cacheAgeDays: Number(cacheAgeDays.toFixed(4)),
     pagesRequested, pagesFailed, failedUrls: failedUrls.slice(0, 20),
     prodUrl,
+    // K13's live side: null when this was not a dev audit with a known
+    // production host, so "dev matches live" is never claimed unchecked.
+    prodCompare: prod ? {
+      host: prod.host, pagesCompared: prod.pages.length, pagesRequested: prod.pairs.length,
+      missingOnDev: prod.missing.length, wholeSite: prod.wholeSite,
+    } : null,
+    // Which facts file E9/E12/H9/H11 compared against, or null when there was
+    // none -- then H9/H11 ran silent and E12 only compared the site with
+    // itself. A caller must be able to tell that apart from "data matched".
+    facts: facts ? {
+      path: facts.path, phones: facts.phones.length, emails: facts.emails.length,
+      rating: facts.rating, banned: facts.banned.length, ignore: facts.ignore.length,
+      gbp: facts.gbp.length, states: facts.states.length,
+    } : null,
     verdict: verdict(findings), counts, distinct, heuristics,
     diff: { added: diff.added.length, fixed: diff.fixed.length, remaining: diff.remaining.length },
     // null (not omitted) when `qc browse` has never run for this host --

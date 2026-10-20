@@ -120,21 +120,8 @@ export function loadSnapshot(host) {
     throw new Error(`Corrupted snapshot: meta.json is invalid JSON: ${e.message}`)
   }
 
-  let pages, links
-  try {
-    pages = readJsonl(join(dir, 'pages.jsonl'))
-  } catch (e) {
-    // Re-throw with context
-    throw e
-  }
-
-  try {
-    links = readJsonl(join(dir, 'links.jsonl'))
-  } catch (e) {
-    // Re-throw with context
-    throw e
-  }
-
+  const pages = readJsonl(join(dir, 'pages.jsonl'))
+  const links = readJsonl(join(dir, 'links.jsonl'))
   return { meta, pages, links }
 }
 
@@ -358,10 +345,14 @@ export function clearBrowserResults(host) {
   if (existsSync(shots)) rmSync(shots, { recursive: true, force: true })
 }
 
-export function saveRun(host, findings, reportHtml) {
+// `rules`: the static rule ids this run executed. A `--only E4` run is saved
+// too, and without the list the next diff would read every other rule's
+// findings as fixed.
+export function saveRun(host, findings, reportHtml, rules = null) {
   const dir = join(snapshotDir(host), 'runs', String(Date.now()))
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'findings.json'), JSON.stringify(findings, null, 2))
+  if (rules) writeFileSync(join(dir, 'rules.json'), JSON.stringify(rules))
   if (reportHtml) writeFileSync(join(dir, 'report.html'), reportHtml)
   return dir
 }
@@ -383,8 +374,10 @@ export function previousRun(host) {
   const p = join(runs, dirs.at(-1), 'findings.json')
   if (!existsSync(p)) return null
 
+  let rules = null
+  try { rules = JSON.parse(readFileSync(join(runs, dirs.at(-1), 'rules.json'), 'utf8')) } catch { /* older run: all rules */ }
   try {
-    return { findings: JSON.parse(readFileSync(p, 'utf8')) }
+    return { findings: JSON.parse(readFileSync(p, 'utf8')), rules }
   } catch {
     // If findings.json is corrupted, return null
     return null

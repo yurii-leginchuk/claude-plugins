@@ -76,7 +76,7 @@ refuses to run and says so; tell the user to run `/qc-site` first, don't try to 
    come from `browser.jsonl`, independent of the static snapshot's cache age):
 
    ```bash
-   node <plugin-root>/engine/src/cli.js audit "<host|url>"
+   node <plugin-root>/engine/src/cli.js audit "<site-url>"
    ```
 
    Read `reportPath` from that summary and publish it with the Artifact tool (favicon `✅`, title

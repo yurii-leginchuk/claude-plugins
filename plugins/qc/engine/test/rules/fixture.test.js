@@ -92,7 +92,34 @@ test('E3 is the only rule this page trips, and it reports exactly what is on the
   assert.equal(styleCall[0].severity, 'minor')
   assert.equal(styleCall[0].confidence, 'heuristic', 'a per-client style preference, never a verdict mover')
 
-  assert.equal(findings.length, e3.length, 'no other rule may fire on this page')
+  assert.equal(findings.length, e3.length + forRule('E9').length + forRule('F12').length,
+    'no other rule may fire on this page')
+})
+
+test('E9 finds the office address in the body copy that is not a link', () => {
+  // The footer links "Suite 1 A, 11 Park Place" to the GBP short link; the
+  // "from our office at Suite 1A, 11 Park Place" sentence has no link. That
+  // is QA's "make address active", found by pattern, so heuristic -- and
+  // minor, since the page already links the profile once.
+  const e9 = forRule('E9')
+  assert.equal(e9.length, 1)
+  assert.equal(e9[0].found, 'адрес «11 Park Place» не кликабельный')
+  assert.equal(e9[0].confidence, 'heuristic')
+  assert.equal(e9[0].severity, 'minor')
+})
+
+test('F12 finds the skip link with no #content and the JS-only "Get a Quote Now" button', () => {
+  // Hello Elementor prints "Skip to content" -> #content, but the
+  // elementor_header_footer template renders no element with that id. The
+  // quote button is href="#" opened by the theme's own script, so only a
+  // heuristic.
+  const f12 = forRule('F12')
+  assert.equal(f12.length, 2)
+  const skip = f12.find(f => /#content/.test(f.found))
+  assert.equal(skip.confidence, 'high')
+  assert.equal(skip.severity, 'minor')
+  const stub = f12.find(f => /href="#"/.test(f.found))
+  assert.equal(stub.confidence, 'heuristic')
 })
 
 // ---------------------------------------------------------------------------
@@ -123,6 +150,21 @@ const MUST_BE_SILENT = {
   I14: 'a prod page linking only at prod and third parties',
   J1: 'header, main and nav landmarks are present',
   S1: 'all four JSON-LD blocks parse',
+  E12: 'one page cannot form a site-wide majority, and no facts file is given',
+  H9: 'no facts file, so there are no retired terms to look for',
+  H11: 'no facts file, so there is no reference email or rating',
+  I18: 'no link was checked, so no redirect is known',
+  E2: 'one page cannot form a site-wide majority',
+  H5: 'no stale copyright year, and the title carries no year',
+  E14: 'a one-page run is not a sitemap of the whole site',
+  E15: 'no self-link in the body, no linked date, not a PPC landing page',
+  H10: 'one page has no "rest of the site" to differ from',
+  E13: 'the one visible phone number is the tel: link itself',
+  K14: 'not a blog listing page',
+  K13: 'a production audit, so there is no live counterpart to compare',
+  I20: 'the schema address and phone are the ones shown on the page',
+  I10: 'the crumbs Home > Services match /services/office-cleaning/',
+  H12: 'no state is named in the title or H1, so the page is about none',
 }
 
 for (const [id, why] of Object.entries(MUST_BE_SILENT)) {
@@ -133,7 +175,7 @@ for (const [id, why] of Object.entries(MUST_BE_SILENT)) {
 
 test('every rule in the registry is accounted for by this file', async () => {
   const ids = (await allRules()).map(r => r.id).sort()
-  const covered = ['E3', ...Object.keys(MUST_BE_SILENT)].sort()
+  const covered = ['E3', 'E9', 'F12', ...Object.keys(MUST_BE_SILENT)].sort()
   assert.deepEqual(ids, covered,
     'a new rule must state here whether it fires on the real fixture -- silence by omission is how ' +
     'a false positive on every production page ships unnoticed')

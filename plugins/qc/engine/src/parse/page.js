@@ -122,11 +122,59 @@ const NON_COPY_ELEMENTS = 'script,style,noscript,template'
 // elements removed, so the raw parse above stays intact for jsonLd. Removing
 // them from `root` in place would be cheaper, but would leave every later
 // reader of `root` silently dependent on running before the removal.
-function copyText(html) {
+function copyRoot(html) {
   const copy = parse(html, PARSE_OPTIONS)
   for (const el of copy.querySelectorAll(NON_COPY_ELEMENTS)) el.remove()
-  return squash(copy.querySelector('body')?.text || '')
+  return copy
 }
+
+// The site-wide header and footer. Elementor's theme builder marks them with
+// data-elementor-type; otherwise the first <header> and the last <footer>
+// (a page can carry several, e.g. an article's own footer).
+const HEADER_SEL = '[data-elementor-type="header"], .elementor-location-header'
+const FOOTER_SEL = '[data-elementor-type="footer"], .elementor-location-footer'
+const headerOf = (root) => root.querySelector(HEADER_SEL) || root.querySelector('header')
+const footerOf = (root) => root.querySelector(FOOTER_SEL) || root.querySelectorAll('footer').pop() || null
+
+const BREADCRUMB_SEL = 'nav[aria-label*="breadcrumb" i], [class*="breadcrumb"], #breadcrumbs'
+
+// Where a link sits, for rules that compare menus (K13), skip site chrome
+// (E2, E14, E15) or read breadcrumbs (I10). Footer and header win over nav:
+// a footer menu is a <nav> inside the footer, and it is the footer's.
+function regionOf(el) {
+  let crumb = false, footer = false, header = false, nav = false
+  for (let n = el.parentNode; n && n.rawTagName; n = n.parentNode) {
+    const tag = n.rawTagName.toLowerCase()
+    const cls = n.getAttribute?.('class') || ''
+    const type = n.getAttribute?.('data-elementor-type') || ''
+    if (/breadcrumb/i.test(cls) || /breadcrumb/i.test(n.getAttribute?.('aria-label') || '') || n.getAttribute?.('id') === 'breadcrumbs') crumb = true
+    if (tag === 'footer' || type === 'footer' || /\belementor-location-footer\b/.test(cls)) footer = true
+    if (tag === 'header' || type === 'header' || /\belementor-location-header\b/.test(cls)) header = true
+    if (tag === 'nav') nav = true
+  }
+  if (crumb) return 'breadcrumbs'
+  if (footer) return 'footer'
+  if (header) return 'header'
+  if (nav) return 'nav'
+  return 'main'
+}
+
+function parseBreadcrumbs(root, url) {
+  const box = root.querySelector(BREADCRUMB_SEL)
+  if (!box) return null
+  const items = box.querySelectorAll('a[href]').map(a => ({
+    text: squash(a.text), href: normalizeUrl(a.getAttribute('href') || '', url),
+  }))
+  return { text: squash(box.text).slice(0, 300), items }
+}
+
+const JSONLD_PUBLISHED = /"datePublished"\s*:\s*"([^"]+)"/i
+
+// Bumped whenever PageDoc gains or changes a field rules read. A snapshot
+// parsed by another version is re-crawled rather than reused: an old PageDoc
+// without `region` made K13 see an empty dev menu and report every live menu
+// item as lost.
+export const PARSE_VERSION = 2
 
 export function parsePage({ url, html, status = 200, headers = {} }) {
   const root = parse(html, PARSE_OPTIONS)
@@ -154,6 +202,8 @@ export function parsePage({ url, html, status = 200, headers = {} }) {
       target: a.getAttribute('target') || null,
       text: squash(a.text),
       internal: href ? sameHost(href, url) : false,
+      region: regionOf(a),
+      imageOnly: squash(a.text) === '' && Boolean(a.querySelector('img,svg')),
       selector: selectorOf(a),
     }
   })
@@ -179,6 +229,35 @@ export function parsePage({ url, html, status = 200, headers = {} }) {
     }
   })
 
+  // Raw JSON-LD bodies, for rules that compare business data (phones,
+  // emails, rating) and retired terms against the schema as well as the
+  // copy -- an old number left only in Organization JSON-LD is exactly what
+  // QA keeps finding by hand. Capped per block so one oversized payload
+  // cannot bloat every cached PageDoc.
+  const jsonLdRaw = root.querySelectorAll('script[type="application/ld+json" i]')
+    .map(s => s.text.slice(0, 20000))
+
+  // Google Maps iframes, for E9: QA checks that the map shows the right
+  // location, and the embed's src is the only place that is recorded.
+  const mapEmbeds = root.querySelectorAll('iframe')
+    .map(f => f.getAttribute('src') || f.getAttribute('data-src') || '')
+    .filter(src => /google\.[a-z.]+\/maps|maps\.google\./i.test(src))
+    .map(src => src.slice(0, 4000))
+
+  // Element ids (and legacy <a name>) a `#fragment` link can land on (F12).
+  const ids = [...new Set([
+    ...root.querySelectorAll('[id]').map(e => e.getAttribute('id')),
+    ...root.querySelectorAll('a[name]').map(e => e.getAttribute('name')),
+  ].filter(Boolean))].slice(0, 5000)
+
+  const publishedEl = root.querySelector('meta[property="article:published_time" i]')
+  const published = publishedEl?.getAttribute('content')
+    || jsonLdRaw.map(b => JSONLD_PUBLISHED.exec(b)?.[1]).find(Boolean) || null
+
+  const headerEl = headerOf(root)
+  const logoEl = headerEl?.querySelector('img')
+  const copy = copyRoot(html)
+
   const favicons = root.querySelectorAll('link[rel]')
     .filter(l => /icon/i.test(l.getAttribute('rel') || ''))
     .map(l => ({ href: normalizeUrl(l.getAttribute('href') || '', url), rel: l.getAttribute('rel') }))
@@ -197,6 +276,8 @@ export function parsePage({ url, html, status = 200, headers = {} }) {
     images,
     forms: parseForms(root),
     jsonLd,
+    jsonLdRaw,
+    mapEmbeds,
     favicons,
     elementor: parseElementor(root),
     landmarks: {
@@ -204,7 +285,18 @@ export function parsePage({ url, html, status = 200, headers = {} }) {
       main: root.querySelectorAll('main').length,
       nav: root.querySelectorAll('nav').length,
     },
-    text: copyText(html),
+    text: squash(copy.querySelector('body')?.text || ''),
+    // Site chrome as text, for H10's "this page's footer differs from the
+    // rest of the site".
+    headerText: squash(headerOf(copy)?.text || '').slice(0, 4000),
+    footerText: squash(footerOf(copy)?.text || '').slice(0, 4000),
+    logo: logoEl ? normalizeUrl(logoEl.getAttribute('src') || logoEl.getAttribute('data-src') || '', url) : null,
+    breadcrumbs: parseBreadcrumbs(root, url),
+    bodyClass: root.querySelector('body')?.getAttribute('class') || '',
+    published,
+    // Only the og article date says "this is a post"; see lib/kinds.js.
+    isArticle: Boolean(publishedEl),
+    ids,
     contentType: headers['content-type'] || null,
   }
 }

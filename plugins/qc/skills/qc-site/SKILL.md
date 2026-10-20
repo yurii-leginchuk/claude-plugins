@@ -1,7 +1,7 @@
 ---
 name: qc-site
 description: Run a static QC audit over a whole WordPress/Elementor site and publish a rule-grouped HTML report. Accepts a site URL or a Google Sheets strategy link (uses the Dev Link column when present). Use when the user says "qc site", "qc сайта", "проверь сайт", "прогони QC по сайту", "сделай аудит сайта", "проверь качество сайта", or gives a site URL plus a strategy spreadsheet.
-argument-hint: <site-url|google-sheet-url> [--env dev|prod] [--prod <url>] [--fresh] [--only IDs] [--skip IDs] [--concurrency n]
+argument-hint: <site-url|google-sheet-url> [--env dev|prod] [--prod <url>] [--facts <file.json>] [--fresh] [--only IDs] [--skip IDs] [--concurrency n]
 ---
 
 # /qc-site — static QC of a whole site
@@ -99,12 +99,35 @@ command.
      not one example repeated.
    - If the report's header carries a `Sitemap: <status>` warning box, say so: the page list may be
      incomplete, so the audit may not have covered the whole site.
+   - Dev vs live (`prodCompare`): on a dev audit, if it is `null` say that K13 did not run because
+     production is unknown (pass `--prod <live-url>`); otherwise state pages compared and
+     `missingOnDev` — live pages that 404 on dev are launch blockers, list them first.
+   - Stale browser rows (`browserCoverage.stalePages` > 0): those pages were measured before the
+     crawl this report is built on, so their browser findings are left out. Say so and suggest
+     `/qc-browse` again.
    - Browser coverage (`browserCoverage`): if `null`, say plainly that no browser/visual pass has
      run for this host and that `/qc-browse` is what adds it. If present, state `pagesDone`/
      `pagesTotal` and the widths checked, and lead with "частично" language rather than a clean
      verdict if `pagesDone < pagesTotal` — a partial browser pass must never be presented as if the
      whole site's visual behaviour was checked.
    - The run directory (`runDir`) and the Artifact link.
+
+## Site facts (E9, E12, H9, H11)
+
+Phones, GBP profiles, retired terms, emails and the review rating are checked against a per-host facts file
+(`~/.qc-facts/<host>.json`, or `--facts <path>`; format in the engine README, «Site facts»).
+Without it H9 and H11 report nothing, and E9 and E12 only compare the site with itself.
+
+- Read `facts` in the summary. If it is `null`, say so in the summary: «факты сайта не заданы —
+  H9/H11 не проверялись, E9/E12 сравнивали сайт только сам с собой».
+- To create the file, get the values from the user, the client's strategy sheet or the GBP
+  listing. Never fill it from the site being audited — that would make every defect match
+  itself. If a value is unknown, leave the field out rather than guessing; ask the user for the
+  retired services/locations (`banned`), since only they know what the client dropped.
+- For `gbp`, take each location's link from GBP's own «Поделиться» (Share) button or from the
+  user, plus its address and the site paths of its location page. The link on the site is
+  what is being checked, so it cannot be the source.
+- Write the file only after the user has confirmed the values, then rerun the audit.
 
 ## Rules
 

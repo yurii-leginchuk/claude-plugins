@@ -45,3 +45,36 @@ export function doubledCountryCode(raw) {
     confidence: doubledPlus ? 'high' : 'heuristic',
   }
 }
+
+// One comparable key per phone number, so `tel:+1 (718) 969-0845`,
+// `tel:17189690845` and a typed `(718) 969-0845` all collapse to the same
+// value. A bare 10-digit number is treated as North American and given its
+// leading 1 -- every site this engine audits is US/CA-first, and comparing
+// `7189690845` against `17189690845` as different numbers would report one
+// phone as two. Anything else is kept as its digits.
+//
+// The href is percent-decoded first: `tel:(855)%20607-8758` is a real shape
+// on WordPress sites, and reading `%20` as the digits "20" turned one number
+// into a different one (seen live on libertybayrecovery.com).
+export function phoneKey(raw) {
+  let value = String(raw ?? '').replace(/^tel:/i, '')
+  try { value = decodeURIComponent(value) } catch { value = value.replace(/%[0-9a-f]{2}/gi, ' ') }
+  const d = digitsOnly(value)
+  if (!d) return null
+  if (d.length === 10) return `1${d}`
+  return d
+}
+
+// Visible North American numbers in running text. Each group must be
+// separated (space, dot, hyphen, or parentheses round the area code): an
+// unbroken run of 10 digits is far more often an order id, a timestamp or a
+// licence number than a phone written for people.
+const TEXT_PHONE = /(?<![\d-])(?:\+?1[\s.-]?)?(?:\((\d{3})\)\s?|(\d{3})[\s.-])(\d{3})[\s.-](\d{4})(?![\d-])/g
+
+export function textPhones(text) {
+  const out = []
+  for (const m of String(text ?? '').matchAll(TEXT_PHONE)) {
+    out.push({ raw: m[0].trim(), key: `1${m[1] || m[2]}${m[3]}${m[4]}` })
+  }
+  return out
+}

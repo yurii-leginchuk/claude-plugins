@@ -29,7 +29,10 @@ export async function checkLinks(pages, opts = {}) {
   const out = new Map()
   for (const [url, r] of head) {
     const best = get.get(url) || r
-    out.set(url, { status: best.status, ok: best.ok, error: best.error })
+    // finalUrl: where a redirect landed, for I18 (an internal link that
+    // only works through a 301). Kept only when it differs.
+    const finalUrl = best.finalUrl && best.finalUrl !== url ? best.finalUrl : null
+    out.set(url, { status: best.status, ok: best.ok, error: best.error, ...(finalUrl ? { finalUrl } : {}) })
   }
   return out
 }

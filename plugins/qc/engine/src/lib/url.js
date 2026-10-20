@@ -43,3 +43,13 @@ export function sameHost(a, b) {
   const hb = hostOf(b)
   return Boolean(ha && hb && bare(ha) === bare(hb))
 }
+
+// Path identity, trailing slash ignored: dev and live, and a link and the
+// page it opens, often disagree on it -- that is I18's business, not a
+// different page.
+export function pathKey(url) {
+  try {
+    const u = new URL(url)
+    return (u.pathname.replace(/\/+$/, '') || '/') + u.search
+  } catch { return null }
+}

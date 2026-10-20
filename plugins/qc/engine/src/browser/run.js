@@ -312,7 +312,7 @@ export async function runBrowserPass({ host, pages, widths, opts = {} }) {
           summary.pagesFailed++
           const error = errorText(e)
           summary.failedUrls.push({ url, error })
-          appendBrowserResult(host, { url, widths, findings: [], error })
+          appendBrowserResult(host, { url, at: Date.now(), widths, findings: [], error })
           continue
         }
       }
@@ -330,7 +330,7 @@ export async function runBrowserPass({ host, pages, widths, opts = {} }) {
       if (result.ok) {
         consecutive = 0
         summary.pagesDone++
-        row = { url, widths, findings: result.findings, error: null, widthsFailed: result.widthsFailed }
+        row = { url, at: Date.now(), widths, findings: result.findings, error: null, widthsFailed: result.widthsFailed }
         if (result.widthsFailed.length) {
           summary.pagesPartial++
           summary.partialUrls.push({ url, widthsFailed: result.widthsFailed })
@@ -345,7 +345,7 @@ export async function runBrowserPass({ host, pages, widths, opts = {} }) {
         consecutive++
         summary.pagesFailed++
         summary.failedUrls.push({ url, error: result.error })
-        row = { url, widths, findings: [], error: result.error }
+        row = { url, at: Date.now(), widths, findings: [], error: result.error }
       }
 
       appendBrowserResult(host, row)

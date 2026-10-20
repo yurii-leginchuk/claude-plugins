@@ -16,7 +16,7 @@ import { join } from 'node:path'
 // call audit() directly against the very same QC_CACHE_DIR, without the
 // awkwardness of passing a fetchImpl through a subprocess's argv.
 import { audit } from '../src/cli.js'
-import { parsePage } from '../src/parse/page.js'
+import { parsePage, PARSE_VERSION } from '../src/parse/page.js'
 import { saveSnapshot, loadSnapshot } from '../src/crawl/store.js'
 
 const run = promisify(execFile)
@@ -303,6 +303,7 @@ test('a --prod (or sheet Dev Link) signal on THIS run overrides a stale pairedAs
     // prior plain-URL audit of this same host would have saved).
     saveSnapshot(host, {
       meta: {
+        parseVersion: PARSE_VERSION,
         host, env: 'prod', envReason: 'боевой хост, страницы индексируются',
         source: 'crawl', sitemapStatus: null, pairedAsDev: false, pairedAsDevReason: null,
         pageCount: 1, pagesRequested: 1, pagesFailed: 0, failedUrls: [],

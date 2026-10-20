@@ -15,7 +15,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { audit } from '../../src/cli.js'
-import { parsePage } from '../../src/parse/page.js'
+import { parsePage, PARSE_VERSION } from '../../src/parse/page.js'
 import { saveSnapshot, appendBrowserResult, snapshotDir } from '../../src/crawl/store.js'
 
 let cache, originalCacheDir
@@ -34,6 +34,7 @@ after(() => {
 function seedStaticSnapshot(host, pages) {
   saveSnapshot(host, {
     meta: {
+      parseVersion: PARSE_VERSION,
       host, env: 'prod', envReason: 'боевой хост', source: 'sitemap', sitemapStatus: 'ok',
       pairedAsDev: false, pairedAsDevReason: null, prodHost: null,
       pageCount: pages.length, pagesRequested: pages.length, pagesFailed: 0, failedUrls: [],
@@ -179,6 +180,7 @@ test('widths the breakpoint budget excluded reach the report', async () => {
   const page = parsePage({ url, html: CLEAN_HTML('a'), status: 200, headers: { 'content-type': 'text/html' } })
   saveSnapshot(host, {
     meta: {
+      parseVersion: PARSE_VERSION,
       host, env: 'prod', envReason: 'боевой хост', source: 'sitemap', sitemapStatus: 'ok',
       pairedAsDev: false, pairedAsDevReason: null, prodHost: null,
       pageCount: 1, pagesRequested: 1, pagesFailed: 0, failedUrls: [],

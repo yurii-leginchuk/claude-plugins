@@ -34,7 +34,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runBrowserPass } from '../../src/browser/run.js'
 import { launchBrowser } from '../../src/browser/launch.js'
-import { parsePage } from '../../src/parse/page.js'
+import { parsePage, PARSE_VERSION } from '../../src/parse/page.js'
 import { proveRegions } from '../../src/browser/regions.js'
 import { saveSnapshot } from '../../src/crawl/store.js'
 import { allBrowserRules } from '../../src/rules/browser-index.js'
@@ -91,6 +91,7 @@ test('a production rule\'s finding on real Elementor markup carries its proved r
   }))
   saveSnapshot(host, {
     meta: {
+      parseVersion: PARSE_VERSION,
       host, env: 'prod', envReason: 'fixture', source: 'sitemap', sitemapStatus: 'ok',
       pairedAsDev: false, pairedAsDevReason: null, prodHost: null,
       pageCount: pages.length, pagesRequested: pages.length, pagesFailed: 0, failedUrls: [],
