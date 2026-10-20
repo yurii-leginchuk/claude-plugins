@@ -423,6 +423,6 @@ test('every page, path and URL the report names is a link', () => {
 
 test('the header names the domain and the date of the QC', () => {
   const html = renderReport({ ...base, findings: [], ranAt: Date.UTC(2026, 9, 20, 12) })
-  assert.match(html, /<h1>QC · ex\.com · 20\.10\.2026<\/h1>/)
-  assert.match(html, /<title>QC ex\.com 20\.10\.2026<\/title>/)
+  assert.match(html, /<h1>QC · ex\.com · Oct 20, 2026<\/h1>/)
+  assert.match(html, /<title>QC ex\.com Oct 20, 2026<\/title>/)
 })

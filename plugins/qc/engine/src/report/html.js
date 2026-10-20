@@ -446,7 +446,7 @@ export function renderReport({
   // impossible to miss; a false all-clear is not. No HTML is produced below
   // this check when findings is unusable.
   try { ORIGIN = new URL(`https://${host}`).origin } catch { ORIGIN = null }
-  const qcDate = Number.isFinite(ranAt) ? new Date(ranAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' }) : null
+  const qcDate = Number.isFinite(ranAt) ? new Date(ranAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : null
   if (!Array.isArray(findings)) {
     const received = findings === null ? 'null' : findings === undefined ? 'undefined' : typeof findings
     throw new TypeError(`renderReport requires findings to be an array, got ${received}`)
