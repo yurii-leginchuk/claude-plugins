@@ -129,7 +129,13 @@ Every check is recorded as one entry per page × width in the review file's `man
   "defects": [{ "rule": "D2", "severity": "major", "found": "…", "expected": "…", "selector": "…" }] }
 ```
 
-`ok` entries go in too — the report shows what was looked at, not only what broke. A check you
+`ok` entries go in too — the report shows what was looked at, not only what broke.
+
+**Timing is not a defect for what the visitor opens themselves.** A popup, a submenu or an
+accordion opens on the visitor's click; by the time they reach for its close button or next item,
+everything has loaded. If something fails only in the first second or two after it opened, wait
+~3 s and try again — record a defect only if it still fails. Timing counts only for what must work
+right at page load: the burger, first-screen buttons and links, the form in the hero. A check you
 could not do is `skipped` with the reason in `checked`. Each check allows only its own rule codes
 (the engine refuses others): menu D1 C6 C9 D9 D2 B6 · popup K4 C6 D9 J2 B6 · form G2 G3 G5 G6 G7 G11
 G12 G14 J5 · faq F9 C2 J2 · focus J2 J5 · content H16 H8 H3 H12 E17.
