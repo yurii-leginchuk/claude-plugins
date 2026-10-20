@@ -72,13 +72,12 @@ test('the fixture parses into the page this file makes claims about', () => {
 
 test('E3 is the only rule this page trips, and it reports exactly what is on the page', () => {
   const e3 = forRule('E3')
-  assert.equal(e3.length, 8)
+  assert.equal(e3.length, 7)
 
-  const major = e3.filter(f => f.severity === 'major')
-  assert.equal(major.length, 1, 'one internal link forces a new tab')
-  assert.equal(major[0].confidence, 'high')
-  assert.match(major[0].found, /внутренняя ссылка с target=_blank: \/privacy-policy\//)
-  assert.equal(major[0].expected, 'без target')
+  // The only internal target=_blank link is the Privacy Policy in the quote
+  // form's consent checkbox, which the agency wants in a new tab.
+  assert.equal(e3.filter(f => f.severity === 'major').length, 0)
+  assert.ok(e3.every(f => f.where), 'the report says where each link is, not just `a`')
 
   const missingNoopener = e3.filter(f => /без rel=noopener/.test(f.found))
   assert.equal(missingNoopener.length, 6)
@@ -92,8 +91,8 @@ test('E3 is the only rule this page trips, and it reports exactly what is on the
   assert.equal(styleCall[0].severity, 'minor')
   assert.equal(styleCall[0].confidence, 'heuristic', 'a per-client style preference, never a verdict mover')
 
-  assert.equal(findings.length, e3.length + forRule('E9').length + forRule('F12').length,
-    'no other rule may fire on this page')
+  const others = ['E9', 'F12', 'G13', 'E16'].reduce((n, id) => n + forRule(id).length, 0)
+  assert.equal(findings.length, e3.length + others, 'no other rule may fire on this page')
 })
 
 test('E9 finds the office address in the body copy that is not a link', () => {
@@ -120,6 +119,21 @@ test('F12 finds the skip link with no #content and the JS-only "Get a Quote Now"
   assert.equal(skip.severity, 'minor')
   const stub = f12.find(f => /href="#"/.test(f.found))
   assert.equal(stub.confidence, 'heuristic')
+})
+
+test('G13 and E16 read the site inventory off the menu, footer and form', () => {
+  // The quote form's "Residential" is "Apartment & Home Cleaning" in the
+  // menu (heuristic: naming can be deliberate); two services in the menu are
+  // missing from the footer list (major: visitors never see them there).
+  assert.deepEqual(forRule('G13').map(f => f.found), [
+    'форма #gform_5: вариант «Residential» не совпадает с названием: услуга называется «Apartment & Home Cleaning» (/services/residential-cleaning)',
+  ])
+  assert.deepEqual(forRule('E16').map(f => f.found).sort(), [
+    'услуга «Disinfection & Sanitizing» (/services/disinfection-sanitizing) есть в меню, но нет в футере',
+    'услуга «Janitorial Cleaning» (/services/janitorial-cleaning) есть в меню, но нет в футере',
+  ])
+  assert.ok(forRule('G13').every(f => f.confidence === 'heuristic'))
+  assert.ok(forRule('E16').every(f => f.severity === 'major' && f.confidence === 'high'))
 })
 
 // ---------------------------------------------------------------------------
@@ -164,7 +178,13 @@ const MUST_BE_SILENT = {
   K13: 'a production audit, so there is no live counterpart to compare',
   I20: 'the schema address and phone are the ones shown on the page',
   I10: 'the crumbs Home > Services match /services/office-cleaning/',
-  H12: 'no state is named in the title or H1, so the page is about none',
+  H12: 'a service page, and a one-page run knows no locations; no state in title or H1',
+  K16: 'no sibling pages to compare blocks with',
+  I21: 'the slug matches the title, and one page has no duplicate H1',
+  H14: 'no list heading repeats on three pages',
+  H17: 'not the homepage, and the brand has no other spellings here',
+  H16: 'one page cannot contradict another',
+  E17: 'every CTA leads where its text says',
 }
 
 for (const [id, why] of Object.entries(MUST_BE_SILENT)) {
@@ -175,7 +195,7 @@ for (const [id, why] of Object.entries(MUST_BE_SILENT)) {
 
 test('every rule in the registry is accounted for by this file', async () => {
   const ids = (await allRules()).map(r => r.id).sort()
-  const covered = ['E3', 'E9', 'F12', ...Object.keys(MUST_BE_SILENT)].sort()
+  const covered = ['E3', 'E9', 'F12', 'G13', 'E16', ...Object.keys(MUST_BE_SILENT)].sort()
   assert.deepEqual(ids, covered,
     'a new rule must state here whether it fires on the real fixture -- silence by omission is how ' +
     'a false positive on every production page ships unnoticed')

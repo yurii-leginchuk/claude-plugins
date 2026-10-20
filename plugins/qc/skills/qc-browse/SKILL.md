@@ -1,6 +1,6 @@
 ---
 name: qc-browse
-description: Run the browser QC pass (visual/interactive checks — horizontal scroll, overflow, overlapping elements, hover/focus, cursor, transitions, contrast, console errors, broken images) over a site that `/qc-site` has already audited, then republish the report with browser findings, breakpoints, and screenshots merged in. Use when the user says "qc browse", "проверь визуально", "прогони браузерную проверку", "сделай скриншоты дефектов", "проверь адаптивность", "browser pass", or asks for visual/responsive checks on top of an existing QC audit.
+description: Run the browser QC pass (visual/interactive checks — horizontal scroll, overflow, overlapping elements, hover/focus, cursor, contrast, a 1920→320 resize sweep, console errors, broken images) over a site that `/qc-site` has already audited, then republish the report with browser findings, breakpoints, and screenshots merged in. Use when the user says "qc browse", "проверь визуально", "прогони браузерную проверку", "сделай скриншоты дефектов", "проверь адаптивность", "browser pass", or asks for visual/responsive checks on top of an existing QC audit.
 argument-hint: <host|site-url> [--breakpoints a,b,c] [--pages n] [--force] [--headed]
 ---
 
@@ -93,7 +93,7 @@ refuses to run and says so; tell the user to run `/qc-site` first, don't try to 
      that re-running the same command retries exactly those pages; do not suggest `--force`.
    - Once the report is republished (step 6): the same distinct-vs-occurrences framing `/qc-site`
      uses (lead with `distinct`, not raw `counts`), now including browser-only rules (C1/C2, overlap,
-     hover/focus/cursor/transition, contrast, console errors, broken images). The report shows each
+     hover/focus/cursor, contrast, elements past the screen edge in the resize sweep (C8), console errors, broken images). The report shows each
      browser finding's breakpoint(s) and, where captured, a screenshot — mention that screenshots are
      only captured once per distinct defect (at the first breakpoint it was seen), so a crop showing
      360px doesn't mean the defect is absent at 1440px if the row also lists 1440 among its

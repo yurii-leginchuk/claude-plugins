@@ -1,4 +1,5 @@
 import { finding } from '../index.js'
+import { isThankYouUrl } from '../../lib/kinds.js'
 
 export default {
   id: 'I6',
@@ -14,7 +15,7 @@ export default {
       out.push(finding(this, page, { selector: 'title', found: 'title пустой', expected: 'уникальный title' }))
       return out
     }
-    const shared = site?.index?.titles?.get(title) || []
+    const shared = isThankYouUrl(page.url) ? [] : (site?.index?.titles?.get(title) || []).filter(u => !isThankYouUrl(u))
     if (shared.length > 1) {
       out.push(finding(this, page, {
         selector: 'title',

@@ -13,6 +13,7 @@ import E15 from '../../src/rules/static/E15-extra-links.js'
 import I20 from '../../src/rules/static/I20-schema-vs-page.js'
 import I10 from '../../src/rules/static/I10-breadcrumbs.js'
 import H12 from '../../src/rules/static/H12-foreign-location.js'
+import E9 from '../../src/rules/static/E9-gbp-links.js'
 import { normalizeFacts } from '../../src/lib/facts.js'
 import { parsePage } from '../../src/parse/page.js'
 
@@ -265,4 +266,15 @@ test('H12 flags another state on a page about one state', () => {
   assert.deepEqual(H12.check(page('/', { text: 'Connecticut' }), {}), [], 'no own state, nothing to compare')
   const withFacts = H12.check(page('/', { text: 'Maine and Texas' }), { facts: facts({ states: ['Maine'], gbp: [{ url: 'https://maps.app.goo.gl/a', address: '1 Main St, Austin, TX 78701' }] }) })
   assert.deepEqual(withFacts, [])
+})
+
+test('findings say where they are: link zone, heading and text; copy snippet; a ready fix', () => {
+  const p = parsePage({ url: `${O}/s/`, html: `<body><header><a href="https://maps.app.goo.gl/x">11 Park Place, New York</a></header>
+    <main><h2>Our Office</h2><p>Visit us at 11 Park Place, New York today.</p></main></body>` })
+  assert.equal(p.links[0].section, null)
+  const f = E9.check(p, { pages: [p], gbp: new Map() })
+  const bare = f.find(x => /не кликабельный/.test(x.found))
+  assert.match(bare.where, /^контент · под заголовком «Our Office» · …/)
+  assert.match(bare.where, /Visit us at 11 Park Place/)
+  assert.equal(bare.expected, 'обернуть адрес в <a href="https://maps.app.goo.gl/x">11 Park Place…</a>')
 })

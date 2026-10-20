@@ -1,5 +1,7 @@
 import { finding } from '../index.js'
 
+const LEGAL = /privacy|terms|policy|conditions/i
+
 export default {
   id: 'E3',
   title: 'Правила target=_blank для внутренних и внешних ссылок',
@@ -10,13 +12,24 @@ export default {
     for (const l of page.links || []) {
       if (!l.href) continue
       const blank = (l.target || '').toLowerCase() === '_blank'
+      // Agency rule: the Privacy Policy / Terms link inside a form opens in a
+      // new tab, so following it does not throw away what the visitor typed.
+      if (l.inForm && LEGAL.test(`${l.href} ${l.text || ''}`)) {
+        if (!blank) {
+          out.push(finding(this, page, {
+            link: l, found: `ссылка «${l.text || l.raw}» в форме открывается в той же вкладке — заполненная форма потеряется`,
+            expected: 'target="_blank" rel="noopener" (в Gravity Forms: в HTML согласия добавить target="_blank")',
+          }))
+        }
+        continue
+      }
       if (l.internal && blank) {
         // Explicit agency house rule: internal navigation must never force a
         // new tab. This is a real, actionable defect -- stays at the rule's
         // default major/high.
         out.push(finding(this, page, {
-          selector: l.selector, found: `внутренняя ссылка с target=_blank: ${l.raw}`,
-          expected: 'без target',
+          link: l, found: `внутренняя ссылка с target=_blank: ${l.raw}`,
+          expected: 'убрать target="_blank" (в Elementor: снять «Open in new window»)',
         }))
       }
       if (!l.internal && !blank) {
@@ -24,7 +37,7 @@ export default {
         // preference, not a defect -- demoted to minor and marked heuristic
         // so it never moves the verdict.
         out.push(finding(this, page, {
-          selector: l.selector, found: `внешняя ссылка без target: ${l.raw}`,
+          link: l, found: `внешняя ссылка без target: ${l.raw}`,
           expected: 'target=_blank rel="noopener"',
           severity: 'minor',
           confidence: 'heuristic',
@@ -39,7 +52,7 @@ export default {
         // because the absence is directly observed from markup, not
         // inferred. Do NOT re-escalate this back to major/critical.
         out.push(finding(this, page, {
-          selector: l.selector, found: `внешняя ссылка без rel=noopener: ${l.raw}`,
+          link: l, found: `внешняя ссылка без rel=noopener: ${l.raw}`,
           expected: 'rel="noopener"',
           severity: 'minor',
         }))

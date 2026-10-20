@@ -1,4 +1,4 @@
-import { finding } from '../index.js'
+import { finding, whereInText } from '../index.js'
 import { phoneKey, textPhones } from '../../lib/phone.js'
 import { ignoredByFacts } from '../../lib/facts.js'
 
@@ -58,7 +58,8 @@ function phones(rule, page) {
       selector: 'body',
       found: `телефон ${raw} в тексте без tel:-ссылки`,
       occurrences: `${bare} из ${n}`,
-      expected: `<a href="tel:+${key}">`,
+      where: whereInText(page, raw),
+      expected: `<a href="tel:+${key}">${raw}</a>`,
     }))
   }
   return out
@@ -76,6 +77,7 @@ function bylines(rule, page, site) {
     out.push(finding(rule, page, {
       selector: 'body', severity: 'minor', confidence: 'heuristic',
       found: `автор/рецензент «${name}» без ссылки на страницу автора`,
+      where: whereInText(page, name),
       expected: 'имя ссылкой на страницу автора',
     }))
   }

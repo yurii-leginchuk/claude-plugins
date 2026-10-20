@@ -16,7 +16,7 @@ export default {
       const doubled = doubledCountryCode(raw)
       if (doubled) {
         out.push(finding(this, page, {
-          selector: l.selector,
+          link: l,
           found: raw,
           expected: doubled.expected,
           // The doubled-leading-1 branch infers the defect from a digit

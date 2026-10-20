@@ -387,3 +387,10 @@ test('rollUp normalizes fluctuating counts inside a group the same way countDist
   const [g] = rollUp(findings)
   assert.equal(g.identities.length, 1, 'I1 counts fluctuate; the defect is the same one')
 })
+
+test('X1 console lines with per-request URLs and tokens collapse to one defect', async () => {
+  const { defectIdentity } = await import('../../src/report/json.js')
+  const a = { rule: 'X1', selector: null, found: '[стороннее] failed: https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/pat/a4d74128a84c9e0f/1792491255387/ea7092ea2b7a4095444761b0c2fc60b74341e1ed54a26c66b296631d9d8a2219' }
+  const b = { ...a, found: '[стороннее] failed: https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/pat/zz/179/03b389adaa141b9fc67ec37606911cbcccda52519cf6f973421b63eef327289a' }
+  assert.equal(defectIdentity(a), defectIdentity(b))
+})

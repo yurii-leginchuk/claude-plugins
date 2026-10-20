@@ -33,6 +33,11 @@ const RULES_WITH_FLUCTUATING_COUNTS = {
  */
 function normalizeFound(found, rule) {
   if (typeof found !== 'string') return found
+  // Console lines carry per-request URLs and tokens (Cloudflare Turnstile
+  // logs a fresh challenge id each time): one error, hundreds of texts.
+  if (rule === 'X1') {
+    return found.replace(/https?:\/\/([^/\s]+)[^\s]*/g, '$1/…').replace(/[A-Za-z0-9_.-]{24,}/g, '…')
+  }
 
   const pattern = RULES_WITH_FLUCTUATING_COUNTS[rule]
   if (!pattern) {
@@ -121,12 +126,15 @@ export function rollUp(findings) {
     if (!g.identities.has(identity)) {
       g.identities.set(identity, {
         identity, found: f.found, expected: f.expected, selector: f.selector,
-        count: 0, pages: new Set(), example: f,
+        count: 0, pages: new Set(), example: f, where: {}, zones: new Set(),
       })
     }
     const d = g.identities.get(identity)
     d.count++
     d.pages.add(f.page)
+    // Where on each page, so the reader finds the spot without the selector.
+    if (f.where && !d.where[f.page]) d.where[f.page] = f.where
+    if (f.zone) d.zones.add(f.zone)
   }
 
   return [...groups.values()].map(g => ({

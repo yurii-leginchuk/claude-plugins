@@ -64,6 +64,8 @@ cache so `qc cache clear` never deletes it:
   "banned": ["Boston", { "term": "Equine", "note": "service dropped 2026-03" }],
   "ignore": ["/privacy-policy/", "/press/"],
   "states": ["Maine"],
+  "services": [{ "name": "Medical Detox", "url": "https://www.example.com/detox-programs/" }],
+  "locations": [{ "name": "Portland", "url": "https://www.example.com/" }],
   "gbp": [
     { "name": "Brighton", "url": "https://maps.app.goo.gl/kV6b8jGcAc5xs63E9",
       "address": "1 Main Street, Brighton, CO 80601", "paths": ["/locations/brighton/"] }
@@ -95,6 +97,8 @@ missing `--facts` file or a file that does not parse is an error, not a silent s
   text opening different profiles on different pages is a heuristic.
 - **H12** uses `states` plus the states of the `gbp` addresses as the states a page may name;
   **I20** uses the `gbp` addresses for the schema `streetAddress`.
+- `services` / `locations`: the confirmed list the profile uses instead of menu dropdowns and
+  URL roots (Claude builds it from PA CMS markdown in `/qc-site` step 0).
 - `ignore`: URL path prefixes the facts-based rules skip.
 
 ## Site-logic rules
@@ -115,7 +119,28 @@ Cross-page checks that need no reference data (most are heuristic, see each rule
 | I20 | schema address/phone absent from the page or not in facts; schema URL of another site |
 | I10 | breadcrumbs missing where most pages have them; crumb outside the URL's parents |
 | H12 | another US state named in the copy of a page about one state |
+| G13 | form choices (select/radio/checkbox) vs the site's services and locations: missing, extra, renamed |
+| E16 | services/locations missing from the menu, footer or hub; menu links to pages outside the sitemap; posts linking to removed services |
+| K16 | a block (form, FAQ, phone, map, reviews, same form id) most pages of a section have and this one lacks |
+| I21 | slug, H1 and title about different things (a copied page); the same H1 on several pages |
+| H12 | (also) another location's name in a location page's copy, title, description or image alt |
+| H14 | a list under the same heading on several pages ("Insurances we accept") missing an item the others have |
+| H17 | generic or missing og:site_name; the brand spelled differently |
+| H16 | contradictions across pages: years in business, "N services/locations" vs real counts, 24/7 vs stated hours, prices, staff roles |
+| E17 | a CTA whose text and target disagree (Call without tel:, Book to a page without a form, Directions not to Maps); "see our X page" with no such page |
 | K13 | dev vs live (dev audits with `--prod` or a sheet's Dev Link): menu and footer items, live pages that 404 on dev, lost schema types, headings, title/description, logo |
+
+The profile (`profile.json` in the run directory: brand, services and locations — from fixed
+section roots and from header-menu groups with ≥3 children — phones, emails, forms with their
+choices) is what G13, E16, K16, H12, H16 and E17 compare against.
+
+Findings carry `where` (zone, heading, link text or a copy snippet) and `zone`. The report files
+each distinct defect under global errors (header, menu, footer, or ≥80% of pages), a section
+template (all its pages share one first path segment), or a single page.
+
+`qc findings <host>` lists the latest run's distinct defects as D1…Dn; `qc review <host>
+<review.json>` (`{summary, items: [{id, verdict: confirmed|false-positive|unsure, note}]}`)
+re-renders that report: false positives move to their own section and stop counting.
 
 K13's live side is fetched once and kept in `prod-compare.json` next to the snapshot (same TTL;
 `--fresh` rebuilds it). The summary carries `prodCompare` (pages compared, live pages missing on

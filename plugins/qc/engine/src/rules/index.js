@@ -4,7 +4,47 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
+const ZONE = { header: 'хедер', nav: 'меню', footer: 'футер', breadcrumbs: 'хлебные крошки', main: 'контент' }
+
+// Where a link is on the page, in words a person can search for.
+export function describeLink(l) {
+  return [
+    ZONE[l.region] || null,
+    l.section ? `под заголовком «${l.section}»` : null,
+    l.text ? `текст ссылки «${l.text.slice(0, 80)}»` : 'ссылка без текста (картинка или иконка)',
+  ].filter(Boolean).join(' · ')
+}
+
+// Where a piece of copy is: the heading above it and the words around it.
+// Prefers an occurrence outside the header and footer, since the one in the
+// page body is usually the one QA means.
+export function whereInText(page, needle) {
+  const text = String(page.text || '')
+  if (!needle) return null
+  const spans = [page.headerText, page.footerText].filter(Boolean)
+    .map(t => { const i = text.indexOf(t); return i < 0 ? null : [i, i + t.length] }).filter(Boolean)
+  const inChrome = (i) => spans.some(([a, b]) => i >= a && i < b)
+  let at = -1
+  for (let i = text.indexOf(needle); i >= 0; i = text.indexOf(needle, i + 1)) {
+    if (at < 0) at = i
+    if (!inChrome(i)) { at = i; break }
+  }
+  if (at < 0) return null
+  let section = null
+  let from = 0
+  for (const h of page.headings || []) {
+    const i = h.text ? text.indexOf(h.text, from) : -1
+    if (i < 0 || i > at) continue
+    section = h.text
+    from = i
+  }
+  const snippet = `…${text.slice(Math.max(0, at - 60), at + needle.length + 60).trim()}…`
+  return [inChrome(at) ? 'хедер/футер' : 'контент', section ? `под заголовком «${section.slice(0, 80)}»` : null, snippet]
+    .filter(Boolean).join(' · ')
+}
+
 export function finding(rule, page, props) {
+  const { link, ...rest } = props
   return {
     rule: rule.id,
     title: rule.title,
@@ -16,7 +56,12 @@ export function finding(rule, page, props) {
     selector: null,
     found: null,
     expected: null,
-    ...props,
+    where: null,
+    ...(link ? { selector: link.selector, where: describeLink(link) } : {}),
+    ...rest,
+    // header/nav/footer/breadcrumbs/main/chrome: the report files a defect
+    // in site chrome under global errors, fixed once for every page.
+    zone: rest.zone ?? (link ? link.region : (String(rest.where || '').startsWith('хедер/футер') ? 'chrome' : null)),
   }
 }
 

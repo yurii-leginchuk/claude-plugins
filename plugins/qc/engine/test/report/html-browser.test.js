@@ -356,3 +356,13 @@ test('an unnamed region is labelled as a container id, not passed off as a name'
   assert.match(html, /определить не удалось|не удалось/i, 'and the missing name is stated')
   assert.match(html, /один раз/i, 'the fix-once reading survives')
 })
+
+test('stale browser rows are called out as stale, not as a partial pass to resume', () => {
+  const html = renderReport({
+    host: 'ex.com', env: 'prod', envReason: 'x', pages: 3, findings: [], diff: { added: [], fixed: [], remaining: [] },
+    snapshotAgeDays: 0, source: 'sitemap', sitemapStatus: 'ok',
+    browserCoverage: { stalePages: 2, pagesDone: 0, pagesTotal: 3, pagesFailed: 0, failedUrls: [], widths: [], droppedWidths: [] },
+  })
+  assert.match(html, /Браузерная проверка устарела для 2 стр\./)
+  assert.doesNotMatch(html, /выполнена частично/)
+})

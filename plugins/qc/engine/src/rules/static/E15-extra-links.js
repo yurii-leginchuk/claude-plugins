@@ -35,16 +35,18 @@ export default {
     for (const l of page.links || []) {
       if (!l.href) continue
       const raw = l.raw || ''
-      if (l.region === 'main' && !raw.includes('#') && pathKey(l.href) === here) {
+      // On an archive the current category in the category filter links
+      // to itself on purpose.
+      if (l.region === 'main' && !raw.includes('#') && pathKey(l.href) === here && !/\/(category|tag|author)\//.test(here)) {
         push(`self|${l.text}`, {
-          selector: l.selector,
+          link: l,
           found: `ссылка на эту же страницу${l.text ? `: «${l.text}»` : ' (картинка)'}`,
           expected: 'без ссылки или ссылка на другую страницу',
         })
       }
       if (DATE.test(l.text || '')) {
         push(`date|${l.text}`, {
-          selector: l.selector, confidence: 'heuristic',
+          link: l, confidence: 'heuristic',
           found: `дата кликабельна: «${l.text}» → ${l.href}`, expected: 'дата без ссылки',
         })
       }
@@ -53,7 +55,7 @@ export default {
         try { target = l.internal ? new URL(l.href).pathname : new URL(l.href).host } catch { /* keep href */ }
         if (l.internal && isLandingPath(target)) continue
         push(`lp|${target}`, {
-          selector: l.selector, confidence: 'heuristic',
+          link: l, confidence: 'heuristic',
           found: `ссылка уводит с PPC-лендинга: ${l.href}`,
           expected: 'на лендинге только телефон, форма и якоря',
         })

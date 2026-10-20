@@ -29,7 +29,7 @@ export default {
       if (SKIP_PATH.test(path)) continue
       seen.add(l.href)
       out.push(finding(this, page, {
-        selector: l.selector,
+        link: l,
         found: `${l.href} → ${s.finalUrl}`,
         expected: `ссылка сразу на ${s.finalUrl}`,
       }))

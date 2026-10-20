@@ -74,7 +74,7 @@ export default {
       if (seen.has(`${t}|${target}`)) continue
       seen.add(`${t}|${target}`)
       out.push(finding(this, page, {
-        selector: l.selector,
+        link: l,
         found: `«${l.text}» ведёт на ${target}, а на ${topPages.size} других стр. — на ${topTarget}`,
         expected: `${topTarget}, если эта ссылка не должна отличаться`,
       }))

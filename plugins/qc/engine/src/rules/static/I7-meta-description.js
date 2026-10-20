@@ -1,4 +1,5 @@
 import { finding } from '../index.js'
+import { isThankYouUrl } from '../../lib/kinds.js'
 
 export default {
   id: 'I7',
@@ -14,7 +15,7 @@ export default {
         selector: 'head', found: 'description отсутствует', expected: 'уникальный description',
       })]
     }
-    const shared = site?.index?.descriptions?.get(description) || []
+    const shared = isThankYouUrl(page.url) ? [] : (site?.index?.descriptions?.get(description) || []).filter(u => !isThankYouUrl(u))
     if (shared.length > 1) {
       return [finding(this, page, {
         selector: 'meta[name=description]',

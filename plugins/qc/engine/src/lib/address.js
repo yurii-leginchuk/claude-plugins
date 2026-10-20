@@ -12,7 +12,13 @@ export const addressNorm = (s) => ` ${String(s || '').toLowerCase().replace(/[^a
   .split(' ').map(w => SUFFIX[w] || w).join(' ')} `
 
 // "5806 Culebra Road, San Antonio, TX 78228" -> "5806 Culebra Road".
-export const streetOf = (address) => String(address || '').split(',')[0].trim()
+// The suite/unit is dropped: "Suite 1A, 11 Park Place" and "11 Park Place
+// Suite 1A" are one address written two ways.
+const SUITE = /\b(suite|ste|unit|apt|floor|fl)\.?\s*#?\s*[\w-]+|#\s*[\w-]+/gi
+export const streetOf = (address) => {
+  const parts = String(address || '').split(',').map(s => s.replace(SUITE, '').trim()).filter(Boolean)
+  return parts.find(p => /^\d/.test(p)) || parts[0] || ''
+}
 
 export const US_STATES = {
   AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas', CA: 'California', CO: 'Colorado',

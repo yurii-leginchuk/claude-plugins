@@ -18,6 +18,9 @@ export default {
     const out = []
     for (const l of page.links || []) {
       if (!l.href) continue
+      // Cloudflare email obfuscation: a script turns it into mailto: in the
+      // browser, while a plain request gets 404.
+      if (l.href.includes('/cdn-cgi/l/email-protection')) continue
       let path = ''
       let host = ''
       try {
@@ -27,7 +30,10 @@ export default {
       } catch { /* path/host stay empty; malformed URL is not this branch's concern */ }
       if (path.includes('//')) {
         out.push(finding(this, page, {
-          selector: l.selector, found: `двойной слэш в URL: ${l.href}`, expected: 'корректный путь',
+          link: l, found: `двойной слэш в URL: ${l.href}`,
+          // A pasted absolute URL after a relative one ("/a/https://x/a/"):
+          // the second URL is the one meant.
+          expected: /^https?:\/\/.+https?:\/\//.test(l.href) ? l.href.slice(l.href.lastIndexOf('http')) : 'корректный путь',
         }))
       }
       if (!status) continue
@@ -39,7 +45,7 @@ export default {
         // regardless of status code (including status 0 -- a timeout on our
         // own site is still our problem).
         out.push(finding(this, page, {
-          selector: l.selector,
+          link: l,
           found: `HTTP ${s.status || 'нет ответа'}: ${l.href}`,
           expected: 'рабочая ссылка',
           severity: 'critical',
@@ -61,7 +67,7 @@ export default {
         // manually confirm by opening the link, rather than counted as a
         // confirmed defect.
         out.push(finding(this, page, {
-          selector: l.selector,
+          link: l,
           found: `внешний хост${host ? ` ${host}` : ''} вернул HTTP ${s.status} -- похоже на блокировку автоматического запроса (бот-защита), а не битую ссылку; требуется ручная проверка перехода по ссылке: ${l.href}`,
           expected: 'подтвердить вручную переходом по ссылке в браузере',
           severity: 'note',
@@ -82,7 +88,7 @@ export default {
       // severity than an internal failure only because the client cannot
       // always fix someone else's site.
       out.push(finding(this, page, {
-        selector: l.selector,
+        link: l,
         found: `внешний хост${host ? ` ${host}` : ''} вернул HTTP ${s.status}, это не ошибка на стороне клиента: ${l.href}`,
         expected: 'рабочая ссылка',
         severity: 'major',

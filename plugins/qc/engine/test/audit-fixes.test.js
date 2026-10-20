@@ -133,3 +133,88 @@ test('stateOfAddress reads the state after the street line', () => {
   assert.equal(stateOfAddress('100 Georgia Ave, Silver Spring, Maryland'), 'Maryland')
   assert.equal(stateOfAddress('5806 Culebra Road, San Antonio, TX 78228'), 'Texas')
 })
+
+test('qc findings lists distinct defects with ids, qc review moves false positives out of the verdict', () => withCache(async () => {
+  const { listFindings, applyReview } = await import('../src/review.js')
+  const { writeFileSync: write } = await import('node:fs')
+  const out = await audit(base, { fresh: true })
+  const listed = listFindings(host)
+  assert.ok(listed.profile, 'the run carries the site profile')
+  assert.ok(listed.defects.length > 0)
+  const e4 = listed.defects.find(d => d.rule === 'E4')
+  assert.match(e4.id, /^D\d+$/)
+  const file = join(out.runDir, 'my-review.json')
+  write(file, JSON.stringify({ summary: 'Тестовый сайт', items: [{ id: e4.id, verdict: 'false-positive', note: 'номер верный' }] }))
+  const res = applyReview(host, file)
+  assert.equal(res.falsePositive, 1)
+  const html = readFileSync(res.reportPath, 'utf8')
+  assert.match(html, /Отклонено при ревью Claude/)
+  assert.match(html, /номер верный/)
+  assert.match(html, /О сайте:/)
+  assert.throws(() => { write(file, JSON.stringify({ items: [{ id: 'D999', verdict: 'confirmed' }] })); applyReview(host, file) }, /нет дефекта D999/)
+}))
+
+test('scopeOf files chrome and near-every-page defects as global, one section as template', async () => {
+  const { scopeOf } = await import('../src/report/html.js')
+  const pages = (paths) => paths.map(p => `https://ex.com${p}`)
+  assert.equal(scopeOf({ zones: new Set(['footer']), pages: pages(['/a/']) }, 10), 'global')
+  assert.equal(scopeOf({ zones: new Set(), pages: pages(['/1/', '/2/', '/3/', '/4/', '/5/', '/6/', '/7/', '/8/']) }, 10), 'global')
+  assert.equal(scopeOf({ zones: new Set(['main']), pages: pages(['/services/a/', '/services/b/']) }, 10), 'template:/services/')
+  assert.equal(scopeOf({ zones: new Set(['main']), pages: pages(['/about/']) }, 10), 'page')
+})
+
+test('no false positives for Cloudflare email protection, thank-you orphans, archive self-links', async () => {
+  const E1 = (await import('../src/rules/static/E1-broken-links.js')).default
+  const E14 = (await import('../src/rules/static/E14-orphan-pages.js')).default
+  const E15 = (await import('../src/rules/static/E15-extra-links.js')).default
+  const cf = 'https://ex.com/cdn-cgi/l/email-protection'
+  const p = { url: 'https://ex.com/', links: [{ raw: '/cdn-cgi/l/email-protection#ab', href: cf, internal: true }] }
+  assert.deepEqual(E1.check(p, { linkStatus: new Map([[cf, { ok: false, status: 404 }]]) }), [])
+  const pages = ['/', '/a/', '/b/', '/c/', '/thank-you/'].map(x => ({ url: `https://ex.com${x}`, links: [] }))
+  assert.deepEqual(E14.check(pages[4], { pages, source: 'sitemap' }), [])
+  const cat = { url: 'https://ex.com/category/tips/', links: [{ raw: '/category/tips/', href: 'https://ex.com/category/tips/', text: 'Tips', region: 'main' }] }
+  assert.deepEqual(E15.check(cat), [])
+})
+
+test('E3: a Privacy Policy link inside a form must open in a new tab, not the other way round', async () => {
+  const E3 = (await import('../src/rules/static/E3-target-blank.js')).default
+  const p = parsePage({ url: 'https://ex.com/', html: `<body><form><label>I agree to <a href="/privacy-policy/" target="_blank">Privacy Policy</a></label></form>
+    <form><label>I agree to <a href="/terms/">Terms</a></label></form><main><a href="/about/" target="_blank">About</a></main></body>` })
+  const f = E3.check(p)
+  assert.deepEqual(f.map(x => x.found), [
+    'ссылка «Terms» в форме открывается в той же вкладке — заполненная форма потеряется',
+    'внутренняя ссылка с target=_blank: /about/',
+  ])
+})
+
+test('thank-you pages may share a title, description and H1', async () => {
+  const I6 = (await import('../src/rules/static/I6-title.js')).default
+  const I7 = (await import('../src/rules/static/I7-meta-description.js')).default
+  const { buildIndex } = await import('../src/parse/index.js')
+  const pg = (u) => ({ url: `https://ex.com${u}`, title: 'Thanks | Ex', metaDescription: 'We got it', headings: [], links: [] })
+  const pages = [pg('/thank-you/'), pg('/contact/thank-you/')]
+  const site = { pages, index: buildIndex(pages) }
+  assert.deepEqual([...I6.check(pages[0], site), ...I7.check(pages[1], site)], [])
+})
+
+test('services and locations from facts replace menu and URL guessing in the profile', async () => {
+  const { buildProfile } = await import('../src/lib/profile.js')
+  const facts = normalizeFacts({ services: [{ name: 'Medical Detox', url: 'https://ex.com/detox-programs/' }, 'Family Program'], locations: ['Portland'] }, 'f.json')
+  const pages = [{ url: 'https://ex.com/detox-programs/', headings: [{ level: 1, text: 'Detox' }], links: [] }]
+  const p = buildProfile({ pages, facts })
+  assert.deepEqual(p.services.items.map(i => i.name), ['Medical Detox', 'Family Program'])
+  assert.deepEqual(p.services.paths, ['/detox-programs'])
+  assert.equal(p.services.source, 'facts')
+  assert.deepEqual(p.locations.items.map(i => i.name), ['Portland'])
+})
+
+test('page types from facts give the profile its services when no list is given', async () => {
+  const { buildProfile } = await import('../src/lib/profile.js')
+  const facts = normalizeFacts({ pages: { '/drug-rehab/': 'service', '/addiction-blog/x/': 'post' } }, 'f.json')
+  const pages = [
+    { url: 'https://ex.com/drug-rehab/', headings: [{ level: 1, text: 'Drug Rehab' }], links: [] },
+    { url: 'https://ex.com/addiction-blog/x/', headings: [{ level: 1, text: 'X' }], links: [] },
+  ]
+  assert.deepEqual(buildProfile({ pages, facts }).services.items.map(i => i.name), ['Drug Rehab'])
+  assert.throws(() => normalizeFacts({ pages: { '/a/': 'blogpost' } }, 'f.json'), /не из списка/)
+})

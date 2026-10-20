@@ -44,7 +44,7 @@ export default {
         // wired to nothing unless JavaScript took it over.
         if (raw === '#' && l.region === 'main' && l.text) {
           push(`#|${l.selector}|${l.text}`, {
-            selector: l.selector, confidence: 'heuristic', severity: 'minor',
+            link: l, confidence: 'heuristic', severity: 'minor',
             found: `ссылка-заглушка href="#": «${l.text}»`,
             expected: 'настоящая ссылка или кнопка',
           })
@@ -58,13 +58,15 @@ export default {
       const target = samePage ? page : byPath.get(pathKey(l.href))
       if (!target || !Array.isArray(target.ids) || target.ids.includes(frag)) continue
       push(`${raw}`, {
-        selector: l.selector,
+        link: l,
         // A broken "Skip to content" is an accessibility defect nobody sees.
         ...(/^skip to/i.test(l.text || '') ? { severity: 'minor' } : {}),
         found: samePage
           ? `якорь #${frag}: на странице нет элемента с таким id`
           : `ссылка ${raw}: на странице ${pathKey(l.href)} нет элемента #${frag}`,
-        expected: `секция с id="${frag}" или другая ссылка`,
+        expected: /^skip to/i.test(l.text || '')
+          ? `добавить id="${frag}" на <main> или основной контейнер страницы`
+          : `задать CSS ID «${frag}» нужной секции (Elementor: Advanced → CSS ID) или поменять ссылку`,
       })
     }
     return out

@@ -357,6 +357,14 @@ export function saveRun(host, findings, reportHtml, rules = null) {
   return dir
 }
 
+// The newest run's directory, or null. `qc findings` / `qc review` work on it.
+export function latestRunDir(host) {
+  const runs = join(snapshotDir(host), 'runs')
+  if (!existsSync(runs)) return null
+  const dirs = readdirSync(runs).sort()
+  return dirs.length ? join(runs, dirs.at(-1)) : null
+}
+
 export function previousRun(host) {
   const runs = join(snapshotDir(host), 'runs')
   if (!existsSync(runs)) return null

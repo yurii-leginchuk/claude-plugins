@@ -1,10 +1,10 @@
 ---
 name: qc-site
-description: Run a static QC audit over a whole WordPress/Elementor site and publish a rule-grouped HTML report. Accepts a site URL or a Google Sheets strategy link (uses the Dev Link column when present). Use when the user says "qc site", "qc сайта", "проверь сайт", "прогони QC по сайту", "сделай аудит сайта", "проверь качество сайта", or gives a site URL plus a strategy spreadsheet.
-argument-hint: <site-url|google-sheet-url> [--env dev|prod] [--prod <url>] [--facts <file.json>] [--fresh] [--only IDs] [--skip IDs] [--concurrency n]
+description: Run a full QC of a whole WordPress/Elementor site (static audit, then the browser pass) and publish a rule-grouped HTML report. Accepts a site URL or a Google Sheets strategy link (uses the Dev Link column when present). Use when the user says "qc site", "qc сайта", "проверь сайт", "прогони QC по сайту", "сделай аудит сайта", "проверь качество сайта", or gives a site URL plus a strategy spreadsheet.
+argument-hint: <site-url|google-sheet-url> [--env dev|prod] [--prod <url>] [--facts <file.json>] [--fresh] [--only IDs] [--skip IDs] [--concurrency n] [--static]
 ---
 
-# /qc-site — static QC of a whole site
+# /qc-site — full QC of a whole site
 
 The engine (`<plugin-root>/engine`) does all the checking — page discovery, fetching, link
 checking, rule evaluation, severity/confidence classification, and HTML report rendering. Your job
@@ -13,7 +13,10 @@ a check, never parse or interpret raw HTML yourself, never eyeball a page and ad
 If a rule looks wrong, say so and propose a fix to the rule file — do not paper over it, silently
 adjust a number, or invent a finding the engine didn't report.
 
-**This command alone never opens a browser.** It fetches and statically parses HTML, so on its own
+**By default this command runs both passes**: the static audit, then the browser pass
+(`/qc-browse`'s `cli.js browse`), then the audit once more so the published report carries both.
+With `--static` (not an engine flag: drop it before calling the CLI) it stops after the static
+audit. The static audit alone never opens a browser: it fetches and statically parses HTML, so on its own
 it only covers what's inspectable from markup (broken links, meta, headings, forms, alt text, etc).
 Visual and interactive defects — horizontal scroll, overflow, overlapping elements, hover/focus
 behaviour, contrast, console errors, broken images, and per-breakpoint screenshots — only appear
@@ -28,6 +31,36 @@ command.
 
 ## Steps
 
+0. **Get to know the site before auditing it.** Build a knowledge base you will review findings
+   against. It lives next to the facts file, `~/.qc-facts/<host>.md`, and is reused: if it exists
+   and is under 30 days old, read it and refresh only what changed (new pages in the list).
+   1. **Page inventory.** With the PA CMS (`poirier-cms`) tools: `list_sites` → the site whose url
+      matches the host (for a dev host, also the live site) → `list_pages` (published, `limit` 200,
+      all pages of results). Without PA CMS, use the sitemap via WebFetch.
+   2. **Classify every page** by URL, title and, where unclear, its markdown into one of: `home`,
+      `service`, `service-hub`, `location`, `location-hub`, `post`, `blog` (listing/category),
+      `about`, `team`, `contact`, `admissions` (insurance, intake), `legal`, `thank-you`,
+      `landing` (PPC), `careers`, `other`.
+   3. **Read the content** with `discovery_page_md_get` (markdown, cheap): the homepage, every hub,
+      every service and location page (if more than ~30, all hubs plus a sample of 10 of each),
+      contact, about, one or two posts. Skim; you need facts, not prose.
+   4. **Write the knowledge base** (`~/.qc-facts/<host>.md`, plain Markdown, ~1–2 screens):
+      - the business in 2–3 sentences: who, what, where, for whom;
+      - services and locations, one line each with URL;
+      - contacts: phones, emails, addresses, hours, GBP links as the site states them;
+      - forms and the main CTAs (where they lead);
+      - claims worth cross-checking: years in business, counts, prices, insurances, staff;
+      - page counts by type;
+      - anything odd you already noticed while reading (another network site's email, a
+        placeholder, a page that contradicts another) — these go to the chat summary as
+        «замечено Claude, правилом не покрыто».
+   5. **Show the user** the services, locations and anything odd in one short message, and ask
+      them to confirm or correct. Then write into the facts file (keep the other fields):
+      `services: [{name, url}]`, `locations: [{name, url}]`, `pages: {"/path/": "type"}` — the
+      engine's form, menu, footer and copy-paste checks (G13, E16, K16, H12, H16) use them instead
+      of guessing from URLs. If the user does not answer, run without them and say so. Never put
+      phones or emails read off the site into `phones`/`emails` — those are checked against them.
+
 1. Resolve the engine path: `<plugin-root>/engine`. If `node_modules` is missing there, run
    `npm install` in that directory once (only needed on a fresh checkout — do this before the
    first audit, not on every invocation).
@@ -39,6 +72,21 @@ command.
 
    Crawling tens to low hundreds of pages takes minutes — run it in the background and report
    progress rather than blocking the conversation on it.
+
+   Then, unless the user passed `--static` and only if the audit exited 0, run the browser pass
+   and re-run the audit without `--fresh` (it reuses the snapshot just crawled and merges the
+   browser rows), and present that second summary from step 3 on:
+
+   ```bash
+   node <plugin-root>/engine/src/cli.js browse "<host>"
+   node <plugin-root>/engine/src/cli.js audit "<input>" [flags without --fresh]
+   ```
+
+   The browser pass takes ~2–3 minutes per page at its auto-discovered widths (often 8–10); on a
+   site over ~15 pages pass `--breakpoints 360,768,1024,1440` unless the user asked for a deep
+   visual pass, and say which widths ran. Run it in the background too. If it exits non-zero (e.g. Chromium not installed — `npx playwright install
+   chromium` in the engine dir), say so, publish the static report, and stop. For its summary
+   fields and failure handling follow `/qc-browse` steps 4–5.
 3. **Check the exit code before trusting anything on stdout.** The engine's `renderReport`,
    `rollUp`, and `diffRuns` throw on malformed input, and the CLI catches every thrown error,
    prints it to stderr, and exits non-zero. A non-zero exit means no valid report was produced —
@@ -75,11 +123,37 @@ command.
      explicitly as "needs a human look" — do not hide them, and do not imply they're confirmed
      defects either.** A heuristic-only run can show `verdict: "Pass"` with all-zero `counts` while
      `findings.json`/the HTML report still holds real, unconfirmed items — say so if that happens.
-5. Read `reportPath` and publish it with the Artifact tool (favicon `✅`, title `QC · <host>`).
+5. **Know the site, then review the findings yourself** before publishing. The engine's rules are
+   pattern matches; you are the second pair of eyes.
+   - Read your knowledge base from step 0 and `profile.path` (brand, services, locations, phones,
+     emails, forms with their options), and write 2–4 plain sentences on what the site is: who the business is, what it offers, where, how
+     people contact it. This is the report's «О сайте» block and your reference for the review.
+   - Run `node <plugin-root>/engine/src/cli.js findings "<host>"`. It lists the latest run's
+     distinct defects as `D1…Dn` with rule, severity, confidence, found, expected, scope
+     (global / template / page) and up to three example pages with `where`.
+   - Judge each defect: all critical and major ones, and every heuristic (cap ~60, most severe
+     first; leave the rest unreviewed and say so). Verdicts: `confirmed`, `false-positive`, `unsure`,
+     each with a one-line note in Russian saying why («номер в FAQ действительно без tel:»,
+     «email-защита Cloudflare, в браузере это mailto»). Where the entry alone is not enough, open the
+     page (WebFetch, or the `where` snippet) and look at that spot only. Use the profile for the
+     logical ones: is the "missing" service really a service of this business, is the "foreign" city
+     one it serves. Reading pages here is to confirm or reject an engine finding — never add a finding
+     the engine did not report; if you notice something the engine missed, say so in the chat
+     summary as «замечено Claude, правилом не покрыто» and propose the rule.
+   - Write `{ "summary": "<about the site>", "items": [{ "id": "D3", "verdict": "...", "note": "..." }] }`
+     to `<runDir>/review-input.json` and run
+     `node <plugin-root>/engine/src/cli.js review "<host>" "<runDir>/review-input.json"`. It re-renders
+     `report.html`: false positives move to «Отклонено при ревью Claude» and stop counting, the rest
+     show your note. Use its printed `verdict`/`distinct` in the summary, not the pre-review ones.
+6. Read `reportPath` and publish it with the Artifact tool (favicon `✅`, title `QC · <host>`).
    **Load the `artifact-design` skill first** — it is mandatory before authoring or publishing
    artifact HTML, and applies here even though the HTML itself was generated by the engine, not
    written by you.
-6. Summarise in chat, in Russian (the operator-facing language for this skill):
+7. Summarise in chat, in Russian (the operator-facing language for this skill):
+   - What the site is (your «О сайте» lines) and how many findings you confirmed, rejected and left
+     unsure; name the rejected ones briefly so a rule can be fixed.
+   - Lead with global errors (header, menu, footer, every page — one fix each), then template
+     errors per section, then single pages: the report is grouped the same way.
    - **Вердикт** (`verdict`) and the **distinct** counts per severity (critical/major/minor) —
      this is the headline, phrased as "N реальных дефектов", not raw occurrence counts.
    - Raw `counts` as a secondary line ("встречаются на M страницах"), only if it materially adds
@@ -112,7 +186,7 @@ command.
      whole site's visual behaviour was checked.
    - The run directory (`runDir`) and the Artifact link.
 
-## Site facts (E9, E12, H9, H11)
+## Site facts (E9, E12, H9, H11, and the services/locations list)
 
 Phones, GBP profiles, retired terms, emails and the review rating are checked against a per-host facts file
 (`~/.qc-facts/<host>.json`, or `--facts <path>`; format in the engine README, «Site facts»).
@@ -132,7 +206,8 @@ Without it H9 and H11 report nothing, and E9 and E12 only compare the site with 
 ## Rules
 
 - Never re-implement a check yourself, and never read/parse raw page HTML directly to produce a
-  finding — the engine already did that. If a rule seems wrong, say so and propose a fix to the
+  finding — the engine already did that. Reading a page to verify a finding in step 5 is the
+  exception, and it only confirms or rejects. If a rule seems wrong, say so and propose a fix to the
   rule file; do not paper over it in the summary or quietly override its output.
 - If the input is a Figma link only, tell the user this command needs a site URL — design
   comparison is not part of this version.

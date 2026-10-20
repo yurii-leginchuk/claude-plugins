@@ -32,13 +32,28 @@ function parseRobots(root) {
   }
 }
 
+// The choices a visitor can pick in a field: <option> texts (minus the
+// empty "Select…" placeholder) and the labels of radio/checkbox inputs. G13
+// compares them with the site's services and locations.
+function optionsOf(scope) {
+  const opts = scope.querySelectorAll('option')
+    .filter(o => (o.getAttribute('value') ?? squash(o.text)) !== '')
+    .map(o => squash(o.text))
+  const choices = scope.querySelectorAll('input[type="radio"], input[type="checkbox"]').map((i) => {
+    const id = i.getAttribute('id')
+    const label = (id && scope.querySelector(`label[for="${id}"]`)) || i.parentNode
+    return squash(label?.text || i.getAttribute('value') || '')
+  })
+  return [...opts, ...choices].filter(Boolean).slice(0, 200)
+}
+
 function parseForms(root) {
   return root.querySelectorAll('form').map((form) => {
     const wrapper = form.closest?.('.gform_wrapper') || null
     const scope = wrapper || form
     const gravity = Boolean(wrapper) || /^gform_/.test(form.getAttribute('id') || '')
 
-    const fields = scope.querySelectorAll('.gfield').map((f) => {
+    const gfields = scope.querySelectorAll('.gfield').map((f) => {
       const cls = f.getAttribute('class') || ''
       const input = f.querySelector('input, textarea, select')
       // Gravity Forms marks the field's semantic type on the wrapper as `gfield--type-<x>`
@@ -50,9 +65,27 @@ function parseForms(root) {
         fieldType: typeMatch ? typeMatch[1].toLowerCase() : null,
         required: cls.includes('gfield_contains_required'),
         markedRequired: Boolean(f.querySelector('.gfield_required')),
+        label: squash(f.querySelector('.gfield_label, legend, label')?.text || '').slice(0, 120),
+        options: optionsOf(f),
         selector: selectorOf(f),
       }
     })
+    // Other form plugins (Elementor, WPForms, CF7): one field per control,
+    // labelled by its <label for>, aria-label, placeholder or name.
+    const fields = gfields.length ? gfields : form.querySelectorAll('select, input:not([type="hidden"]):not([type="submit"]), textarea')
+      .filter(el => !['radio', 'checkbox'].includes(el.getAttribute('type')) || el.rawTagName === 'select')
+      .map((el) => {
+        const id = el.getAttribute('id')
+        const label = (id && form.querySelector(`label[for="${id}"]`)?.text) ||
+          el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('name') || ''
+        return {
+          inputType: el.getAttribute('type') || el.rawTagName, fieldType: null,
+          required: el.hasAttribute('required'), markedRequired: false,
+          label: squash(label).slice(0, 120),
+          options: el.rawTagName === 'select' ? optionsOf(el) : [],
+          selector: selectorOf(el),
+        }
+      })
 
     const hasPrivacyCheckbox = scope.querySelectorAll('.gfield').some((f) => {
       const hasCheckbox = Boolean(f.querySelector('input[type="checkbox"]'))
@@ -159,6 +192,21 @@ function regionOf(el) {
   return 'main'
 }
 
+// The dropdown a menu link sits in: the parent item of the nearest
+// sub-menu (`li > a "Services"` + `ul.sub-menu`). The profile reads a site's
+// services and locations from it, whatever their URLs look like.
+function menuParentOf(a, url) {
+  for (let n = a.parentNode; n && n.rawTagName; n = n.parentNode) {
+    if (!/^(ul|ol)$/i.test(n.rawTagName)) continue
+    const li = n.parentNode
+    if (!li || li.rawTagName?.toLowerCase() !== 'li') continue
+    const head = li.querySelector('a, span')
+    if (!head || head === a) return null
+    return { text: squash(head.text).slice(0, 60), href: head.getAttribute?.('href') ? normalizeUrl(head.getAttribute('href'), url) : null }
+  }
+  return null
+}
+
 function parseBreadcrumbs(root, url) {
   const box = root.querySelector(BREADCRUMB_SEL)
   if (!box) return null
@@ -174,7 +222,7 @@ const JSONLD_PUBLISHED = /"datePublished"\s*:\s*"([^"]+)"/i
 // parsed by another version is re-crawled rather than reused: an old PageDoc
 // without `region` made K13 see an empty dev menu and report every live menu
 // item as lost.
-export const PARSE_VERSION = 2
+export const PARSE_VERSION = 6
 
 export function parsePage({ url, html, status = 200, headers = {} }) {
   const root = parse(html, PARSE_OPTIONS)
@@ -191,6 +239,22 @@ export function parsePage({ url, html, status = 200, headers = {} }) {
     selector: selectorOf(h),
   }))
 
+  // The heading each link sits under, for the report's "where": a selector
+  // like `a` is useless for finding the one link among two hundred.
+  const sectionOf = new Map()
+  let lastHeading = null
+  for (const el of root.querySelectorAll('h1,h2,h3,h4,h5,h6,a[href],ul,ol')) {
+    if (/^(a|ul|ol)$/i.test(el.rawTagName)) sectionOf.set(el, lastHeading)
+    else if (squash(el.text)) lastHeading = squash(el.text).slice(0, 80)
+  }
+
+  // Short lists under a heading ("Insurances we accept", "Areas we serve"),
+  // for rules that compare the same list across pages (H14).
+  const lists = root.querySelectorAll('ul,ol').map((ul) => {
+    const items = ul.childNodes.filter(n => n.rawTagName?.toLowerCase() === 'li').map(li => squash(li.text))
+    return { heading: sectionOf.get(ul) || null, region: regionOf(ul), items }
+  }).filter(l => l.items.length >= 3 && l.items.every(t => t && t.length <= 80)).slice(0, 60)
+
   const links = root.querySelectorAll('a[href]').map((a) => {
     const raw = (a.getAttribute('href') || '').trim()
     const href = normalizeUrl(raw, url)
@@ -203,6 +267,11 @@ export function parsePage({ url, html, status = 200, headers = {} }) {
       text: squash(a.text),
       internal: href ? sameHost(href, url) : false,
       region: regionOf(a),
+      menuParent: menuParentOf(a, url),
+      // Inside a form (a consent checkbox's Privacy Policy link): E3 wants
+      // those in a new tab so the filled-in form is not lost.
+      inForm: Boolean(a.closest?.('form, .gform_wrapper')),
+      section: sectionOf.get(a) || null,
       imageOnly: squash(a.text) === '' && Boolean(a.querySelector('img,svg')),
       selector: selectorOf(a),
     }
@@ -293,6 +362,8 @@ export function parsePage({ url, html, status = 200, headers = {} }) {
     logo: logoEl ? normalizeUrl(logoEl.getAttribute('src') || logoEl.getAttribute('data-src') || '', url) : null,
     breadcrumbs: parseBreadcrumbs(root, url),
     bodyClass: root.querySelector('body')?.getAttribute('class') || '',
+    siteName: root.querySelector('meta[property="og:site_name" i]')?.getAttribute('content') || null,
+    lists,
     published,
     // Only the og article date says "this is a post"; see lib/kinds.js.
     isArticle: Boolean(publishedEl),

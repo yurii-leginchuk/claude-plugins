@@ -1,4 +1,4 @@
-import { finding } from '../index.js'
+import { finding, whereInText } from '../index.js'
 import { ignoredByFacts, locationFor as locationOf } from '../../lib/facts.js'
 import { addressNorm as norm, streetOf } from '../../lib/address.js'
 import { classifyGoogleLink, linkKey, placeKey, embedKey } from '../../lib/gbp.js'
@@ -99,7 +99,7 @@ function links(ctx) {
     if (!kind || kind === 'dir') continue
     if (kind === 'search') {
       push(ctx, {
-        selector: l.selector,
+        link: l,
         found: `ссылка ведёт на ${SEARCH_KIND(l.raw)}, а не на профиль GBP: ${l.raw}`,
         expected: expectedFor(ctx),
       })
@@ -107,7 +107,7 @@ function links(ctx) {
     }
     if (kind === 'legacy') {
       push(ctx, {
-        selector: l.selector, severity: 'minor',
+        link: l, severity: 'minor',
         found: `ссылка старого формата g.page, открывается через редирект: ${l.raw}`,
         expected: 'прямая ссылка на профиль (maps.app.goo.gl/… из «Поделиться» в GBP)',
       })
@@ -115,7 +115,7 @@ function links(ctx) {
     const r = ctx.resolved.get(l.href)
     if ((kind === 'short' || kind === 'legacy') && r && r.status >= 400) {
       push(ctx, {
-        selector: l.selector, severity: 'critical',
+        link: l, severity: 'critical',
         found: `ссылка на GBP не открывается (HTTP ${r.status}): ${l.raw}`, expected: expectedFor(ctx),
       })
       continue
@@ -124,7 +124,7 @@ function links(ctx) {
       const k = classifyGoogleLink(r.finalUrl)
       if (k === 'search') {
         push(ctx, {
-          selector: l.selector,
+          link: l,
           found: `короткая ссылка ведёт на ${SEARCH_KIND(r.finalUrl)}, а не на профиль GBP: ${l.raw}`,
           expected: expectedFor(ctx),
         })
@@ -172,17 +172,21 @@ function addresses(ctx) {
     for (const x of linked) {
       if (isProfileLink(x.l) || !x.l.href) continue
       push(ctx, {
-        selector: x.l.selector, confidence,
+        link: x.l, confidence,
         found: `адрес «${street}» ведёт не на GBP: ${x.l.raw}`,
         expected: loc?.url || expectedFor(ctx),
       })
     }
     if (inText > linked.length) {
+      // The profile this address already links to elsewhere on the page is
+      // the fix, ready to paste.
+      const href = loc?.url || linked.find(x => isProfileLink(x.l))?.l.raw
       push(ctx, {
         selector: 'body', confidence,
         found: `адрес «${street}» не кликабельный`,
         occurrences: `${inText - linked.length} из ${inText} упоминаний без ссылки`,
-        expected: loc?.url || expectedFor(ctx),
+        where: whereInText(ctx.page, street),
+        expected: href ? `обернуть адрес в <a href="${href}">${street}…</a>` : expectedFor(ctx),
         ...(toProfile ? { severity: 'minor' } : {}),
       })
     }
@@ -224,7 +228,7 @@ function consistency(ctx, site) {
     const [topKey, topPages] = [...byKey].sort((a, b) => b[1].size - a[1].size)[0]
     if (key === topKey) continue
     push(ctx, {
-      selector: l.selector, confidence: 'heuristic',
+      link: l, confidence: 'heuristic',
       found: `«${l.text}» ведёт на другой профиль GBP, чем на ${topPages.size} других стр.: ${l.raw}`,
       expected: 'одна ссылка на профиль для одной локации по всему сайту',
     })

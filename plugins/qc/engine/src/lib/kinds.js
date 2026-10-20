@@ -8,3 +8,8 @@ export const isPost = (p) => /\bsingle-post\b/.test(p.bodyClass || '') || Boolea
 // A PPC landing page: /lp/…, /landing/…, /ppc/….
 const LANDING = /^\/(lp|landing|ppc)(\/|$)/i
 export const isLandingPath = (path) => LANDING.test(path || '')
+
+// A form's confirmation page ("/thank-you/", "/contact/thank-you/"): sites
+// keep several on purpose, with one title and H1, no crumbs and no inbound
+// links -- none of that is a defect there.
+export const isThankYouUrl = (url) => { try { return /thank/i.test(new URL(url).pathname) } catch { return false } }

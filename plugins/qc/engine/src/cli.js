@@ -16,6 +16,9 @@ import { parsePage, PARSE_VERSION } from './parse/page.js'
 import { buildIndex } from './parse/index.js'
 import { loadFacts } from './lib/facts.js'
 import { resolveGbpLinks, gbpTargets } from './lib/gbp.js'
+import { buildProfile } from './lib/profile.js'
+import { SWEEP } from './browser/sweep.js'
+import { listFindings, applyReview } from './review.js'
 import { buildProdCompare, loadProdCompare, saveProdCompare } from './crawl/prod.js'
 import { runStaticRules, allRules } from './rules/index.js'
 import { allBrowserRules } from './rules/browser-index.js'
@@ -31,7 +34,7 @@ import { runBrowserPass } from './browser/run.js'
 import { parse as parseHtml } from 'node-html-parser'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { SNAPSHOT_TTL_MS } from './lib/snapshot-ttl.js'
 
 // How long a saved snapshot is trusted as a stand-in for a live crawl when
@@ -44,9 +47,11 @@ import { SNAPSHOT_TTL_MS } from './lib/snapshot-ttl.js'
 // made the banner unreachable instead of fixing it).
 
 const USAGE = `qc audit <site-url|sheet-url> [--fresh] [--env dev|prod] [--prod <url>] [--facts <file.json>] [--only IDs] [--skip IDs] [--concurrency n]
-qc browse <host|url> [--breakpoints a,b] [--pages n] [--force] [--concurrency n] [--headed] [--only IDs] [--skip IDs]
+qc browse <host|url> [--breakpoints a,b] [--sweep step|0] [--pages n] [--force] [--concurrency n] [--headed] [--only IDs] [--skip IDs]
   note: in browse, --only/--skip filter only the PRINTED findings (all browser rules still run) --
   this is NOT the same as audit's --only/--skip, which control which rules execute
+qc findings <host>                 distinct defects of the latest run with ids, for review
+qc review <host> <review.json>     re-render the latest report with Claude's verdicts
 qc cache list
 qc cache clear <host> | --all`
 
@@ -450,7 +455,12 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   const isStale = (r) => (typeof r.at === 'number' ? r.at : (cached ? Infinity : 0)) < crawledAt
   const browserRows = allBrowserRows.filter(r => !isStale(r))
   const staleBrowserPages = allBrowserRows.length - browserRows.length
+  // A third-party script's console error (a captcha, a chat widget) is
+  // rarely the site's to fix: it is shown for a human look, not counted.
+  const liveBrowserIds = new Set([...(await allBrowserRules()).map(r => r.id), 'C8'])
   const browserFindings = browserRows.flatMap(r => r.findings || [])
+    .filter(f => liveBrowserIds.has(f.rule))
+    .map(f => (f.rule === 'X1' && String(f.found).startsWith('[стороннее]') ? { ...f, confidence: 'heuristic' } : f))
   inlineScreenshots(browserFindings)
   const findings = [...staticFindings, ...browserFindings]
 
@@ -524,11 +534,17 @@ export async function audit(input, flags, { fetchImpl } = {}) {
     })
   }
 
-  const html = renderReport({
-    host, env, envReason: reason, pages: pages.length, findings, diff,
+  const reportInput = {
+    host, env, envReason: reason, pages: pages.length, diff,
     snapshotAgeDays: cacheAgeDays, source, sitemapStatus, browserCoverage,
-  })
+  }
+  const html = renderReport({ ...reportInput, findings })
   const runDir = saveRun(host, findings, html, ranNow)
+  // For `qc review`, which re-renders this run with Claude's verdicts, and
+  // for Claude, who reads the profile to describe the site.
+  const profile = buildProfile(site)
+  writeFileSync(join(runDir, 'report-input.json'), JSON.stringify(reportInput))
+  writeFileSync(join(runDir, 'profile.json'), JSON.stringify(profile, null, 2))
 
   // `counts` deliberately excludes heuristic-confidence findings, matching
   // verdict()/rollUp()/renderReport() elsewhere in this engine: they are set
@@ -573,6 +589,10 @@ export async function audit(input, flags, { fetchImpl } = {}) {
     fromCache, cacheAgeDays: Number(cacheAgeDays.toFixed(4)),
     pagesRequested, pagesFailed, failedUrls: failedUrls.slice(0, 20),
     prodUrl,
+    profile: {
+      brand: profile.brand, services: profile.services.items.length, locations: profile.locations.items.length,
+      forms: profile.forms.length, path: join(runDir, 'profile.json'),
+    },
     // K13's live side: null when this was not a dev audit with a known
     // production host, so "dev matches live" is never claimed unchecked.
     prodCompare: prod ? {
@@ -719,6 +739,10 @@ export async function browse(input, flags) {
 
   const force = Boolean(flags.force)
   const headed = Boolean(flags.headed)
+  // Resize sweep 1920→320 between the breakpoints; --sweep <step px>, 0 = off.
+  const sweepStep = flags.sweep === undefined || flags.sweep === true ? SWEEP.step : Number(flags.sweep)
+  if (!Number.isInteger(sweepStep) || sweepStep < 0) throw new Error(`--sweep должен быть шагом в px (0 — выключить), получено: ${flags.sweep}`)
+  const sweep = sweepStep ? { ...SWEEP, step: sweepStep } : null
 
   const onlyIds = list(requireStringFlag(flags, 'only', '--only'))
   const skipIds = list(requireStringFlag(flags, 'skip', '--skip'))
@@ -851,7 +875,7 @@ export async function browse(input, flags) {
     host,
     pages: snap.pages.map(p => p.url),
     widths,
-    opts: { force, maxPages, headed, regions },
+    opts: { force, maxPages, headed, regions, sweep },
   })
 
   // Review fix (Task 9): `result.findings` is only what THIS invocation's
@@ -931,6 +955,16 @@ async function main() {
       // and non-zero only when it could not start at all (thrown above:
       // no snapshot, bad flag, unknown rule id).
       console.log(JSON.stringify(summary, null, 2))
+      return
+    }
+    if (cmd === 'findings') {
+      if (!args[0]) throw new Error('укажите хост: qc findings <host>')
+      console.log(JSON.stringify(listFindings(resolveHostInput(args[0])), null, 2))
+      return
+    }
+    if (cmd === 'review') {
+      if (!args[0] || !args[1]) throw new Error('укажите хост и файл ревью: qc review <host> <review.json>')
+      console.log(JSON.stringify(applyReview(resolveHostInput(args[0]), args[1]), null, 2))
       return
     }
     if (cmd === 'cache') {

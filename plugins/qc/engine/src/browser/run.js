@@ -22,6 +22,7 @@
 // launch.js's preparePage() is designed: it resets `window.__qcConsole`
 // and re-registers its console/pageerror/request listeners on every call,
 // so re-navigating the same page to the same url for a new width is safe.
+import { sweepPage } from './sweep.js'
 import { launchBrowser, preparePage, PAGE_TIMEOUT_MS } from './launch.js'
 import { buildBundle } from './bundle.js'
 import { proveRegions, regionOf } from './regions.js'
@@ -88,7 +89,7 @@ const errorText = (e) => {
 // separately-reported outcomes instead of collapsing a minor gap into a
 // full-page failure that would trigger a wasted retry, or hiding it inside
 // a silently-incomplete success.
-async function attemptPage({ newPage, url, widths, timeout, bundle, regions, host, capturedIdentities }) {
+async function attemptPage({ newPage, url, widths, timeout, bundle, regions, host, capturedIdentities, sweep }) {
   let page
   try {
     page = await newPage()
@@ -184,6 +185,14 @@ async function attemptPage({ newPage, url, widths, timeout, bundle, regions, hos
         widthsFailed.push({ width, error: errorText(e) })
       }
     }
+    // The page is open and proven; sweep the widths between breakpoints.
+    if (sweep) {
+      try {
+        findings.push(...await sweepPage(page, { url, host, sweep, capturedIdentities, region: f => regionOf(f, regions) }))
+      } catch (e) {
+        widthsFailed.push({ width: 'sweep', error: errorText(e) })
+      }
+    }
   } finally {
     await page.close().catch(() => {})
   }
@@ -216,6 +225,8 @@ export async function runBrowserPass({ host, pages, widths, opts = {} }) {
     // command. Every normal caller gets the real launchBrowser (imported
     // above) by not passing this at all.
     launchBrowserImpl = launchBrowser,
+    // Resize sweep (sweep.js): {from, to, step} or null to skip it.
+    sweep = null,
   } = opts
 
   if (force) clearBrowserResults(host)
@@ -317,7 +328,7 @@ export async function runBrowserPass({ host, pages, widths, opts = {} }) {
         }
       }
 
-      const pageArgs = { newPage, url, widths, timeout, bundle, regions, host, capturedIdentities }
+      const pageArgs = { newPage, url, widths, timeout, bundle, regions, host, capturedIdentities, sweep }
       let result = await attemptPage(pageArgs)
       if (!result.ok) {
         // Failure policy: 45s per page, one retry. A dead-on-arrival

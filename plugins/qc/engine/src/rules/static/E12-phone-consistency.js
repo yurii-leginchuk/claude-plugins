@@ -1,4 +1,4 @@
-import { finding } from '../index.js'
+import { finding, whereInText } from '../index.js'
 import { phoneKey, textPhones } from '../../lib/phone.js'
 import { ignoredByFacts } from '../../lib/facts.js'
 
@@ -49,12 +49,12 @@ function againstFacts(rule, page, facts) {
     out.push(finding(rule, page, { selector, found, expected, ...extra }))
   }
   for (const l of page.links || []) {
-    if (l.protocol === 'tel:') report(phoneKey(l.raw), l.selector, `номер не из фактов сайта: ${l.raw}`)
+    if (l.protocol === 'tel:') report(phoneKey(l.raw), l.selector, `номер не из фактов сайта: ${l.raw}`, { link: l })
   }
   // A number in the copy may be someone else's on purpose (the SAMHSA
   // helpline on every rehab site), so only tel: links and schema are certain.
   for (const p of textPhones(page.text)) {
-    report(p.key, 'body', `номер в тексте не из фактов сайта: ${p.raw}`, { confidence: 'heuristic' })
+    report(p.key, 'body', `номер в тексте не из фактов сайта: ${p.raw}`, { confidence: 'heuristic', where: whereInText(page, p.raw) })
   }
   for (const block of page.jsonLdRaw || []) {
     for (const m of block.matchAll(JSONLD_PHONE)) {
@@ -84,7 +84,7 @@ function againstSite(rule, page, phones) {
     if (!urls || urls.size > rare) continue
     seen.add(key)
     out.push(finding(rule, page, {
-      selector: l.selector,
+      link: l,
       found: `${l.raw} встречается на ${urls.size} стр., а +${majorityKey} — на ${majorityPages}`,
       expected: `+${majorityKey}, если это не номер отдельной локации`,
       confidence: 'heuristic',

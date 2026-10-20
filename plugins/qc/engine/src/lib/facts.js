@@ -12,6 +12,8 @@ import { classifyGoogleLink } from './gbp.js'
 // Lives outside the snapshot cache on purpose: `qc cache clear` deletes a
 // host's crawl and run history, and the facts a human wrote down about the
 // business must survive that.
+export const PAGE_TYPES = new Set(['home', 'service', 'service-hub', 'location', 'location-hub', 'post', 'blog', 'about', 'team', 'contact', 'admissions', 'legal', 'thank-you', 'landing', 'careers', 'other'])
+
 const factsDir = () => process.env.QC_FACTS_DIR || join(homedir(), '.qc-facts')
 
 export const factsPathFor = (host) => join(factsDir(), `${host}.json`)
@@ -78,7 +80,28 @@ export function normalizeFacts(raw, path) {
   // no office.
   const states = strings(path, raw.states, 'states')
 
-  return { path, phones, emails, rating, banned, ignore, gbp, states }
+  // The site's services and locations as Claude read them off its pages (PA
+  // CMS markdown) and the user confirmed: the reference G13, E16, K16, H12
+  // and H16 compare menus, footers and forms against, whatever the URLs.
+  const listOf = (field) => {
+    if (raw[field] === undefined) return []
+    if (!Array.isArray(raw[field])) fail(path, `поле "${field}" должно быть массивом`)
+    return raw[field].map((v, i) => {
+      const o = typeof v === 'string' ? { name: v } : v
+      if (!o || typeof o.name !== 'string' || !o.name.trim()) fail(path, `"${field}"[${i}] должно быть {name, url}`)
+      return { name: o.name.trim(), url: typeof o.url === 'string' ? o.url.trim() : null }
+    })
+  }
+
+  // Claude's classification of every published page ("/drug-rehab/": "service").
+  if (raw.pages !== undefined && (typeof raw.pages !== 'object' || Array.isArray(raw.pages))) fail(path, 'поле "pages" должно быть объектом {"/path/": "тип"}')
+  const pages = {}
+  for (const [k, t] of Object.entries(raw.pages || {})) {
+    if (!PAGE_TYPES.has(t)) fail(path, `pages["${k}"]: тип «${t}» не из списка ${[...PAGE_TYPES].join(', ')}`)
+    pages[k.replace(/\/+$/, '') || '/'] = t
+  }
+
+  return { path, phones, emails, rating, banned, ignore, gbp, states, services: listOf('services'), locations: listOf('locations'), pages }
 }
 
 // `explicitPath` comes from --facts and must exist; the per-host default is

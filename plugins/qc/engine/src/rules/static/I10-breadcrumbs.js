@@ -1,6 +1,6 @@
 import { finding } from '../index.js'
 import { pathKey } from '../../lib/url.js'
-import { isLandingPath } from '../../lib/kinds.js'
+import { isLandingPath, isThankYouUrl } from '../../lib/kinds.js'
 
 // Taxonomy I9–I11: breadcrumbs missing on some pages, not matching the URL
 // ("all program pages should have `programs` in breadcrumbs"), or leading to
@@ -40,7 +40,7 @@ export default {
 
     if (!page.breadcrumbs) {
       const s = site?.pages ? share(site) : { total: 0, withCrumbs: 0 }
-      if (s.total >= MIN_PAGES && s.withCrumbs / s.total >= SHARE && !isLandingPath(path)) {
+      if (s.total >= MIN_PAGES && s.withCrumbs / s.total >= SHARE && !isLandingPath(path) && !isThankYouUrl(page.url)) {
         out.push(finding(this, page, {
           selector: null,
           found: `нет хлебных крошек, хотя они есть на ${s.withCrumbs} из ${s.total} страниц`,

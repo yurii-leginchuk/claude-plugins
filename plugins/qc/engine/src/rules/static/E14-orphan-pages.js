@@ -1,6 +1,6 @@
 import { finding } from '../index.js'
 import { pathKey } from '../../lib/url.js'
-import { isPost } from '../../lib/kinds.js'
+import { isPost, isThankYouUrl } from '../../lib/kinds.js'
 
 // Taxonomy E14: "no interlinking with the neighbouring pages", an orphan page
 // nobody can reach. Visitors and crawlers find a page through links; one that
@@ -40,7 +40,8 @@ export default {
   check(page, site) {
     if (site?.source !== 'sitemap' || (site.pages || []).length < MIN_PAGES) return []
     const key = pathKey(page.url)
-    if (key === '/' || isPost(page) || ARCHIVE.test(key) || page.robots?.index === false) return []
+    // A form's confirmation page is reached by submitting, not by a link.
+    if (key === '/' || isPost(page) || ARCHIVE.test(key) || isThankYouUrl(page.url) || page.robots?.index === false) return []
     if (inbound(site).get(key)?.size) return []
     return [finding(this, page, {
       selector: null,

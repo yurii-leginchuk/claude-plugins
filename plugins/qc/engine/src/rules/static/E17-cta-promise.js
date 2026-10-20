@@ -1,0 +1,104 @@
+import { finding, whereInText } from '../index.js'
+import { pathKey } from '../../lib/url.js'
+import { classifyGoogleLink } from '../../lib/gbp.js'
+import { nameOf, sameName } from '../../lib/profile.js'
+
+// A link or a sentence promising something it does not deliver:
+//
+//   "Call now" that opens a page instead of dialling, "Email us" without
+//     mailto:, "Book an appointment" leading to a page with no form,
+//     "Get directions" not opening Maps, "Download the PDF" that is a page;
+//   "see our pricing page" in the copy when the site has no such page.
+//
+// Heuristic: a "Call us" link to a contact page with the number on it is a
+// choice, not a bug, but QA usually asks for the dialler.
+const BOOKING_HOSTS = /calendly|acuity|fareharbor|toasttab|opentable|zocdoc|resy|square|setmore|booksy|vagaro|mindbody|simplybook|squarespace\.com\/scheduling|hubspot|youcanbook|book\.|booking\./i
+const MAP_HOSTS = /maps\.apple\.com|bing\.com\/maps|waze\.com|mapquest\.com/i
+const FILE = /\.(pdf|docx?|xlsx?|pptx?|zip|csv)(\?|#|$)/i
+const PROMISE = /\b(?:see|visit|check out|view|read|explore) our ([a-z][a-z &-]{2,40}?) (?:page|section)\b/gi
+
+const isMenu = (l) => ['header', 'nav', 'footer'].includes(l.region)
+
+function expectation(text) {
+  const t = text.toLowerCase()
+  // "On-call service" describes, it does not ask to dial.
+  if (/(?<![-\w])call\b/.test(t)) return 'call'
+  if (/\be-?mail\b/.test(t)) return 'email'
+  if (/\b(book|schedule|appointment|reserve)\b/.test(t)) return 'book'
+  if (/\b(get )?directions\b|\bview (on )?map\b|^map$/.test(t) && !/site ?map/.test(t)) return 'map'
+  if (/\bdownload\b|\bpdf\b/.test(t)) return 'file'
+  return null
+}
+
+export default {
+  id: 'E17',
+  title: 'Ссылка или текст обещают не то, что делают',
+  severity: 'minor',
+  engine: 'static',
+  confidence: 'heuristic',
+  check(page, site) {
+    const out = []
+    const seen = new Set()
+    const push = (key, props) => {
+      if (seen.has(key)) return
+      seen.add(key)
+      out.push(finding(this, page, props))
+    }
+    const byPath = new Map((site?.pages || []).map(p => [pathKey(p.url), p]))
+
+    for (const l of page.links || []) {
+      const text = (l.text || '').trim()
+      if (!text || text.length > 40) continue
+      const kind = expectation(text)
+      if (!kind) continue
+      const raw = l.raw || ''
+      if (kind === 'call' && l.protocol !== 'tel:') {
+        push(`call|${text}|${raw}`, {
+          link: l, found: `«${text}» не звонит, а ведёт на ${raw}`,
+          expected: 'href="tel:+1…" с номером сайта',
+        })
+      } else if (kind === 'email' && l.protocol !== 'mailto:' && !/contact|\/cdn-cgi\/l\/email-protection/i.test(raw)) {
+        // Cloudflare's email obfuscation: a mailto: once its script runs.
+        push(`email|${text}|${raw}`, {
+          link: l, found: `«${text}» не открывает почту, а ведёт на ${raw}`,
+          expected: 'href="mailto:…" с адресом сайта',
+        })
+      } else if (kind === 'book' && !isMenu(l) && l.internal && l.href && !BOOKING_HOSTS.test(raw)) {
+        const target = byPath.get(pathKey(l.href))
+        if (target && !(target.forms || []).length && !BOOKING_HOSTS.test(target.text || '')) {
+          push(`book|${text}|${pathKey(l.href)}`, {
+            link: l, found: `«${text}» ведёт на ${pathKey(l.href)}, а там нет формы записи`,
+            expected: 'ссылка на страницу с формой или виджетом записи',
+          })
+        }
+      } else if (kind === 'map' && l.href && !classifyGoogleLink(raw) && !MAP_HOSTS.test(raw)) {
+        push(`map|${text}|${raw}`, {
+          link: l, found: `«${text}» не открывает карту, а ведёт на ${raw}`,
+          expected: 'ссылка на профиль GBP (maps.app.goo.gl/…)',
+        })
+      } else if (kind === 'file' && l.href && !FILE.test(raw) && !/\/wp-content\/uploads\//.test(raw)) {
+        push(`file|${text}|${raw}`, {
+          link: l, found: `«${text}» обещает файл, а ведёт на страницу ${raw}`,
+          expected: 'прямая ссылка на файл (.pdf и т. п.)',
+        })
+      }
+    }
+
+    if (site?.pages) {
+      const names = site.pages.flatMap(p => {
+        const slug = (new URL(p.url).pathname.split('/').filter(Boolean).pop() || '').replace(/-/g, ' ')
+        return [nameOf(p), p.title, slug].filter(Boolean)
+      })
+      for (const m of String(page.text || '').matchAll(PROMISE)) {
+        const what = m[1].trim()
+        if (names.some(n => sameName(what, n) || n.toLowerCase().includes(what.toLowerCase()))) continue
+        push(`promise|${what}`, {
+          selector: 'body', where: whereInText(page, m[0]),
+          found: `текст отсылает к странице «${what}», такой страницы нет`,
+          expected: `создать страницу «${what}» или убрать отсылку`,
+        })
+      }
+    }
+    return out
+  },
+}

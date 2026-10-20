@@ -49,7 +49,7 @@ function checkTargets(rule, page, isForeign, label) {
     const host = hostOf(l.href)
     if (host && isForeign(host)) {
       out.push(finding(rule, page, {
-        selector: l.selector, found: `ссылка на ${label}: ${l.href}`, expected,
+        link: l, found: `ссылка на ${label}: ${l.href}`, expected,
       }))
     }
   }

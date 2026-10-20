@@ -83,6 +83,9 @@ padding:2px 8px;border-radius:6px;border:1px solid currentColor}
 border-radius:5px;padding:1px 6px;font-size:13px;word-break:break-all}
 ul.pages{margin:8px 0 0;padding-left:18px;color:var(--mut);font-size:13px}
 ul.pages li{word-break:break-all}
+.review{font-weight:600}.review-confirmed{color:var(--crit)}.review-unsure{color:var(--maj)}.review-false-positive{color:var(--mut)}
+h3{font-size:15px;margin:22px 0 4px}
+ul.pages .where{color:var(--fg);word-break:normal;margin:2px 0 6px}
 .note-box{border-left:3px solid var(--maj);padding:8px 12px;background:var(--card);
 border-radius:0 8px 8px 0;font-size:13px;color:var(--mut);margin:12px 0}
 .heuristic{border-left-color:var(--min)}
@@ -186,15 +189,66 @@ function renderDefect(d, ctx = {}) {
 
   return `
       <div class="defect">
+        ${d.example?.review ? `<div class="kv review review-${esc(d.example.review.verdict)}">Claude: ${esc(REVIEW_LABEL[d.example.review.verdict] || d.example.review.verdict)}${d.example.review.note ? ` — ${esc(d.example.review.note)}` : ''}</div>` : ''}
+        ${String(d.scope || '').startsWith('template:') ? `<div class="kv">раздел: <code>${esc(d.scope.slice(9))}</code></div>` : ''}
         <div class="kv">найдено: <code>${esc(d.found)}</code></div>
         ${d.expected ? `<div class="kv">ожидается: <code>${esc(d.expected)}</code></div>` : ''}
         <div class="kv">селектор: <code>${esc(d.selector)}</code></div>
         ${breakpointsHtml}
         ${regionHtml}
         ${shotHtml}
-        <ul class="pages">${shownPages.map(p => `<li>${esc(p)}</li>`).join('')}</ul>
+        <ul class="pages">${shownPages.map(p => `<li>${esc(p)}${d.where?.[p] ? `<div class="where">${esc(d.where[p])}</div>` : ''}</li>`).join('')}</ul>
         ${hiddenCount > 0 ? `<p class="kv">…и ещё ${hiddenCount} страниц не показано (ограничение списка)</p>` : ''}
       </div>`
+}
+
+// Where a defect lives, so it is fixed at the right level:
+//   global    site chrome (header, menu, footer) or on ~every page: one fix
+//             in a template part repairs all of them;
+//   template  every page it is on shares a section (/services/…): the
+//             section's template or shared block;
+//   page      everything else.
+const CHROME = new Set(['header', 'nav', 'footer', 'chrome'])
+const sectionOfPage = (u) => { try { return new URL(u).pathname.split('/').filter(Boolean)[0] || null } catch { return null } }
+export function scopeOf(d, totalPages) {
+  const zones = [...(d.zones || [])]
+  if (d.region || (zones.length && zones.every(z => CHROME.has(z)))) return 'global'
+  if (totalPages >= 5 && d.pages.length >= Math.max(3, 0.8 * totalPages)) return 'global'
+  const secs = new Set(d.pages.map(sectionOfPage))
+  if (d.pages.length >= 2 && secs.size === 1 && [...secs][0]) return `template:/${[...secs][0]}/`
+  return 'page'
+}
+
+function scoped(groups, totalPages) {
+  const buckets = new Map()
+  for (const g of groups) {
+    for (const d of g.identities) {
+      const scope = scopeOf({ ...d, region: d.example?.region }, totalPages)
+      const key = scope.startsWith('template') ? 'template' : scope
+      if (!buckets.has(key)) buckets.set(key, new Map())
+      const b = buckets.get(key)
+      const gk = `${g.rule}|${g.severity}|${g.confidence}`
+      if (!b.has(gk)) b.set(gk, { ...g, identities: [], pages: new Set(), count: 0 })
+      const sg = b.get(gk)
+      sg.identities.push({ ...d, scope })
+      d.pages.forEach(p => sg.pages.add(p))
+      sg.count += d.count
+    }
+  }
+  const TITLES = {
+    global: ['Глобальные ошибки', 'хедер, меню, футер или все страницы сайта — исправляется один раз в общем шаблоне'],
+    template: ['Ошибки шаблонов разделов', 'все страницы одного раздела — исправляется в шаблоне или общем блоке раздела'],
+    page: ['Ошибки отдельных страниц', 'исправляется на конкретной странице'],
+  }
+  return ['global', 'template', 'page'].filter(k => buckets.has(k)).map(k => ({
+    key: k, title: TITLES[k][0], note: TITLES[k][1],
+    groups: [...buckets.get(k).values()].map(g => ({ ...g, pages: [...g.pages] })),
+  }))
+}
+
+function renderScoped(groups, totalPages, ctx) {
+  return scoped(groups, totalPages).map(s =>
+    `<h3>${esc(s.title)}</h3><p class="sub">${esc(s.note)}</p>${s.groups.map(g => renderGroup(g, ctx)).join('')}`).join('')
 }
 
 // A rule+severity+confidence group renders EVERY distinct defect it holds,
@@ -222,9 +276,13 @@ function renderGroup(g, ctx = {}) {
   </details>`
 }
 
+const REVIEW_LABEL = { confirmed: 'подтверждено', unsure: 'нужно проверить вручную', 'false-positive': 'ложное срабатывание' }
+
 export function renderReport({
   host, env, envReason, pages, findings, diff, snapshotAgeDays, source, sitemapStatus,
   browserCoverage,
+  rejected = [],
+  siteSummary = null,
 }) {
   // Fail fast on malformed findings, matching the array contract rollUp/diffRuns
   // already enforce (src/report/json.js). Coercing bad input to [] here would
@@ -239,8 +297,13 @@ export function renderReport({
   }
   const list = findings
   const solid = list.filter(f => f.confidence !== 'heuristic')
-  const groups = rollUp(solid)
-  const heur = rollUp(list.filter(f => f.confidence === 'heuristic'))
+  // Static (markup) and browser (rendered page) findings are fixed by
+  // different people and checked differently, so each gets its own part.
+  const isBrowser = (f) => f.engine === 'browser'
+  const groups = rollUp(solid.filter(f => !isBrowser(f)))
+  const heur = rollUp(list.filter(f => f.confidence === 'heuristic' && !isBrowser(f)))
+  const bGroups = rollUp(solid.filter(isBrowser))
+  const bHeur = rollUp(list.filter(f => f.confidence === 'heuristic' && isBrowser(f)))
   const v = verdict(list)
   const vClass = v === 'Fail' ? 'v-Fail' : v === 'Pass' ? 'v-Pass' : 'v-Needs'
   const by = (s) => solid.filter(f => f.severity === s).length
@@ -338,7 +401,12 @@ export function renderReport({
       (pagesFailed ? ` · не открылись: ${esc(pagesFailed)}` : '') +
       (widths.length ? ` · ширины: ${widths.map(esc).join(', ')}` : '') +
       (droppedWidths.length ? ` · исключённые ширины: ${droppedWidths.map(esc).join(', ')}` : '') + `</p>` +
-      (!complete
+      // Rows older than this crawl were dropped by audit (cli.js); saying
+      // "partial, resume" would hide that the whole pass is out of date.
+      (Number(browserCoverage.stalePages) > 0
+        ? `<div class="note-box">Браузерная проверка устарела для ${esc(browserCoverage.stalePages)} стр.: они проверялись до этого обхода, их находки в отчёт не вошли. Запустите <code>qc browse ${esc(host)}</code> заново.</div>`
+        : '') +
+      (!complete && !(Number(browserCoverage.stalePages) > 0 && pagesDone === 0)
         ? `<div class="note-box">Браузерная проверка выполнена частично: проверено ${esc(pagesDone)} из ${esc(pagesTotal)} страниц. Визуальные дефекты на остальных страницах могли остаться незамеченными. Запустите <code>qc browse ${esc(host)}</code> ещё раз, чтобы продолжить — прогон возобновляемый: уже проверенные страницы не начинаются заново, а те, что не открылись, пробуются снова.</div>`
         : '') +
       failedHtml + droppedHtml
@@ -367,12 +435,24 @@ export function renderReport({
     const candidates = suppressedShots ? null : []
     const ctx = { breakpointsByIdentity, suppressedShots: suppressedShots ?? new Set(), candidates }
     const groupsHtml = groups.length
-      ? groups.map(g => renderGroup(g, ctx)).join('')
+      ? renderScoped(groups, pages, ctx)
       : '<p class="sub">Нарушений не найдено — сайт прошёл проверку без замечаний.</p>'
     const heurHtml = heur.length
       ? `<h2>Требует взгляда (неподтверждённые эвристики)</h2>
 <div class="note-box heuristic">Ниже — находки эвристических правил: возможны ложные срабатывания, они <b>не учитываются</b> в вердикте и в плитках серьёзности выше. Проверьте вручную перед тем, как заводить задачу.</div>
-${heur.map(g => renderGroup(g, ctx)).join('')}`
+${renderScoped(heur, pages, ctx)}`
+      : ''
+    const widthsLabel = Array.isArray(browserCoverage?.widths) && browserCoverage.widths.length ? ` · ширины ${browserCoverage.widths.join(', ')} px и ресайз 1920→320` : ''
+    const browserHtml = !browserCoverage && !bGroups.length && !bHeur.length
+      ? `<h2>Браузерная проверка</h2><p class="sub">Не выполнялась — визуальные дефекты не проверены.</p>`
+      : `<h2>Браузерная проверка (вёрстка, адаптив, интерактив${esc(widthsLabel)})</h2>
+${bGroups.length ? renderScoped(bGroups, pages, ctx) : '<p class="sub">Подтверждённых визуальных дефектов нет.</p>'}
+${bHeur.length ? `<h3>Требует взгляда</h3><div class="note-box heuristic">Эвристики браузерной проверки — не учитываются в вердикте.</div>${renderScoped(bHeur, pages, ctx)}` : ''}`
+    const rejectedGroups = rollUp(rejected)
+    const rejectedHtml = rejectedGroups.length
+      ? `<h2>Отклонено при ревью Claude</h2>
+<div class="note-box heuristic">Claude проверил эти находки и счёл их ложными срабатываниями. Они не учитываются в вердикте и плитках; причина указана у каждой.</div>
+${rejectedGroups.map(g => renderGroup(g, ctx)).join('')}`
       : ''
 
     const html = `<!doctype html>
@@ -384,6 +464,7 @@ ${heur.map(g => renderGroup(g, ctx)).join('')}`
 страниц: ${esc(pages)} · источник списка: ${esc(source)} ·
 снапшот: ${ageLabel}</p>
 <p><span class="verdict ${vClass}">${esc(v)}</span></p>
+${siteSummary ? `<div class="note-box heuristic"><b>О сайте:</b> ${esc(siteSummary)}</div>` : ''}
 ${snapshotAgeDays > STALENESS_WARNING_DAYS ? `<div class="note-box">Снапшоту больше ${esc(STALENESS_WARNING_DAYS)} дней — данные могли устареть. Перезапустите с <code>--fresh</code>.</div>` : ''}
 ${sitemapWarning ? `<div class="note-box">Sitemap: <b>${esc(sitemapStatus)}</b> — список страниц мог оказаться неполным, часть страниц сайта в отчёт не попала.</div>` : ''}
 ${browserCoverageHtml}
@@ -400,9 +481,11 @@ ${oversizeBytes != null ? `<div class="note-box">Отчёт превышает �
 </div>
 <p class="sub">Дефектов по серьёзности: ${distinct.critical} critical · ${distinct.major} major · ${distinct.minor} minor · ${distinct.note} note — это число реальных задач на исправление.
 Плитки Critical/Major/Minor выше считают вхождения (одна правка может закрыть сразу несколько).</p>
-<h2>Находки по правилам</h2>
+<h2>Статическая проверка (HTML, ссылки, SEO, контент)</h2>
 ${groupsHtml}
 ${heurHtml}
+${browserHtml}
+${rejectedHtml}
 <h2>Страницы</h2>
 ${uniquePages.length ? `<div class="scroll"><table><tr><th>Страница</th><th>Находок</th></tr>
 ${shownPages.map(p =>
