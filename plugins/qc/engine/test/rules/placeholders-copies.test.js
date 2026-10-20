@@ -88,3 +88,12 @@ test('pageType: facts first, then the profile, then the URL', async () => {
   assert.deepEqual(['/', '/services/', '/services/a/', '/locations/x/', '/blog/', '/blog/post-1/', '/category/tips/', '/contact/thank-you/', '/privacy-policy/', '/about/', '/special/', '/x/'].map(p => t(p)),
     ['home', 'service-hub', 'service', 'location', 'blog', 'post', 'blog', 'thank-you', 'legal', 'about', 'landing', 'other'])
 })
+
+test('E13: the bare phone is pointed at, not the tel: button with the same number that comes first', () => {
+  const p = page('/services/x/', `<main><h2>Get a Quote Now</h2><a href="tel:+17189690845"><span>Call: +1 718 969 0845</span></a>
+    <h2>FAQ</h2><p>How do I get a quote? Call +1 718 969 0845 or request a quote online.</p></main>`)
+  const f = E13.check(p, { pages: [p] }).find(x => /phone/.test(x.found))
+  assert.ok(f, 'the bare number is reported')
+  assert.match(f.where, /under heading “FAQ”/)
+  assert.match(f.where, /Call \+1 718 969 0845 or request a quote/)
+})

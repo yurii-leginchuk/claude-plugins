@@ -115,7 +115,10 @@ border-radius:0 8px 8px 0;font-size:13px;color:var(--mut);margin:12px 0}
 table{width:100%;border-collapse:collapse;font-size:13px}
 .scroll{overflow-x:auto}
 th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--line)}
-.did{font:600 12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;padding:1px 6px;border:1px solid var(--line);border-radius:5px;text-decoration:none!important;background:var(--bg)}
+.did{display:inline-block;font:700 14px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace;padding:3px 9px;border-radius:6px;text-decoration:none!important;background:var(--fg);color:var(--bg);letter-spacing:.02em}
+.did:hover{background:var(--maj)}
+.ids{display:flex;flex-wrap:wrap;gap:4px;flex-basis:100%;order:9}
+.ids .did{font-size:12px;padding:1px 6px}
 .flash{outline:2px solid var(--maj);outline-offset:6px;border-radius:4px}
 .find{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0 4px;font-size:13px}
 .find input{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);width:12em;max-width:100%}
@@ -416,6 +419,7 @@ function renderGroup(g, ctx = {}) {
       <span class="chip ${CHIP[g.severity] ?? 'note'}">${esc(LABEL[g.severity] ?? g.severity)}</span>
       <b>${esc(g.rule)}</b> · ${esc(g.title)}
       <span class="cnt">${defects.length} defects · ${g.pages.length} pages · ${g.count} findings</span>
+      ${(() => { const ids = shown.map(d => ctx.ids?.[d.identity]).filter(Boolean); return ids.length ? `<span class="ids">${ids.map(id => `<a class="did" href="#${esc(id)}">${esc(id)}</a>`).join('')}</span>` : '' })()}
     </summary>
     <div class="body">
       ${shown.map(d => renderDefect(d, { ...ctx, severity: g.severity })).join('')}

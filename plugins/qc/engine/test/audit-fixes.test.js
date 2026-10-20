@@ -153,6 +153,14 @@ test('qc findings lists distinct defects with ids, qc review moves false positiv
   assert.match(html, /About the site:/)
   assert.throws(() => { write(file, JSON.stringify({ items: [{ id: 'D999', verdict: 'confirmed' }] })); applyReview(host, file) }, /no defect D999/)
 
+  // A heuristic confirmed by Claude counts as a defect.
+  const heur = listed.defects.find(d => d.confidence === 'heuristic')
+  if (heur) {
+    write(file, JSON.stringify({ items: [{ id: heur.id, verdict: 'confirmed', note: 'checked in Playwright' }] }))
+    const promoted = applyReview(host, file)
+    const sum = (o) => o.critical + o.major + o.minor + o.note
+    assert.equal(sum(promoted.distinct), sum(res.distinct) + 1 + 1, 'the rejected one counts again, the confirmed heuristic now counts')
+  }
   // The mobile menu, checked by Claude in Playwright: screenshots are copied
   // next to the report, a defect counts, a bad rule id is refused.
   const shot = join(out.runDir, 'menu.png')

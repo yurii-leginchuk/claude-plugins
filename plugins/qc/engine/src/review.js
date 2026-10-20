@@ -156,6 +156,8 @@ function sortByReview(dir, findings, review) {
   for (const f of findings) {
     const r = byIdentity.get(defectIdentity(f))
     if (r?.verdict === 'false-positive') rejected.push({ ...f, review: r })
+    // A heuristic Claude settled (in Playwright, by eye) is a defect: it counts.
+    else if (r?.verdict === 'confirmed' && f.confidence === 'heuristic') kept.push({ ...f, confidence: 'high', confirmedHeuristic: true, review: r })
     else kept.push(r ? { ...f, review: r } : f)
   }
   const manual = manualOf(review, dir)

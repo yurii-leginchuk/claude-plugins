@@ -62,7 +62,7 @@ function phones(rule, page) {
       selector: 'body',
       found: `phone ${raw} in text without a tel: link`,
       occurrences: `${bare} of ${n}`,
-      where: whereInText(page, raw),
+      where: whereInText(page, raw, { avoid: (page.links || []).filter(l => l.protocol === 'tel:').map(l => l.text) }),
       expected: `<a href="tel:+${key}">${raw}</a>`,
     }))
   }

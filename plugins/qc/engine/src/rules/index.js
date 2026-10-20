@@ -18,17 +18,31 @@ export function describeLink(l) {
 // Where a piece of copy is: the heading above it and the words around it.
 // Prefers an occurrence outside the header and footer, since the one in the
 // page body is usually the one QA means.
-export function whereInText(page, needle) {
+// `avoid`: texts whose occurrences do not count — e.g. the link texts holding
+// the same phone number, so "the bare number" points at the bare one and not
+// at a "Call: +1 …" button that comes first on the page.
+export function whereInText(page, needle, { avoid = [] } = {}) {
   const text = String(page.text || '')
   if (!needle) return null
+  const ranges = (list) => list.filter(Boolean).flatMap(t => {
+    const out = []
+    for (let i = text.indexOf(t); i >= 0; i = text.indexOf(t, i + 1)) out.push([i, i + t.length])
+    return out
+  })
   const spans = [page.headerText, page.footerText].filter(Boolean)
     .map(t => { const i = text.indexOf(t); return i < 0 ? null : [i, i + t.length] }).filter(Boolean)
+  const linked = ranges(avoid)
   const inChrome = (i) => spans.some(([a, b]) => i >= a && i < b)
+  const inLinked = (i) => linked.some(([a, b]) => i >= a && i + needle.length <= b)
   let at = -1
+  let fallback = -1
   for (let i = text.indexOf(needle); i >= 0; i = text.indexOf(needle, i + 1)) {
+    if (fallback < 0) fallback = i
+    if (inLinked(i)) continue
     if (at < 0) at = i
     if (!inChrome(i)) { at = i; break }
   }
+  if (at < 0) at = fallback
   if (at < 0) return null
   let section = null
   let from = 0
