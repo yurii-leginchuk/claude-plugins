@@ -21,7 +21,7 @@ Resolve the engine path: `<plugin-root>/engine`. If `node_modules` is missing th
 - **`list`** → `node <plugin-root>/engine/src/cli.js cache list`
   Present as a table: host, pages, age in days, size. Flag anything older than 7 days as "possibly
   stale — `/qc-site` will still use it by default unless `--fresh` is passed, until it crosses the
-  engine's 24h snapshot TTL." If the command prints `пусто`, say the cache is empty — don't invent
+  engine's 24h snapshot TTL." If the command prints `empty`, say the cache is empty — don't invent
   rows.
 - **`clear <host>`** → `node <plugin-root>/engine/src/cli.js cache clear <host>`
 - **`clear --all`** → `node <plugin-root>/engine/src/cli.js cache clear --all`
