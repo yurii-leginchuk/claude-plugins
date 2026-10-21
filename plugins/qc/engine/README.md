@@ -170,13 +170,25 @@ cut at 12000 px). `qc audit` copies them into `<runDir>/visual/` and the report'
 проверка» block (folded, grouped by page type, with a page filter; the windows of one page scroll together) links them by relative path — publish them with `report.html`. The summary's
 `visual` says how many pages and files.
 
-The engine does not click. `qc review` accepts Claude's manual checks in the review file:
-`manual: [{ check, page, width, status, checked, shots, defects }]`, where `check` is `menu`,
-`popup`, `form`, `faq`, `focus` (done in Playwright) or `content` (contradictions found by reading
-the pages; no width; a defect may name several `pages`). Each check allows its own taxonomy codes
-(`MANUAL_CHECKS` in `review.js`); shots are copied next to the report, defects count toward the
-verdict and render in the «Ручные проверки Claude» block. `qc findings` adds a `verify` line to
-heuristics a real browser settles (E1, F12, J3, F1, F4, X1, B6, C2).
+The engine does not click. `qc review` accepts Claude's own checks in the review file:
+`manual: [{ check, title, steps, page, width, status, checked, shots, defects }]`, where `check` is
+`menu`, `popup`, `form`, `faq`, `focus` (done in Playwright), `journey` (a visitor's task end to
+end: needs `title` and `steps`, rendered first as «Visitor journeys»), `visual` (Claude's look at
+the page screenshots) or `content` (found by reading the pages; no width; a defect may name
+several `pages`). The first five allow their own taxonomy codes (`MANUAL_CHECKS` in `review.js`),
+`journey` and `visual` any code (with a `title` when the code has none). Every defect needs its
+evidence (a screenshot; for `content`, a quote in `found`), an `impact` the severity comes from
+(`IMPACT`: blocker → critical, broken → major, degraded → minor, cosmetic → note) and `verified`,
+the second check's answer: `not-reproduced` is dropped, `unable` is shown as «needs a look» and
+not counted.
+
+Only measurements reach the report on their own. Candidates — judgement rules (`JUDGED`), the
+browser guesses F12, X1, J3, F1, F4, and every heuristic — need Claude's verdict; `qc findings`
+marks them with `judge` or `verify`, and the review leaves unjudged ones out and counts them. An
+`unsure` verdict on a candidate shows it as «needs a look».
+
+`qc browse` checks every page that is not a post and the newest 10 posts (`--posts <n>|all`);
+the static audit reads every post.
 
 ## QC Reports site
 

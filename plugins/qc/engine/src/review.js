@@ -2,7 +2,7 @@
 // run's distinct defects with short ids (D1, D2, …), where they are and the
 // site profile; Claude checks them (reading pages where needed) and writes a
 // review file; `qc review <host> <file>` re-renders the report with the
-// verdicts: false positives move to their own section and stop counting,
+// verdicts: false positives are left out and stop counting,
 // confirmed and unsure ones carry Claude's note.
 import { readFileSync, writeFileSync, existsSync, copyFileSync, mkdirSync } from 'node:fs'
 import { join, extname } from 'node:path'
@@ -15,7 +15,18 @@ import { attachEvidence } from './browser/evidence.js'
 
 const VERDICTS = new Set(['confirmed', 'false-positive', 'unsure'])
 const STATUSES = new Set(['ok', 'defect', 'skipped'])
-const SEVERITIES = new Set(['critical', 'major', 'minor', 'note'])
+// A defect Claude found gets its severity from what it does to the visitor,
+// not from Claude's sense of how bad it is: the same defect then gets the
+// same severity on every run.
+export const IMPACT = {
+  blocker: 'critical', // the visitor cannot finish a journey: buy, book, call, send a form, reach a page
+  broken: 'major', // visibly broken or wrong (layout, a feature, a fact), but the journey can still be done
+  degraded: 'minor', // works, but worse than it should: awkward, inconsistent, an accessibility gap with a way round
+  cosmetic: 'note', // only looks a little off
+}
+// What the second, independent check (a fresh agent repeating the steps) made of it.
+const VERIFIED = new Set(['reproduced', 'not-reproduced', 'unable'])
+const CODE = /^[A-Z]\d{1,2}$/
 
 // What Claude checks by hand in Playwright (and, for `content`, by reading
 // the pages), with the taxonomy codes each check may report. The engine
@@ -27,7 +38,12 @@ export const MANUAL_CHECKS = {
   faq: ['F9', 'C2', 'J2'],
   focus: ['J2', 'J5'],
   content: ['H16', 'H8', 'H3', 'H12', 'E17'],
+  // A visitor's task done end to end (find a price, book, buy, call) and
+  // Claude's look at the page screenshots: any taxonomy code, with a title.
+  journey: CODE,
+  visual: CODE,
 }
+const allows = (check, rule) => (MANUAL_CHECKS[check] instanceof RegExp ? MANUAL_CHECKS[check].test(String(rule)) : MANUAL_CHECKS[check].includes(rule))
 export const MANUAL_TITLES = {
   D1: 'Menu or submenu does not open', C6: 'Does not fit the screen', C9: 'Mobile menu does not scroll',
   D9: 'Does not close', D2: 'Mobile and desktop menus differ', B6: 'Overlapping elements',
@@ -44,10 +60,14 @@ export const MANUAL_TITLES = {
 // the report shows what was looked at. Screenshots are copied next to the
 // report; defects become findings that count toward the verdict. The older
 // `review.menu` is read as `manual` entries with check "menu".
+// Every defect Claude records must carry its evidence (a screenshot, or a
+// quote for a content defect) and the verifier's result: one it could not
+// reproduce is dropped, one it could not check either way only needs a look.
 function manualOf(review, dir) {
   const checks = []
   const findings = []
   const manualIds = new Map()
+  let notReproduced = 0
   const entries = [...(review.manual || []), ...(review.menu || []).map(m => ({ check: 'menu', ...m }))]
   entries.forEach((m, i) => {
     const at = `review manual[${i}]`
@@ -55,6 +75,7 @@ function manualOf(review, dir) {
     if (!m.page) throw new Error(`${at}: page is required`)
     if (m.check !== 'content' && !Number.isFinite(Number(m.width))) throw new Error(`${at}: width is required`)
     if (!STATUSES.has(m.status)) throw new Error(`${at}: status must be ok, defect or skipped`)
+    if (m.check === 'journey' && (!m.title || !(m.steps || []).length)) throw new Error(`${at}: a journey needs a title and its steps`)
     const width = m.width == null ? null : Number(m.width)
     const shots = (m.shots || []).map((src, j) => {
       if (!existsSync(src)) throw new Error(`${at}: screenshot file not found: ${src}`)
@@ -64,27 +85,35 @@ function manualOf(review, dir) {
       return `visual/${name}`
     })
     for (const d of m.defects || []) {
-      if (!MANUAL_CHECKS[m.check].includes(d.rule)) throw new Error(`${at}: rule for ${m.check} must be one of ${MANUAL_CHECKS[m.check].join(', ')}`)
-      if (!SEVERITIES.has(d.severity)) throw new Error(`${at}: severity must be critical, major, minor or note`)
+      if (!allows(m.check, d.rule)) throw new Error(`${at}: rule for ${m.check} must be ${MANUAL_CHECKS[m.check] instanceof RegExp ? 'a taxonomy code like C2' : `one of ${MANUAL_CHECKS[m.check].join(', ')}`}`)
+      if (!IMPACT[d.impact]) throw new Error(`${at}: impact must be one of ${Object.keys(IMPACT).join(', ')}`)
       if (!d.found || !d.expected) throw new Error(`${at}: a defect needs found and expected`)
+      if (!d.title && !MANUAL_TITLES[d.rule]) throw new Error(`${at}: a ${d.rule} defect needs a title`)
+      if (m.check === 'content' ? !/«[^»]+»|“[^”]+”|"[^"]+"/.test(d.found) : !shots.length) {
+        throw new Error(`${at}: a defect needs its evidence: ${m.check === 'content' ? 'the words from the page, quoted in found' : 'a screenshot in shots'}`)
+      }
+      if (!VERIFIED.has(d.verified)) throw new Error(`${at}: verified must be reproduced, not-reproduced or unable (the verifier's result)`)
+      if (d.verified === 'not-reproduced') { notReproduced++; continue }
       const key = `${i}|${d.rule}|${d.found}`
       if (!manualIds.has(key)) manualIds.set(key, `M${manualIds.size + 1}`)
+      const how = m.check === 'content' ? 'found by Claude while reading the pages' : m.check === 'journey' ? `found by Claude on the journey «${m.title}»` : 'checked by Claude in Playwright'
       for (const page of d.pages?.length ? d.pages : [m.page]) {
         findings.push({
           id: manualIds.get(key),
-          rule: d.rule, title: d.title || MANUAL_TITLES[d.rule], severity: d.severity, confidence: 'high', engine: 'claude',
+          rule: d.rule, title: d.title || MANUAL_TITLES[d.rule], severity: IMPACT[d.impact], impact: d.impact,
+          confidence: d.verified === 'unable' ? 'heuristic' : 'high', engine: 'claude',
           check: m.check, manual: i, page, breakpoint: width, category: CATEGORIES.includes(d.category) ? d.category : (m.check === 'content' ? 'copy' : 'dev'), selector: d.selector || null, found: d.found, expected: d.expected,
           where: d.where || null, zone: m.check === 'menu' ? 'header' : null,
           // the defect card shows its own picture: d.shot picks one of the check's shots, the first by default
           ...(shots.length ? { shot: join(dir, shots[d.shot] || shots[0]) } : {}),
-          review: { verdict: 'confirmed', note: m.check === 'content' ? 'found by Claude while reading the pages' : 'checked by Claude in Playwright' },
+          review: { verdict: d.verified === 'unable' ? 'unsure' : 'confirmed', note: d.verified === 'unable' ? `${how}; the second check could not repeat it either way` : `${how}, repeated by a second check` },
         })
       }
     }
     if (m.status === 'defect' && !(m.defects || []).length) throw new Error(`${at}: status defect without defects`)
-    checks.push({ index: i, check: m.check, page: m.page, width, status: m.status, checked: m.checked ? String(m.checked) : null, shots })
+    checks.push({ index: i, check: m.check, title: m.title ? String(m.title) : null, steps: (m.steps || []).map(String), page: m.page, width, status: m.status, checked: m.checked ? String(m.checked) : null, shots })
   })
-  return { checks, findings }
+  return { checks, findings, notReproduced }
 }
 
 // How Claude settles a finding the engine could not, in a real browser
@@ -116,8 +145,18 @@ export const JUDGED = {
   E2: 'Claude: should the same link text go to one place? «Learn more» and «Read more» naturally go to different pages',
   E15: 'Claude: is the link really useless for a visitor, or does it help (a logo to home, a breadcrumb, a skip link)?',
   I21: 'Claude: does the page really look copied from the other one, or do they share a heading for a reason (a product and its hub)?',
+  H6: 'Claude: is it really placeholder text a visitor would see, or a real word (a «TBD» in a post, a sample in a how-to)?',
+  I20: 'Claude: does the schema really say something the page does not, or is it the same fact written differently?',
 }
 export const isJudged = (f) => Boolean(JUDGED[f.rule]) && !(f.rule === 'H17' && /og:site_name/.test(String(f.found || '')))
+// Rules whose script result is a guess about what a visitor sees or what a
+// click does: right about a third of the time on real sites. Like every
+// heuristic, they are candidates until Claude has checked them in a browser.
+const BROWSER_CHECKED = new Set(['F12', 'X1', 'J3', 'F1', 'F4'])
+// Only what a script measures without error (a missing tel:, a heading level,
+// a 404, a horizontal scroll) reaches the report on its own; everything else
+// needs Claude's verdict.
+export const isCandidate = (f) => isJudged(f) || f.confidence === 'heuristic' || BROWSER_CHECKED.has(f.rule)
 
 function runOf(host) {
   const dir = latestRunDir(host)
@@ -162,7 +201,7 @@ export function listFindings(host) {
   writeFileSync(join(dir, 'distinct.json'), JSON.stringify(defects.map(d => ({ id: d.id, identity: d.identity }))))
   return {
     runDir: dir, profile,
-    defects: defects.map(({ identity, ...d }) => (isJudged(d) ? { ...d, judge: JUDGED[d.rule] } : VERIFY[d.rule] && d.confidence === 'heuristic' ? { ...d, verify: VERIFY[d.rule] } : d)),
+    defects: defects.map(({ identity, ...d }) => (isJudged(d) ? { ...d, judge: JUDGED[d.rule] } : isCandidate(d) ? { ...d, verify: VERIFY[d.rule] || 'Playwright: open the page at this width and look at the spot. Is it what the finding says?' } : d)),
   }
 }
 
@@ -185,12 +224,13 @@ export function sortByReview(dir, findings, review) {
   for (let f of findings) {
     const r = byIdentity.get(defectIdentity(f))
     if (r?.category) f = { ...f, category: r.category }
-    // A judgement candidate nobody judged is not a defect yet: left out.
-    if (!r && isJudged(f)) { unjudged.add(defectIdentity(f)); continue }
+    // A candidate nobody checked is not a defect yet: left out.
+    if (!r && isCandidate(f)) { unjudged.add(defectIdentity(f)); continue }
     if (r?.verdict === 'false-positive') rejected.push({ ...f, review: r })
-    else if (r?.verdict === 'confirmed' && isJudged(f)) kept.push({ ...f, confidence: 'high', confirmedHeuristic: true, review: r })
-    // A heuristic Claude settled (in Playwright, by eye) is a defect: it counts.
-    else if (r?.verdict === 'confirmed' && f.confidence === 'heuristic') kept.push({ ...f, confidence: 'high', confirmedHeuristic: true, review: r })
+    // A candidate Claude confirmed (by reading, in Playwright) is a defect: it counts.
+    else if (r?.verdict === 'confirmed' && isCandidate(f)) kept.push({ ...f, confidence: 'high', confirmedHeuristic: true, review: r })
+    // «Cannot tell from what I see» is a fair answer: it needs a person's look and does not count.
+    else if (r?.verdict === 'unsure' && isCandidate(f)) kept.push({ ...f, confidence: 'heuristic', review: r })
     else kept.push(r ? { ...f, review: r } : f)
   }
   const manual = manualOf(review, dir)
@@ -218,6 +258,7 @@ export function applyReview(host, reviewPath) {
   return {
     host, runDir: dir, reportPath: join(dir, 'report.html'), verdict: verdict(kept), distinct: countDistinct(kept),
     reviewed: byIdentity.size, confirmed: count('confirmed'), falsePositive: count('false-positive'), unsure: count('unsure'),
-    manualChecked: manual.checks.length, manualDefects: manual.findings.length, unjudged,
+    manualChecked: manual.checks.length, manualDefects: manual.findings.length, notReproduced: manual.notReproduced, unjudged,
+    journeys: manual.checks.filter(c => c.check === 'journey').map(c => ({ title: c.title, width: c.width, status: c.status })),
   }
 }

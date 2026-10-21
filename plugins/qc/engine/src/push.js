@@ -68,7 +68,8 @@ export function buildPayload(run) {
   const checks = manual.checks.map(c => {
     const evidence = (c.shots || []).map(src => basename(src))
     for (const name of evidence) files.set(name, join(dir, 'visual', name))
-    return { check: c.check, page: c.page, width: c.width, status: c.status, checked: c.checked, evidence }
+    const codes = [...new Set(manual.findings.filter(f => f.manual === c.index).map(f => f.id))]
+    return { check: c.check, title: c.title || '', steps: c.steps || [], defects: codes, page: c.page, width: c.width, status: c.status, checked: c.checked, evidence }
   })
   const solid = kept.filter(f => f.confidence !== 'heuristic')
   return {
@@ -98,7 +99,11 @@ export function nonEnglishFields(payload) {
     scan(d.review?.note, `${d.code}.review.note`)
     d.pages.forEach((p, i) => scan(p.where, `${d.code}.pages.${i}.where`))
   }
-  payload.manual.forEach((m, i) => scan(m.checked, `manual.${i}.checked`))
+  payload.manual.forEach((m, i) => {
+    scan(m.checked, `manual.${i}.checked`)
+    scan(m.title, `manual.${i}.title`)
+    ;(m.steps || []).forEach((st, j) => scan(st, `manual.${i}.steps.${j}`))
+  })
   return bad
 }
 

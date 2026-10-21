@@ -168,13 +168,27 @@ test('qc findings lists distinct defects with ids, qc review moves false positiv
   write(shot, 'png')
   write(file, JSON.stringify({ items: [], manual: [
     { check: 'menu', page: 'https://ex.com/', width: 360, status: 'defect', checked: 'opens', shots: [shot],
-      defects: [{ rule: 'C6', severity: 'major', found: 'menu sticks out 40 px on the right', expected: 'within the screen' }] },
+      defects: [{ rule: 'C6', impact: 'broken', verified: 'reproduced', found: 'menu sticks out 40 px on the right', expected: 'within the screen' }] },
     { check: 'content', page: 'https://ex.com/', status: 'defect', checked: 'read 2 pages',
-      defects: [{ rule: 'H16', severity: 'major', found: 'quote time: “under an hour” and “within 48 hours”', expected: 'one time frame', pages: ['https://ex.com/', 'https://ex.com/b/'] }] },
+      defects: [{ rule: 'H16', impact: 'broken', verified: 'reproduced', found: 'quote time: “under an hour” and “within 48 hours”', expected: 'one time frame', pages: ['https://ex.com/', 'https://ex.com/b/'] }] },
+    { check: 'journey', title: 'Book a cleaning from the home page', page: 'https://ex.com/', width: 360, status: 'defect', shots: [shot],
+      steps: ['Opened the home page', 'Tapped «Get a Quote»', 'Filled the form with a wrong email and sent it'],
+      defects: [
+        { rule: 'G14', impact: 'blocker', verified: 'reproduced', found: 'the form jumps to the top after an error', expected: 'stays at the error' },
+        { rule: 'K4', impact: 'broken', verified: 'not-reproduced', found: 'the popup did not open', expected: 'it opens' },
+        { rule: 'C2', impact: 'cosmetic', verified: 'unable', found: 'the button label touches the edge', expected: 'padding' },
+      ] },
+    { check: 'visual', page: 'https://ex.com/b/', width: 1440, status: 'ok', checked: 'looked at the full page', shots: [shot] },
   ], menu: [{ page: 'https://ex.com/', width: 768, status: 'ok', checked: 'fine' }] }))
   const withManual = applyReview(host, file)
-  assert.equal(withManual.manualChecked, 3, 'the older `menu` field is read too')
-  assert.equal(withManual.manualDefects, 3, 'a content defect counts once per page it names')
+  assert.equal(withManual.manualChecked, 5, 'the older `menu` field is read too')
+  assert.equal(withManual.manualDefects, 5, 'a content defect counts once per page it names; one the verifier could not repeat is dropped')
+  assert.equal(withManual.notReproduced, 1)
+  assert.deepEqual(withManual.journeys, [{ title: 'Book a cleaning from the home page', width: 360, status: 'defect' }])
+  const journeyRun = reviewedRun(host)
+  assert.equal(journeyRun.kept.find(x => x.rule === 'G14').severity, 'critical', 'a blocker is critical, from the table')
+  assert.equal(journeyRun.kept.find(x => x.rule === 'C2' && x.engine === 'claude').confidence, 'heuristic', 'unverified either way: needs a look, does not count')
+  assert.match(readFileSync(withManual.reportPath, 'utf8'), /<h2>Visitor journeys<\/h2>[\s\S]*Book a cleaning from the home page[\s\S]*<ol class="steps"><li>Opened the home page/)
   assert.ok(readFileSync(join(out.runDir, 'visual', 'manual-0-0.png')))
   const manualHtml = readFileSync(withManual.reportPath, 'utf8')
   assert.match(manualHtml, /menu sticks out 40 px on the right/)
@@ -182,13 +196,21 @@ test('qc findings lists distinct defects with ids, qc review moves false positiv
   assert.equal(m1.shot, join(out.runDir, 'visual', 'manual-0-0.png'), 'a manual defect carries its check screenshot, so the card and qc push show it')
   assert.match(manualHtml, /Contradictions in the text/)
   // Every defect carries the id `qc findings` gave it, manual ones M1…, and the report can find them.
-  for (const d of listFindings(host).defects.filter(x => x.id !== e4.id)) assert.match(manualHtml, new RegExp(`id="${d.id}"`), d.id)
+  for (const d of listFindings(host).defects.filter(x => x.id !== e4.id && !x.verify && !x.judge)) assert.match(manualHtml, new RegExp(`id="${d.id}"`), d.id)
   assert.match(manualHtml, /<div class="defect" id="M1">|id="M1"/)
   assert.match(manualHtml, /id="qc-find"/)
   assert.match(manualHtml, /\/\^\[DM\]\\d\+\$\//, 'the id pattern survives escaping')
   assert.match(manualHtml, /<details class="rule"><summary><span class="chip crit">defects found<\/span> <b>Mobile menu<\/b>/)
   assert.match(manualHtml, /<li><a href="https:\/\/ex\.com\/b\/"/, 'a content defect lists every page it names')
-  assert.throws(() => { write(file, JSON.stringify({ manual: [{ check: 'menu', page: 'https://ex.com/', width: 360, status: 'defect', defects: [{ rule: 'H16', severity: 'major', found: 'a', expected: 'b' }] }] })); applyReview(host, file) }, /rule for menu must be one of/)
+  const bad = (d, m = {}) => { write(file, JSON.stringify({ manual: [{ check: 'menu', page: 'https://ex.com/', width: 360, status: 'defect', shots: [shot], defects: [{ rule: 'C6', impact: 'broken', verified: 'reproduced', found: 'a', expected: 'b', ...d }], ...m }] })); applyReview(host, file) }
+  assert.throws(() => bad({ rule: 'H16' }), /rule for menu must be one of/)
+  assert.throws(() => bad({ impact: undefined, severity: 'major' }), /impact must be one of/)
+  assert.throws(() => bad({ verified: undefined }), /verified must be/)
+  assert.throws(() => bad({}, { shots: [] }), /needs its evidence: .*screenshot/)
+  assert.throws(() => bad({}, { check: 'content', width: undefined, shots: [] }), /rule for content/)
+  assert.throws(() => { write(file, JSON.stringify({ manual: [{ check: 'content', page: 'https://ex.com/', status: 'defect', defects: [{ rule: 'H16', impact: 'broken', verified: 'reproduced', found: 'two times differ', expected: 'one' }] }] })); applyReview(host, file) }, /quoted in found/)
+  assert.throws(() => { write(file, JSON.stringify({ manual: [{ check: 'journey', page: 'https://ex.com/', width: 360, status: 'ok', title: 'Call' }] })); applyReview(host, file) }, /journey needs a title and its steps/)
+  assert.throws(() => { write(file, JSON.stringify({ manual: [{ check: 'visual', page: 'https://ex.com/', width: 360, status: 'defect', shots: [shot], defects: [{ rule: 'Z99', impact: 'broken', verified: 'reproduced', found: 'a', expected: 'b' }] }] })); applyReview(host, file) }, /needs a title/)
   assert.throws(() => { write(file, JSON.stringify({ manual: [{ check: 'popup', page: 'https://ex.com/', status: 'ok' }] })); applyReview(host, file) }, /width is required/)
 }))
 
@@ -275,4 +297,21 @@ test('a judgement candidate (H14) reaches the report only with Claude’s verdic
     const no = sortByReview(dir, [list, og], { items: [{ id: 'D1', verdict: 'false-positive', note: 'recipes differ' }] })
     assert.deepEqual(no.rejected.map(f => f.rule), ['H14'])
   } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('only measurements reach the report alone: clicks, console errors and heuristics wait for Claude', async () => {
+  const { isCandidate } = await import('../src/review.js')
+  assert.equal(isCandidate({ rule: 'X1', confidence: 'high' }), true)
+  assert.equal(isCandidate({ rule: 'F12', confidence: 'high' }), true)
+  assert.equal(isCandidate({ rule: 'E1', confidence: 'heuristic' }), true)
+  assert.equal(isCandidate({ rule: 'E1', confidence: 'high' }), false, 'a 404 is measured')
+  assert.equal(isCandidate({ rule: 'E4', confidence: 'high' }), false)
+})
+
+test('the browser pass takes every page but only the newest posts', async () => {
+  const { browsePages } = await import('../src/lib/kinds.js')
+  const post = (n, d) => ({ url: `https://ex.com/blog/${n}/`, isArticle: true, published: d })
+  const pages = [{ url: 'https://ex.com/' }, post('old', '2024-01-01'), post('new', '2026-10-01'), post('mid', '2025-05-01'), { url: 'https://ex.com/services/a/' }]
+  assert.deepEqual(browsePages(pages, 2), ['https://ex.com/', 'https://ex.com/blog/new/', 'https://ex.com/blog/mid/', 'https://ex.com/services/a/'])
+  assert.equal(browsePages(pages, Infinity).length, 5)
 })

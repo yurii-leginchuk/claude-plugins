@@ -18,6 +18,7 @@ import { loadFacts } from './lib/facts.js'
 import { resolveGbpLinks, gbpTargets } from './lib/gbp.js'
 import { buildProfile } from './lib/profile.js'
 import { pageType } from './lib/page-type.js'
+import { browsePages, BROWSE_POSTS } from './lib/kinds.js'
 import { SWEEP } from './browser/sweep.js'
 import { listFindings, applyReview, idsFor } from './review.js'
 import { buildProdCompare, loadProdCompare, saveProdCompare } from './crawl/prod.js'
@@ -51,7 +52,7 @@ import { SNAPSHOT_TTL_MS } from './lib/snapshot-ttl.js'
 // made the banner unreachable instead of fixing it).
 
 const USAGE = `qc audit <site-url|sheet-url> [--fresh] [--env dev|prod] [--prod <url>] [--facts <file.json>] [--only IDs] [--skip IDs] [--concurrency n]
-qc browse <host|url> [--breakpoints a,b] [--sweep step|0] [--pages n] [--force] [--concurrency n] [--headed] [--only IDs] [--skip IDs]
+qc browse <host|url> [--breakpoints a,b] [--sweep step|0] [--pages n] [--posts n|all] [--force] [--concurrency n] [--headed] [--only IDs] [--skip IDs]
   note: in browse, --only/--skip filter only the PRINTED findings (all browser rules still run) --
   this is NOT the same as audit's --only/--skip, which control which rules execute
 qc findings <host>                 distinct defects of the latest run with ids, for review
@@ -484,20 +485,23 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   // appeared.
   const browserFailedRows = browserRows.filter(r => r.error)
   let droppedWidths = []
+  let metaPosts = BROWSE_POSTS
   try {
     const metaSnap = loadSnapshot(host)
     if (Array.isArray(metaSnap?.meta?.browserWidthsDropped)) {
       droppedWidths = metaSnap.meta.browserWidthsDropped
     }
+    if (metaSnap?.meta?.browserPosts != null) metaPosts = metaSnap.meta.browserPosts === 'all' ? Infinity : metaSnap.meta.browserPosts
   } catch {
     // A corrupt snapshot is already the caller's problem elsewhere; the list
     // of excluded widths is not worth failing a whole report over.
   }
+  const browseSet = new Set(browsePages(pages, metaPosts))
   const browserCoverage = allBrowserRows.length
     ? {
         stalePages: staleBrowserPages,
-        pagesDone: browserRows.filter(r => !r.error).length,
-        pagesTotal: pages.length,
+        pagesDone: browserRows.filter(r => !r.error && browseSet.has(r.url)).length,
+        pagesTotal: browseSet.size,
         pagesFailed: browserFailedRows.length,
         failedUrls: browserFailedRows.slice(0, 50).map(r => ({ url: r.url, error: r.error })),
         widths: [...new Set(browserRows.flatMap(r => r.widths || []))].sort((a, b) => a - b),
@@ -763,6 +767,15 @@ export async function browse(input, flags) {
     maxPages = n
   }
 
+  // Posts share one template: the newest few are checked in the browser, the
+  // static audit reads them all. --posts <n> or --posts all.
+  const postsFlag = requireStringFlag(flags, 'posts', '--posts')
+  let postsLimit = null
+  if (postsFlag !== null) {
+    postsLimit = postsFlag === 'all' ? Infinity : Number(postsFlag)
+    if (postsLimit !== Infinity && (!Number.isInteger(postsLimit) || postsLimit < 0)) throw new Error(`--posts must be a number or all, got: ${postsFlag}`)
+  }
+
   const force = Boolean(flags.force)
   const headed = Boolean(flags.headed)
   // Resize sweep 1920→320 between the breakpoints; --sweep <step px>, 0 = off.
@@ -877,10 +890,13 @@ export async function browse(input, flags) {
   // on -- a two-week-old crawl would present itself as freshly crawled to
   // every later reader, purely because someone ran `browse` on it. See the
   // "persisting widths does not reset savedAt" tests.
-  if (discoveredNow) {
+  const savedPosts = snap.meta.browserPosts === 'all' ? Infinity : (snap.meta.browserPosts ?? BROWSE_POSTS)
+  const posts = postsLimit ?? savedPosts
+  if (discoveredNow || posts !== savedPosts) {
     saveSnapshot(host, {
       meta: {
         ...snap.meta,
+        browserPosts: posts === Infinity ? 'all' : posts,
         browserWidths: widths,
         browserWidthsDropped: dropped,
         browserWidthsUnparseable: unparseable,
@@ -899,7 +915,7 @@ export async function browse(input, flags) {
 
   const result = await runBrowserPass({
     host,
-    pages: snap.pages.map(p => p.url),
+    pages: browsePages(snap.pages, posts),
     widths,
     opts: { force, maxPages, headed, regions, sweep },
   })
@@ -952,6 +968,8 @@ export async function browse(input, flags) {
     droppedWidths: dropped,
     unparseableWidths: unparseable,
     stoppedEarly: result.stoppedEarly,
+    postsChecked: posts === Infinity ? 'all' : posts,
+    pagesLeftOut: snap.pages.length - result.pagesTotal,
     findings,
     regions: [...regions.entries()].map(([id, r]) => ({ id, ...r })),
     concurrencyIgnored: concurrencyValue !== null,

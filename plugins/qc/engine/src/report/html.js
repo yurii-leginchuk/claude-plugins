@@ -149,6 +149,7 @@ th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--line)}
 .thumb figcaption button{font:inherit;color:var(--mut);background:none;border:0;padding:4px 2px;cursor:zoom-in;text-decoration:underline;text-underline-offset:2px}
 .thumb figcaption button:focus-visible{outline:2px solid var(--maj);outline-offset:1px}
 .menu-row{border-top:1px solid var(--line);padding:12px 0}
+.steps{margin:6px 0 10px;padding-left:22px}.steps li{margin:3px 0;overflow-wrap:anywhere}
 .chip.ok{color:#2e7d4f}
 dialog.lb{max-width:96vw;max-height:94vh;padding:0;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
 dialog.lb::backdrop{background:rgba(0,0,0,.6)}
@@ -198,7 +199,43 @@ const MANUAL_SECTIONS = [
   ['faq', 'FAQ and accordions', 'the right item opens, the layout does not break'],
   ['focus', 'Keyboard focus', 'focus is visible on Tab, reaches the menu, buttons and forms, no focus traps'],
   ['content', 'Contradictions in the text', 'timelines, numbers, hours, prices and promises that differ between pages'],
+  ['visual', 'Screenshots looked at by Claude', 'pages of every template at every width: text past its box, overlaps, cut or empty blocks, broken grids, images'],
 ]
+
+// One block per defect, with every page it names (a content defect spans several).
+function defectsOf(m, claudeFindings) {
+  const defs = []
+  for (const f of claudeFindings.filter(f => (m.index != null ? f.manual === m.index : f.check === m.check && f.page === m.page && (f.breakpoint ?? null) === (m.width ?? null)))) {
+    const d = defs.find(x => x.rule === f.rule && x.found === f.found)
+    if (d) d.pages.push(f.page)
+    else defs.push({ ...f, pages: [f.page] })
+  }
+  return defs
+}
+
+const manualDefect = (f) => `<div class="defect"${f.id ? ` id="${esc(f.id)}"` : ''} data-cat="${esc(categoryOf(f))}"><p class="kv">${f.id ? `<a class="did" href="#${esc(f.id)}">${esc(f.id)}</a> ` : ''}<span class="cat cat-${esc(categoryOf(f))}">${esc(categoryOf(f))}</span> <span class="chip ${CHIP[f.severity] || 'note'}">${esc(f.severity)}</span> ${esc(f.rule)} · ${esc(f.title)}${f.confidence === 'heuristic' ? ' <span class="chip note">not repeated by the second check</span>' : ''}</p><p class="kv"><b>Problem:</b> ${rich(f.found)}</p>${f.where ? `<p class="kv">where: ${rich(f.where)}</p>` : ''}<p class="kv"><b>Fix:</b> ${rich(f.expected)}</p>${f.pages.length > 1 ? `<ul class="pages">${f.pages.map(p => `<li>${rich(p)}</li>`).join('')}</ul>` : ''}</div>`
+
+const JOURNEY_STATUS = { ok: ['ok', 'done'], defect: ['crit', 'had problems'], skipped: ['note', 'not done'] }
+
+// The visitor's tasks Claude did end to end (find a price, book, buy, call):
+// the first thing the report shows, since one that fails costs leads.
+function renderJourneys(manualChecks, claudeFindings) {
+  const js = (Array.isArray(manualChecks) ? manualChecks : []).filter(m => m.check === 'journey')
+  if (!js.length) return ''
+  const done = js.filter(m => m.status === 'ok').length
+  return `<h2>Visitor journeys</h2>
+<div class="note-box heuristic">Claude did what a visitor comes to do, step by step, at a phone and a desktop width: ${done} of ${js.length} went through without problems.</div>
+${js.map(m => {
+    const [cls, label] = JOURNEY_STATUS[m.status] || JOURNEY_STATUS.skipped
+    const defs = defectsOf(m, claudeFindings)
+    return `<details class="rule journey"${m.status === 'ok' ? '' : ' open'}><summary><span class="chip ${cls}">${esc(label)}</span> <b>${esc(m.title)}</b><span class="cnt">${m.width != null ? `${esc(m.width)} px · ` : ''}${m.steps.length} steps · ${defs.length} defects</span></summary><div class="body">
+<p class="kv">start: ${rich(m.page)}</p>
+<ol class="steps">${m.steps.map(s => `<li>${rich(s)}</li>`).join('')}</ol>
+${m.checked ? `<p class="kv">${rich(m.checked)}</p>` : ''}
+${defs.map(manualDefect).join('')}
+${(m.shots || []).length ? `<div class="strip">${m.shots.map((src, i) => thumb(src, `${m.width != null ? `${m.width} px · ` : ''}step ${i + 1}`, m.width || 768)).join('')}</div>` : ''}</div></details>`
+  }).join('')}`
+}
 
 // What Claude checked by hand (Playwright, or reading the pages for
 // `content`); the engine only renders what Claude recorded.
@@ -213,16 +250,10 @@ function renderManual(manualChecks, claudeFindings) {
     const nDefects = new Set(claudeFindings.filter(f => f.check === k).map(f => f.id || `${f.rule}|${f.found}`)).size
     return `<details class="rule"><summary><span class="chip ${nDefects ? 'crit' : 'ok'}">${nDefects ? 'defects found' : 'ok'}</span> <b>${esc(title)}</b><span class="cnt">${rows.length} checks · ${nDefects} defects</span></summary><div class="body"><p class="sub">${esc(what)}</p>${rows.map(m => {
     const [cls, label] = MANUAL_STATUS[m.status] || MANUAL_STATUS.skipped
-    // One block per defect, with every page it names (a content defect spans several).
-    const defs = []
-    for (const f of claudeFindings.filter(f => (m.index != null ? f.manual === m.index : f.check === k && f.page === m.page && (f.breakpoint ?? null) === (m.width ?? null)))) {
-      const d = defs.find(x => x.rule === f.rule && x.found === f.found)
-      if (d) d.pages.push(f.page)
-      else defs.push({ ...f, pages: [f.page] })
-    }
+    const defs = defectsOf(m, claudeFindings)
     return `<div class="menu-row"><p class="kv"><span class="chip ${cls}">${esc(label)}</span>${m.width != null ? ` <b>${esc(m.width)} px</b> ·` : ''} ${rich(m.page)}</p>
 ${m.checked ? `<p class="kv">${rich(m.checked)}</p>` : ''}
-${defs.map(f => `<div class="defect"${f.id ? ` id="${esc(f.id)}"` : ''} data-cat="${esc(categoryOf(f))}"><p class="kv">${f.id ? `<a class="did" href="#${esc(f.id)}">${esc(f.id)}</a> ` : ''}<span class="cat cat-${esc(categoryOf(f))}">${esc(categoryOf(f))}</span> <span class="chip ${CHIP[f.severity] || 'note'}">${esc(f.severity)}</span> ${esc(f.rule)} · ${esc(f.title)}</p><p class="kv"><b>Problem:</b> ${rich(f.found)}</p>${f.where ? `<p class="kv">where: ${rich(f.where)}</p>` : ''}<p class="kv"><b>Fix:</b> ${rich(f.expected)}</p>${f.pages.length > 1 ? `<ul class="pages">${f.pages.map(p => `<li>${rich(p)}</li>`).join('')}</ul>` : ''}</div>`).join('')}
+${defs.map(manualDefect).join('')}
 ${(m.shots || []).length ? `<div class="strip">${m.shots.map((src, i) => thumb(src, `${m.width != null ? `${m.width} px · ` : ''}${i + 1}`, m.width || 768)).join('')}</div>` : ''}</div>`
   }).join('')}</div></details>`
   }).join('')
@@ -645,7 +676,7 @@ pages: ${esc(pages)} · page list source: ${esc(source)} ·
 snapshot: ${ageLabel}</p>
 <p><span class="verdict ${vClass}">${esc(v)}</span></p>
 ${siteSummary ? `<div class="note-box heuristic"><b>About the site:</b> ${esc(siteSummary)}</div>` : ''}
-${unjudged ? `<div class="note-box heuristic">${unjudged} ${unjudged === 1 ? 'candidate' : 'candidates'} from the judgement rules (lists, places, contradictions, brand, form options) were not looked at by Claude and are not shown: they are defects only once Claude confirms them.</div>` : ''}
+${unjudged ? `<div class="note-box heuristic">${unjudged} ${unjudged === 1 ? 'candidate' : 'candidates'} the scripts could not decide on their own (judgement rules, clicks and console errors, heuristics) were not checked by Claude and are not shown: they are defects only once Claude confirms them.</div>` : ''}
 ${snapshotAgeDays > STALENESS_WARNING_DAYS ? `<div class="note-box">The snapshot is more than ${esc(STALENESS_WARNING_DAYS)} days old, so the data may be out of date. Run again with <code>--fresh</code>.</div>` : ''}
 ${sitemapWarning ? `<div class="note-box">Sitemap: <b>${esc(sitemapStatus)}</b>. The page list may be incomplete, so some of the site’s pages may be missing from the report.</div>` : ''}
 ${browserCoverageHtml}
@@ -666,6 +697,7 @@ ${oversizeBytes != null ? `<div class="note-box">The report is over the recommen
 <div class="catbar" role="group" aria-label="Who fixes it">${['all', 'dev', 'seo', 'copy'].map(c => `<button type="button" data-cat-filter="${c}" aria-pressed="${c === 'all'}">${c === 'all' ? 'All' : c} <span class="n">${c === 'all' ? byCat.dev + byCat.seo + byCat.copy : byCat[c]}</span></button>`).join('')}<span class="sub">dev — a developer fixes it alone · seo — needs the SEO team · copy — needs the copy team</span></div>
 <p class="sub">Defects by severity: ${distinct.critical} critical · ${distinct.major} major · ${distinct.minor} minor · ${distinct.note} note. This is the number of real tasks to fix.
 The Critical/Major/Minor tiles above count occurrences (one fix can close several at once).</p>
+${renderJourneys(manualChecks, claudeFindings)}
 <h2>Static check (HTML, links, SEO, content)</h2>
 ${groupsHtml}
 ${heurHtml}

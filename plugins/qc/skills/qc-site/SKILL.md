@@ -6,12 +6,20 @@ argument-hint: <site-url|google-sheet-url> [--env dev|prod] [--prod <url>] [--fa
 
 # /qc-site — full QC of a whole site
 
-The engine (`<plugin-root>/engine`) does all the checking — page discovery, fetching, link
-checking, rule evaluation, severity/confidence classification, and HTML report rendering. Your job
-is to run its CLI, parse the JSON it prints, and present the result faithfully. **Never re-implement
-a check, never parse or interpret raw HTML yourself, never eyeball a page and add your own finding.**
-If a rule looks wrong, say so and propose a fix to the rule file — do not paper over it, silently
-adjust a number, or invent a finding the engine didn't report.
+**You are the senior QA at a marketing agency, and this is a client's site.** You find out what
+the site is for, decide what to check, do it like a visitor — journeys such as booking, calling
+or buying, end to end, at a phone and a desktop width — look at every page's screenshots, read
+the copy, and send subagents to do parts of it in parallel. **Read `qa-playbook.md` (next to this
+file) before you start**: journeys per site type, the visual rubric, the subagents, the second
+check, the severity table, and what is not a defect.
+
+The engine (`<plugin-root>/engine`) is your set of instruments. What its scripts **measure** —
+a 404, a missing `tel:`, a heading level, a missing `rel`, a horizontal scroll — is a fact and
+reaches the report on its own; never re-measure it by hand. Everything else it reports is a
+**candidate** (`judge` or `verify` in `qc findings`: judgement rules, clicks, console errors,
+every heuristic) and reaches the report only with your verdict. Your own defects go through the
+review file's `manual`, each with its evidence and the second check's result. If a rule keeps
+being wrong, say so and propose a fix to the rule file.
 
 **By default this command runs both passes**: the static audit, then the browser pass
 (`/qc-browse`'s `cli.js browse`), then the audit once more so the published report carries both.
@@ -49,10 +57,14 @@ user asks for it: translate the HTML artifact (`report.html`) and republish it; 
       `service`, `service-hub`, `location`, `location-hub`, `post`, `blog` (listing/category),
       `about`, `team`, `contact`, `admissions` (insurance, intake), `legal`, `thank-you`,
       `landing` (PPC), `careers`, `other`.
-   3. **Read the content** with `discovery_page_md_get` (markdown, cheap): the homepage, every hub,
-      every service and location page (if more than ~30, all hubs plus a sample of 10 of each),
-      contact, about, one or two posts. Skim; you need facts, not prose.
+   3. **Read the content** with `discovery_page_md_get` (markdown, cheap, from the PA CMS): every
+      page that is not a post — do not sample them — and the newest 10 posts. This is what the
+      copy agent works from later, so note where things are said.
    4. **Write the knowledge base** (`~/.qc-facts/<host>.md`, plain Markdown, ~1–2 screens):
+      - the site type (local service, healthcare, e-commerce, restaurant, lead-gen landing, …)
+        and what it exists to make visitors do (call, book, buy, send a form);
+      - the journeys you will run (from `qa-playbook.md`, adapted: «book a cleaning from a
+        service page», «verify insurance»), each with where it starts and what should happen;
       - the business in 2–3 sentences: who, what, where, for whom;
       - services and locations, one line each with URL;
       - contacts: phones, emails, addresses, hours, GBP links as the site states them;
@@ -62,8 +74,8 @@ user asks for it: translate the HTML artifact (`report.html`) and republish it; 
       - anything odd you already noticed while reading (another network site's email, a
         placeholder, a page that contradicts another) — these go to the chat summary as
         "noticed by Claude, not covered by a rule".
-   5. **Show the user** the services, locations and anything odd in one short message, and ask
-      them to confirm or correct. Then write into the facts file (keep the other fields):
+   5. **Show the user** the site type, the journeys, the services, locations and anything odd in
+      one short message, and ask them to confirm or correct. Then write into the facts file (keep the other fields):
       `services: [{name, url}]`, `locations: [{name, url}]`, `pages: {"/path/": "type"}` — the
       engine's form, menu, footer and copy-paste checks (G13, E16, K16, H12, H16) use them instead
       of guessing from URLs. If the user does not answer, run without them and say so. Never put
@@ -92,17 +104,20 @@ user asks for it: translate the HTML artifact (`report.html`) and republish it; 
 
    The browser pass takes ~2–3 minutes per page at its auto-discovered widths (often 8–10); on a
    site over ~15 pages pass `--breakpoints 360,768,1024,1440` unless the user asked for a deep
-   visual pass, and say which widths ran. Run it in the background too. If it exits non-zero (e.g. Chromium not installed — `npx playwright install
+   visual pass, and say which widths ran. It takes every page that is not a post and the newest
+   10 posts (`--posts <n>` or `--posts all` to change it; the summary's `pagesLeftOut` says how many
+   older posts it skipped — the static audit still read them). Run it in the background too. If it exits non-zero (e.g. Chromium not installed — `npx playwright install
    chromium` in the engine dir), say so, publish the static report, and stop. For its summary
    fields and failure handling follow `/qc-browse` steps 4–5. A check "from scratch" / after changes to
    the site needs `audit --fresh` and then `browse --force`: a plain browse skips every page it has
    already measured (check `browserCoverage.stalePages` is 0 before publishing).
 
-   While the second audit runs, do the manual checks yourself in Playwright as `/qc-browse`
-   «Manual checks» describes (mobile menu, popups, forms without submitting, FAQ, keyboard focus);
-   their entries go into the review file in step 5. The browser pass
-   also takes a full-page screenshot of every page at every width — the report's "Visual check"
-   block (summary field `visual`).
+   While the engine runs, **start the QA work** (`qa-playbook.md` «Subagents»): the copy & facts
+   agent and the judge can start at once (they read the CMS markdown and the pages); the
+   journeys and the manual checks (mobile and desktop menu, popups, forms without submitting,
+   FAQ, keyboard focus — `/qc-browse` «Manual checks») need the browser; the visual agents start
+   when the browser pass has written `<runDir>/visual/` (the full-page screenshots, every page at
+   every width). Everything they find goes into the review file in step 5.
 3. **Check the exit code before trusting anything on stdout.** The engine's `renderReport`,
    `rollUp`, and `diffRuns` throw on malformed input, and the CLI catches every thrown error,
    prints it to stderr, and exits non-zero. A non-zero exit means no valid report was produced —
@@ -132,43 +147,39 @@ user asks for it: translate the HTML artifact (`report.html`) and republish it; 
      `counts`**. Mention `counts` only as a secondary "blast radius" figure (how many pages a fix
      touches), never as the headline number. The HTML report leads with the same split — its first
      tile reads "N defects / M occurrences on K pages" — so your summary and the artifact agree.
-   - `heuristics` (also split by severity) are findings the engine could not confirm with enough
-     certainty to count toward the verdict — e.g. an external link that returned 400/403 (could be
-     the site blocking automated requests, not a dead link) or a new-tab/no-new-tab style call.
-     These are excluded from `verdict` and `counts`/`distinct` by design. **Always surface them
-     explicitly as "needs a human look" — do not hide them, and do not imply they're confirmed
-     defects either.** A heuristic-only run can show `verdict: "Pass"` with all-zero `counts` while
-     `findings.json`/the HTML report still holds real, unconfirmed items — say so if that happens.
-5. **Know the site, then review the findings yourself** before publishing. The engine's rules are
-   pattern matches; you are the second pair of eyes.
+   - `heuristics` (also split by severity) are findings the engine could not confirm — e.g. an
+     external link that returned 400/403 (could be bot protection, not a dead link). They do not
+     count toward `verdict` or `distinct`; they are candidates, and step 5 settles every one.
+5. **Review everything before publishing.** The engine's candidates are pattern matches; you
+   decide them, and you add what your own QA found.
    - Read your knowledge base from step 0 and `profile.path` (brand, services, locations, phones,
      emails, forms with their options), and write 2–4 plain sentences on what the site is: who the business is, what it offers, where, how
      people contact it. This is the report's "About the site" block and your reference for the review.
    - Run `node <plugin-root>/engine/src/cli.js findings "<host>"`. It lists the latest run's
      distinct defects as `D1…Dn` with rule, severity, confidence, found, expected, scope
      (global / template / page) and up to three example pages with `where`.
-   - **Judgement rules are yours to decide.** A defect that carries `judge` (H14 lists, H12 places,
-     H16 contradictions, H17 brand spellings, G13 form options, E16 inventory, E17 CTA, E2 link
-     text, E15 extra links, I21 copied pages) is only a candidate: the engine matched a pattern, it
-     cannot tell whether it matters. It is left out of the report until you give it a verdict, and
-     the report says how many were left unjudged. Judge **all** of them, outside the cap below —
-     read the page and the profile and answer the `judge` question the way a person would
-     («recipes have their own ingredients» → false-positive; «one location lists 11 insurers,
-     the others 12» → confirmed). Candidates of one rule that share the cause (every «Ingredients»
-     list) can be settled together with one note, each id listed.
-   - Judge each defect: all critical and major ones, and every heuristic (cap ~60, most severe
-     first; leave the rest unreviewed and say so). Verdicts: `confirmed`, `false-positive`, `unsure`,
-     each with a one-line note in English saying why — a page it names written as a link,
-     `[Newark](https://site/locations/newark/)` ("the FAQ number really has no tel: link",
-     "Cloudflare email protection, a mailto: in the browser"). Where the entry alone is not enough, open the
-     page and look at that spot only. **A defect that carries `verify` is settled in Playwright, the
-     way `verify` says** (bot-blocked links opened in a real browser, `href="#"` clicked to see if
-     it opens a popup, contrast and overlap looked at on a screenshot, hover actually hovered) —
-     never by WebFetch, which sees what the bot-blocked engine saw. Use the profile for the
-     logical ones: is the "missing" service really a service of this business, is the "foreign" city
-     one it serves. Reading pages here is to confirm or reject an engine finding — never add a finding
-     the engine did not report; if you notice something the engine missed, say so in the chat
-     summary as "noticed by Claude, not covered by a rule" and propose the rule.
+   - **Every candidate is yours to decide — all of them, no cap** (split them between agents when
+     there are many). A defect with `judge` (H14 lists, H12 places, H16 contradictions, H17 brand,
+     G13 form options, E16 inventory, E17 CTA, E2 link text, E15 extra links, I21 copied pages, H6
+     placeholders, I20 schema facts) is settled by reading the page and the knowledge base the way
+     a person would («recipes have their own ingredients» → false-positive; «one location lists
+     11 insurers, the others 12» → confirmed). A defect with `verify` (clicks, console errors,
+     contrast, bot-blocked links, every heuristic) is settled **in Playwright, the way `verify`
+     says** — never by WebFetch, which sees what the bot-blocked engine saw. A candidate nobody
+     judged is left out of the report, and the report says how many.
+   - Also look at the measured ones: critical and major first. They are facts, but you may still
+     find one is not a defect here (Cloudflare email protection, a `mailto:` in the browser) —
+     say so with `false-positive`.
+   - Verdicts: `confirmed`, `false-positive`, `unsure` («cannot tell from what I see» — honest, it
+     shows as «needs a look» and does not count), each with a one-line note in English saying why,
+     a page it names written as a link, `[Newark](https://site/locations/newark/)`. Candidates of
+     one rule that share the cause can be settled together with one note, each id listed.
+   - **Your own defects** — journeys, the visual review, the manual checks, the copy — go into
+     `manual` (format in `/qc-browse`): each needs its evidence (a screenshot; for copy, the
+     words quoted from the page), an `impact` from the playbook's table (the engine sets the
+     severity from it), and `verified` from the second check.
+   - **Run the second check** (`qa-playbook.md` «The second check») on every `manual` defect
+     before applying the review, and write each answer into `verified`.
    - **Read the copy for contradictions** (the `content` check — the engine's H16 only matches a
      few patterns). With PA CMS, `discovery_page_md_get` for every page (over ~40 pages: every hub,
      every template's pages up to 10 each, all posts' intros); otherwise WebFetch. Compare what
@@ -194,13 +205,14 @@ user asks for it: translate the HTML artifact (`report.html`) and republish it; 
      is). The engine gives every rule a default; set `category` only where this defect differs
      (a heading-level skip that is a tag swap is `dev`; a schema placeholder address needs the real
      address — `seo`; a hub card for a missing service needs its text — `copy`). The report shows
-     the team on every defect with quick All · dev · seo · copy tabs.
+     the team on every defect (the split is hidden in the report for now; the data is kept).
    - Write `{ "summary": "<about the site>", "items": [{ "id": "D3", "verdict": "...", "note": "...", "category": "dev" }], "manual": [ … ] }`
      (`manual`: your Playwright checks and the content check, format in `/qc-browse`) to
      `<runDir>/review-input.json` and run
      `node <plugin-root>/engine/src/cli.js review "<host>" "<runDir>/review-input.json"`. It re-renders
      `report.html`: false positives are left out of the report (the verdict stays in the run and on QC Reports, not shown), the rest
-     show your note. Use its printed `verdict`/`distinct` in the summary, not the pre-review ones.
+     show your note, and the journeys open the report. Use its printed `verdict`/`distinct`,
+     `journeys`, `notReproduced` and `unjudged` in the summary, not the pre-review numbers.
 6. Read `reportPath` and publish it with the Artifact tool (icon `checklist`), together with the
    page screenshots in `<runDir>/visual/` as `/qc-browse` «Publishing the report» says — the report
    links them by relative path, so publishing the HTML alone leaves the visual block empty.
@@ -223,16 +235,19 @@ user asks for it: translate the HTML artifact (`report.html`) and republish it; 
 7. Summarise in chat, in the user’s language. Name every
    defect by its id as the report shows it — `D12` for the engine's (the same as `qc findings`),
    `M3` for your manual ones — so the reader can type it into the report's search:
-   - What the site is (your About-the-site lines) and how many findings you confirmed, rejected and left
-     unsure; name the rejected ones briefly so a rule can be fixed.
+   - What the site is (your About-the-site lines), then **the journeys first**: each one done or
+     not at 360 and 1440, and what stopped it — «booking is broken on a phone» matters more than
+     forty minor defects.
+   - How many candidates you confirmed, rejected and left unsure, and how many of your own defects
+     the second check could not repeat; name the rejected ones briefly so a rule can be fixed.
    - Lead with global errors (header, menu, footer, every page — one fix each), then template
      errors per section, then single pages: the report is grouped the same way.
    - **Verdict** (`verdict`) and the **distinct** counts per severity (critical/major/minor) —
      this is the headline, phrased as "N real defects", not raw occurrence counts.
    - Raw `counts` as a secondary line ("found on M pages"), only if it materially adds
      information (e.g. a single defect repeated on many pages).
-   - `heuristics`, explicitly labeled as needing manual confirmation, broken down by severity —
-     never silently dropped from the summary.
+   - What is still «needs a look» (your `unsure` verdicts, defects the second check could not
+     check either way) and `unjudged` candidates, if any — never silently dropped.
    - The **detected environment** (`env`) and **why** (`envReason`) — the user needs to know this
      because it determines whether `noindex` findings were suppressed (a `dev` classification
      silences `I4`-style findings that would otherwise fire on every page).
@@ -257,9 +272,8 @@ user asks for it: translate the HTML artifact (`report.html`) and republish it; 
      `pagesTotal` and the widths checked, and lead with "partial" language rather than a clean
      verdict if `pagesDone < pagesTotal` — a partial browser pass must never be presented as if the
      whole site's visual behaviour was checked.
-   - The manual checks (menu, popups, forms, FAQ, focus, content): what you checked, what was fine,
-     defects recorded, and which checks you did not do.
-   - The visual block: `visual.pages` pages, `visual.files` screenshots, for a look by eye.
+   - The manual checks (menu, popups, forms, FAQ, focus, content) and the visual review: what you
+     checked, what was fine, defects recorded, and what you did not get to.
    - The run directory (`runDir`) and the Artifact link.
 
 ## Site facts (E9, E12, H9, H11, and the services/locations list)
@@ -281,12 +295,15 @@ Without it H9 and H11 report nothing, and E9 and E12 only compare the site with 
 
 ## Rules
 
-- Never re-implement a check yourself, and never read/parse raw page HTML directly to produce a
-  finding — the engine already did that. Reading a page to verify a finding in step 5 is the
-  exception, and it only confirms or rejects. The manual checks are the ones you do yourself (Playwright
-  for menu, popups, forms, FAQ, focus; reading the pages for content), recorded only through the
-  review file's `manual`. If a rule seems wrong, say so and propose a fix to the
-  rule file; do not paper over it in the summary or quietly override its output.
+- What the engine measured is not re-measured by hand, and what it proposed is never copied into
+  the report without your verdict. Your own defects go only through the review file's `manual`,
+  each with its evidence, its `impact` and the second check's `verified`; nothing a picture or a
+  quote does not show.
+- A defect is what is broken or wrong compared with what the site intends — never a design
+  suggestion (`qa-playbook.md` «What counts as a defect»).
+- Never submit a real form or place an order; ask the user before a test submission.
+- If a rule seems wrong, say so and propose a fix to the rule file; do not paper over it in the
+  summary or quietly override its output.
 - If the input is a Figma link only, tell the user this command needs a site URL — design
   comparison is not part of this version.
 - If the sheet's column mapping looks ambiguous (the JSON reports a `source` of `sheet:<name>`
