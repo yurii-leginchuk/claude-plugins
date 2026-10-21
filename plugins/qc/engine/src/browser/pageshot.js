@@ -60,7 +60,7 @@ export function tilePath(host, width, hash) {
 
 // In the page: what makes two captures of one page differ, or show what a
 // visitor never sees -- lazy images not yet in, entrance animations not run,
-// a carousel on another slide.
+// a carousel moving between two pieces.
 async function settle() {
   for (let y = 0; y < document.documentElement.scrollHeight; y += 400) {
     window.scrollTo(0, y)
@@ -68,9 +68,10 @@ async function settle() {
   }
   window.scrollTo(0, 0)
   for (const el of document.querySelectorAll('.swiper, .swiper-container')) {
-    try { el.swiper?.autoplay?.stop(); el.swiper?.params?.loop ? el.swiper.slideToLoop(0, 0) : el.swiper?.slideTo(0, 0) } catch { /* not a live swiper */ }
+    // stop only: sliding a loop carousel back to slide one moved it further than a visitor ever sees it
+    try { el.swiper?.autoplay?.stop() } catch { /* not a live swiper */ }
   }
-  try { window.jQuery?.('.slick-initialized').slick('slickPause').slick('slickGoTo', 0, true) } catch { /* no slick */ }
+  try { window.jQuery?.('.slick-initialized').slick('slickPause') } catch { /* no slick */ }
   const imgs = [...document.images].filter(i => !i.complete)
   await Promise.race([Promise.all(imgs.map(i => new Promise(r => { i.onload = i.onerror = r }))), new Promise(r => setTimeout(r, 5000))])
   await new Promise(r => setTimeout(r, 300))

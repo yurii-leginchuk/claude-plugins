@@ -88,8 +88,8 @@ label one pixel past its pill) disappears. So the browser pass also cuts every p
 width into **pieces** at full size: the first screen as the visitor sees it (fixed bars and
 popups included), then the rest of the page cut at the tops of its sections with fixed elements
 hidden, a section taller than 1000 px split with a 100 px overlap. Before cutting it scrolls the
-page through (lazy images, entrance animations), waits for the images and stops carousels on
-their first slide, so a piece shows the page, not the moment it was taken. Every row of the page
+page through (lazy images, entrance animations), waits for the images and stops carousels where
+they are, so a piece shows the page, not the moment it was taken. Every row of the page
 is in a piece. Pieces are named by their pixels: a footer, a testimonials block or a CTA band
 that is the same on 150 pages is **one** piece with the list of its pages.
 

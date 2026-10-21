@@ -194,7 +194,7 @@ For Claude's visual review the browser pass also cuts every page at every width 
 (`~/.qc-cache/<host>/tiles/<width>-<pixel hash>.png`): the first screen as the visitor sees it,
 then the page cut at the tops of its sections with fixed elements hidden, a section over 1000 px
 split with a 100 px overlap; it scrolls the page through, waits for images and stops carousels
-first. One picture shared by many pages (a footer) is one piece. `qc audit` lists them with ids
+first (without moving them). One picture shared by many pages (a footer) is one piece. `qc audit` lists them with ids
 in `<runDir>/tiles.json`; `qc tiles <host>` prints them, shared ones first, with the script's
 hints (B3, B5, B9, C2, B6 by their y) on each piece, leaving out pieces whose pixels were looked
 at on an earlier QC (`visual-cache.json`). A `visual` entry names the pieces it covered
