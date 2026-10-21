@@ -158,6 +158,47 @@ const BROWSER_CHECKED = new Set(['F12', 'X1', 'J3', 'F1', 'F4'])
 // needs Claude's verdict.
 export const isCandidate = (f) => isJudged(f) || f.confidence === 'heuristic' || BROWSER_CHECKED.has(f.rule)
 
+// The screen pieces of the latest run (tiles.json, written by qc audit),
+// grouped by page type and page for splitting between visual agents.
+export function listTiles(host) {
+  const { dir } = runOf(host)
+  const file = join(dir, 'tiles.json')
+  if (!existsSync(file)) throw new Error(`no screen pieces in ${dir}: run qc browse, then qc audit`)
+  const { tiles, missing } = JSON.parse(readFileSync(file, 'utf8'))
+  const byType = {}
+  for (const t of tiles) {
+    const pages = (byType[t.type] ||= {})
+    ;(pages[t.page] ||= []).push({ id: t.id, width: t.width, file: t.file, top: t.top, bottom: t.bottom })
+  }
+  return { runDir: dir, total: tiles.length, missing, byType }
+}
+
+// "T3", "T3-T9" or "T3–T9" -> every id named.
+function tileIds(list) {
+  const out = new Set()
+  for (const x of list || []) {
+    const m = String(x).trim().match(/^T(\d+)(?:\s*[-–]\s*T?(\d+))?$/)
+    if (!m) throw new Error(`review: «${x}» is not a tile id like T12 or T12-T18`)
+    for (let n = Number(m[1]); n <= Number(m[2] || m[1]); n++) out.add(`T${n}`)
+  }
+  return out
+}
+
+// Which pieces the visual entries say Claude looked at, against every piece there is.
+export function tileCoverage(dir, review) {
+  const file = join(dir, 'tiles.json')
+  if (!existsSync(file)) return null
+  const { tiles, missing } = JSON.parse(readFileSync(file, 'utf8'))
+  const seen = new Set()
+  for (const m of review.manual || []) if (m?.check === 'visual') for (const id of tileIds(m.tiles)) seen.add(id)
+  const unseen = tiles.filter(t => !seen.has(t.id))
+  return {
+    total: tiles.length, seen: tiles.length - unseen.length,
+    unseen: unseen.slice(0, 100).map(t => `${t.id} ${t.page} ${t.width}px ${t.top}-${t.bottom}`),
+    unseenPages: [...new Set(unseen.map(t => t.page))].length, missing: missing.length,
+  }
+}
+
 function runOf(host) {
   const dir = latestRunDir(host)
   if (!dir || !existsSync(join(dir, 'report-input.json'))) {
@@ -251,7 +292,8 @@ export function applyReview(host, reviewPath) {
   attachEvidence(host, findings)
   const { kept, rejected, manual, byIdentity, unjudged } = sortByReview(dir, findings, review)
   inlineScreenshots([...kept, ...rejected])
-  const html = renderReport({ ...input, findings: kept, rejected, siteSummary: review.summary || null, manualChecks: manual.checks, ids: idsFor(findings, input.pages), unjudged })
+  const tiles = tileCoverage(dir, review)
+  const html = renderReport({ ...input, findings: kept, rejected, siteSummary: review.summary || null, manualChecks: manual.checks, ids: idsFor(findings, input.pages), unjudged, tiles })
   writeFileSync(join(dir, 'report.html'), html)
   writeFileSync(join(dir, 'review.json'), JSON.stringify(review, null, 2))
   const count = (v) => [...byIdentity.values()].filter(r => r.verdict === v).length
@@ -259,6 +301,7 @@ export function applyReview(host, reviewPath) {
     host, runDir: dir, reportPath: join(dir, 'report.html'), verdict: verdict(kept), distinct: countDistinct(kept),
     reviewed: byIdentity.size, confirmed: count('confirmed'), falsePositive: count('false-positive'), unsure: count('unsure'),
     manualChecked: manual.checks.length, manualDefects: manual.findings.length, notReproduced: manual.notReproduced, unjudged,
+    tiles,
     journeys: manual.checks.filter(c => c.check === 'journey').map(c => ({ title: c.title, width: c.width, status: c.status })),
   }
 }

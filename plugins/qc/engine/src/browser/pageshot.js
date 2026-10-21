@@ -43,3 +43,36 @@ export async function capturePage(page, { host, url, width }) {
     return { path, height, cut }
   }
 }
+
+// The same page cut into pieces Claude looks at one by one, in PNG at full
+// size: a whole-page picture is shrunk when read and q45 blurs a 1–2 px gap,
+// so small defects only show in a piece. The pieces cover the whole height
+// (no MAX_SHOT_HEIGHT cut) and overlap, so nothing falls between two of them.
+export const TILE = { height: 1000, overlap: 100 }
+
+export function tilePath(host, url, width, n) {
+  const key = createHash('sha1').update(`${url}|${width}`).digest('hex').slice(0, 16)
+  return join(snapshotDir(host), 'tiles', `${key}-${width}-${String(n).padStart(2, '0')}.png`)
+}
+
+export async function captureTiles(page, { host, url, width }, tile = TILE) {
+  mkdirSync(join(snapshotDir(host), 'tiles'), { recursive: true })
+  const height = await page.evaluate(() => Math.max(document.documentElement.scrollHeight, document.body.scrollHeight))
+  const cdp = await page.context().newCDPSession(page)
+  const tiles = []
+  try {
+    for (let top = 0, n = 1; top < height; top += tile.height - tile.overlap, n++) {
+      const h = Math.min(tile.height, height - top)
+      const { data } = await cdp.send('Page.captureScreenshot', {
+        format: 'png', captureBeyondViewport: true, clip: { x: 0, y: top, width, height: h, scale: 1 },
+      })
+      const path = tilePath(host, url, width, n)
+      writeFileSync(path, Buffer.from(data, 'base64'))
+      tiles.push({ path, top, bottom: top + h })
+      if (top + h >= height) break
+    }
+  } finally {
+    await cdp.detach().catch(() => {})
+  }
+  return tiles
+}

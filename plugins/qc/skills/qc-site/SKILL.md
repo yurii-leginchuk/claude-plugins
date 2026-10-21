@@ -116,8 +116,9 @@ user asks for it: translate the HTML artifact (`report.html`) and republish it; 
    agent and the judge can start at once (they read the CMS markdown and the pages); the
    journeys and the manual checks (mobile and desktop menu, popups, forms without submitting,
    FAQ, keyboard focus — `/qc-browse` «Manual checks») need the browser; the visual agents start
-   when the browser pass has written `<runDir>/visual/` (the full-page screenshots, every page at
-   every width). Everything they find goes into the review file in step 5.
+   after the second audit, from `qc tiles <host>` (every page cut into full-size pieces — each
+   agent gets its page types and must look at every piece). Everything they find goes into the
+   review file in step 5.
 3. **Check the exit code before trusting anything on stdout.** The engine's `renderReport`,
    `rollUp`, and `diffRuns` throw on malformed input, and the CLI catches every thrown error,
    prints it to stderr, and exits non-zero. A non-zero exit means no valid report was produced —
@@ -213,6 +214,8 @@ user asks for it: translate the HTML artifact (`report.html`) and republish it; 
      `report.html`: false positives are left out of the report (the verdict stays in the run and on QC Reports, not shown), the rest
      show your note, and the journeys open the report. Use its printed `verdict`/`distinct`,
      `journeys`, `notReproduced` and `unjudged` in the summary, not the pre-review numbers.
+     **`tiles.seen` must equal `tiles.total`** before you publish: the unseen pieces go to a visual
+     agent, and the review runs again.
 6. Read `reportPath` and publish it with the Artifact tool (icon `checklist`), together with the
    page screenshots in `<runDir>/visual/` as `/qc-browse` «Publishing the report» says — the report
    links them by relative path, so publishing the HTML alone leaves the visual block empty.

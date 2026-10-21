@@ -315,3 +315,26 @@ test('the browser pass takes every page but only the newest posts', async () => 
   assert.deepEqual(browsePages(pages, 2), ['https://ex.com/', 'https://ex.com/blog/new/', 'https://ex.com/blog/mid/', 'https://ex.com/services/a/'])
   assert.equal(browsePages(pages, Infinity).length, 5)
 })
+
+test('the visual review says which screen pieces Claude looked at, and the report says how many were not', async () => {
+  const { tileCoverage } = await import('../src/review.js')
+  const { tileManifest } = await import('../src/cli.js')
+  const { writeFileSync: write } = await import('node:fs')
+  const dir = mkdtempSync(join(tmpdir(), 'qc-tiles-'))
+  try {
+    const f = (n) => { const p = join(dir, `t${n}.png`); write(p, 'png'); return { path: p, top: (n - 1) * 900, bottom: (n - 1) * 900 + 1000 } }
+    const pages = [{ url: 'https://ex.com/' }, { url: 'https://ex.com/b/' }, { url: 'https://ex.com/old-post/' }]
+    const rows = new Map([
+      ['https://ex.com/', { shots: [{ width: 360, tiles: [f(1), f(2), f(3)] }, { width: 1440, tiles: [f(4)] }] }],
+      ['https://ex.com/b/', { shots: [{ width: 360, tilesError: 'boom' }] }],
+    ])
+    const m = tileManifest(pages, new Set(['https://ex.com/', 'https://ex.com/b/']), rows, () => 'home')
+    assert.deepEqual(m.tiles.map(t => t.id), ['T1', 'T2', 'T3', 'T4'])
+    assert.deepEqual(m.missing.map(x => x.reason), ['boom'])
+    write(join(dir, 'tiles.json'), JSON.stringify(m))
+    const cov = tileCoverage(dir, { manual: [{ check: 'visual', tiles: ['T1-T3'] }] })
+    assert.deepEqual([cov.total, cov.seen, cov.unseenPages, cov.missing], [4, 3, 1, 1])
+    assert.match(cov.unseen[0], /^T4 https:\/\/ex\.com\/ 1440px/)
+    assert.throws(() => tileCoverage(dir, { manual: [{ check: 'visual', tiles: ['page 1'] }] }), /not a tile id/)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})

@@ -51,11 +51,27 @@ import { SNAPSHOT_TTL_MS } from './lib/snapshot-ttl.js'
 // was already fixed; it set the reuse TTL to the banner's own 7 days, which
 // made the banner unreachable instead of fixing it).
 
+export function tileManifest(pages, browseSet, rowByUrl, typeOf) {
+  const tiles = []
+  const missing = []
+  for (const p of pages.filter(p => browseSet.has(p.url))) {
+    const row = rowByUrl.get(p.url)
+    if (!row) { missing.push({ page: p.url, reason: 'the browser pass has not opened this page' }); continue }
+    for (const shot of row.shots || []) {
+      const ok = (shot.tiles || []).filter(t => existsSync(t.path))
+      if (!ok.length) { missing.push({ page: p.url, width: shot.width, reason: shot.tilesError || 'no pieces: run qc browse --force' }); continue }
+      for (const t of ok) tiles.push({ id: `T${tiles.length + 1}`, page: p.url, type: typeOf(p), width: shot.width, file: t.path, top: t.top, bottom: t.bottom })
+    }
+  }
+  return { tiles, missing }
+}
+
 const USAGE = `qc audit <site-url|sheet-url> [--fresh] [--env dev|prod] [--prod <url>] [--facts <file.json>] [--only IDs] [--skip IDs] [--concurrency n]
 qc browse <host|url> [--breakpoints a,b] [--sweep step|0] [--pages n] [--posts n|all] [--force] [--concurrency n] [--headed] [--only IDs] [--skip IDs]
   note: in browse, --only/--skip filter only the PRINTED findings (all browser rules still run) --
   this is NOT the same as audit's --only/--skip, which control which rules execute
 qc findings <host>                 distinct defects of the latest run with ids, for review
+qc tiles <host>                    the screen pieces of every page for Claude's visual review, with ids
 qc review <host> <review.json>     re-render the latest report with Claude's verdicts
 qc evidence <host> [--force]       crop a picture of the spot of every defect of the latest run
 qc push <host>                     send the latest run's results to the QC Reports site (~/.config/qc/reports.json)
@@ -572,6 +588,9 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   // for Claude, who reads the profile to describe the site.
   writeFileSync(join(runDir, 'report-input.json'), JSON.stringify(reportInput))
   writeFileSync(join(runDir, 'profile.json'), JSON.stringify(profile, null, 2))
+  // Every piece of every page Claude must look at in the visual review, with
+  // an id the review names, and the pages × widths that have none.
+  if (browserCoverage) writeFileSync(join(runDir, 'tiles.json'), JSON.stringify(tileManifest(pages, browseSet, rowByUrl, (p) => pageType(p, profile, facts))))
 
   // `counts` deliberately excludes heuristic-confidence findings, matching
   // verdict()/rollUp()/renderReport() elsewhere in this engine: they are set
@@ -1004,6 +1023,12 @@ async function main() {
     if (cmd === 'findings') {
       if (!args[0]) throw new Error('give a host: qc findings <host>')
       console.log(JSON.stringify(listFindings(resolveHostInput(args[0])), null, 2))
+      return
+    }
+    if (cmd === 'tiles') {
+      if (!args[0]) throw new Error('give a host: qc tiles <host>')
+      const { listTiles } = await import('./review.js')
+      console.log(JSON.stringify(listTiles(resolveHostInput(args[0])), null, 2))
       return
     }
     if (cmd === 'review') {

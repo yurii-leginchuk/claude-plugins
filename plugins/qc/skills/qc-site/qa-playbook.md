@@ -83,28 +83,41 @@ Record each journey as one `manual` entry with `check: "journey"` (format in qc-
 
 ## Visual review of the screenshots
 
-The browser pass saves a full-page screenshot of every page at every width in
-`<runDir>/visual/`. Look at **every page that is not a post, and the newest 10 posts**, at every
-width — do not sample pages. Read the PNG files with the Read tool, one page's widths together,
-and compare sibling pages of one template side by side.
-
-Look for: text past its box or cut off; overlapping elements; anything past the screen edge;
-a broken grid (one card alone on a row, cards of different heights where the design has them
-equal, a column squeezed to a word per line); an empty block or a big blank gap; a broken or
-missing image or icon; text over an image that cannot be read; a sticky bar covering content;
-one section spaced or styled differently from the same section on sibling pages; a block
-duplicated or missing compared with the siblings; a placeholder.
-
-Evidence for each defect: crop the screenshot around the spot with `sips` (macOS) into
-`~/.qc-cache/<host>/manual/`:
+A whole-page screenshot is shrunk when read, and a 1–2 px defect (an icon touching its text, a
+label one pixel past its pill) disappears. So the browser pass also cuts every page at every
+width into **pieces**: PNG at full size, 1000 px tall, overlapping by 100 px, covering the
+whole height of the page. Look at the pieces, never at the shrunk whole page.
 
 ```bash
-sips -c <height> <width> --cropOffset <y> <x> "<runDir>/visual/<file>.png" --out ~/.qc-cache/<host>/manual/visual-<n>.png
+node <plugin-root>/engine/src/cli.js tiles "<host>"
 ```
 
-A band ~900 px tall around the spot is enough; it must show the defect and enough around it to
-see where it is. Record one `check: "visual"` entry per page × width you looked at, `ok` ones
-too, and say in `checked` what you compared.
+lists every piece (`T1…Tn`) by page type and page, with its file, width and `top`–`bottom` in
+px; `missing` lists page widths that have no pieces (an old browser pass: `qc browse --force`).
+The pieces cover every page that is not a post and the newest 10 posts. **Look at every piece —
+nothing is skipped or sampled.** Read the files with the Read tool, one page's pieces in order,
+and compare sibling pages of one template.
+
+In each piece look at every element, edge to edge, not only the big blocks: text past its box or
+cut off; an icon touching or overlapping its text, no gap between an icon and a label; text
+crowding a rounded edge; overlapping elements; anything past the screen edge; a broken grid (one
+card alone on a row, cards of different heights where the design has them equal, a column
+squeezed to a word per line); an empty block or a big blank gap; a broken or missing image or
+icon; text over an image that cannot be read; a sticky bar covering content; a section spaced or
+styled differently from the same section on sibling pages; a block duplicated or missing compared
+with the siblings; a placeholder. A defect that sits on the overlap of two pieces is one defect.
+
+Record one `check: "visual"` entry per page × width with **`tiles`: the ids you looked at**
+(`["T12-T19"]`), `ok` ones too, and say in `checked` what you compared. The evidence for a defect
+is the piece itself (its path in `shots`), or a tighter crop of it with `sips`:
+
+```bash
+sips -c <height> <width> --cropOffset <y> <x> "<piece>.png" --out ~/.qc-cache/<host>/manual/visual-<n>.png
+```
+
+`qc review` prints `tiles`: `seen` of `total`, and the first `unseen` pieces. **Do not publish
+until `seen` equals `total`** — give the unseen pieces to an agent and review again. The report
+says plainly when the look did not cover every piece.
 
 ## Subagents
 
@@ -116,7 +129,7 @@ drives its own Chromium with the engine's playwright from a `node` script).
 | Agent | Needs a browser | Job |
 |---|---|---|
 | copy & facts | no — PA CMS markdown | the `content` check: contradictions, false or placeholder text, typos, CTAs copied from another page, facts against the knowledge base |
-| visual, one per template group | no — screenshot files | the visual review above |
+| visual, one per page type from `qc tiles` (split a big type) | no — the piece files | the visual review above, every piece it was given |
 | judge | no — reads pages | every engine candidate with `judge` |
 | browser checker | yes | every engine candidate with `verify`, the manual checks (menu, popups, forms, FAQ, focus) |
 | journeys | yes | the journeys above |
@@ -155,5 +168,5 @@ the same defect gets the same severity on every site and every run:
 
 Do not economise on pages: every page that is not a post gets the browser pass, the visual
 review and its copy read. Posts share one template: the static audit reads all of them, the
-browser pass and the visual review take the newest 10 (`qc browse --posts 10`, the default), the
+browser pass and the visual review (every piece) take the newest 10 (`qc browse --posts 10`, the default), the
 copy agent reads the newest 10 in full and skims the rest's titles and intros.

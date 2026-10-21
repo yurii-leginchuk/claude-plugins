@@ -146,7 +146,8 @@ Every check is recorded as one entry per page × width in the review file's `man
                 "found": "…", "expected": "…", "selector": "…", "shot": 0 }] }
 ```
 
-A journey adds `"title": "Book a cleaning from a service page"` and `"steps": ["Opened …",
+A visual entry adds `"tiles": ["T12-T19"]` — the screen pieces (`qc tiles <host>`) you looked at;
+the review counts them against every piece there is. A journey adds `"title": "Book a cleaning from a service page"` and `"steps": ["Opened …",
 "Tapped «Get a Quote»", …]` — one line per thing the visitor does, in order, and one screenshot
 per step in `shots`. `ok` entries go in too — the report shows what was looked at, not only what
 broke.

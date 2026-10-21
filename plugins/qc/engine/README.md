@@ -190,6 +190,12 @@ marks them with `judge` or `verify`, and the review leaves unjudged ones out and
 `qc browse` checks every page that is not a post and the newest 10 posts (`--posts <n>|all`);
 the static audit reads every post.
 
+For Claude's visual review the browser pass also cuts every page at every width into PNG pieces
+(1000 px tall, 100 px overlap, the whole height, `~/.qc-cache/<host>/tiles/`). `qc audit` lists
+them with ids in `<runDir>/tiles.json`; `qc tiles <host>` prints them by page type. A `visual`
+entry names the pieces it covered (`tiles: ["T12-T19"]`), and `qc review` reports `tiles`
+(`seen` of `total`, the first `unseen`); the report says when the look did not cover every piece.
+
 ## QC Reports site
 
 `qc push <host>` sends the latest run's reviewed results (defects with ids, pages and `where`,

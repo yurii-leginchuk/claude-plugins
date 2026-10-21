@@ -485,6 +485,8 @@ export function renderReport({
   rejected = [],
   siteSummary = null,
   unjudged = 0,
+  // the screen pieces Claude looked at in the visual review: {total, seen, unseenPages, missing}
+  tiles = null,
   visual = [],
   manualChecks = [],
   // identity -> «D12», the same ids `qc findings` prints
@@ -677,6 +679,7 @@ snapshot: ${ageLabel}</p>
 <p><span class="verdict ${vClass}">${esc(v)}</span></p>
 ${siteSummary ? `<div class="note-box heuristic"><b>About the site:</b> ${esc(siteSummary)}</div>` : ''}
 ${unjudged ? `<div class="note-box heuristic">${unjudged} ${unjudged === 1 ? 'candidate' : 'candidates'} the scripts could not decide on their own (judgement rules, clicks and console errors, heuristics) were not checked by Claude and are not shown: they are defects only once Claude confirms them.</div>` : ''}
+${tiles && (tiles.seen < tiles.total || tiles.missing) ? `<div class="note-box">Claude’s look at the screenshots covered ${tiles.seen} of ${tiles.total} screen pieces${tiles.unseenPages ? ` (${tiles.unseenPages} pages not fully looked at)` : ''}${tiles.missing ? `; ${tiles.missing} page widths have no pieces at all` : ''}: small visual defects there may be missed.</div>` : ''}
 ${snapshotAgeDays > STALENESS_WARNING_DAYS ? `<div class="note-box">The snapshot is more than ${esc(STALENESS_WARNING_DAYS)} days old, so the data may be out of date. Run again with <code>--fresh</code>.</div>` : ''}
 ${sitemapWarning ? `<div class="note-box">Sitemap: <b>${esc(sitemapStatus)}</b>. The page list may be incomplete, so some of the site’s pages may be missing from the report.</div>` : ''}
 ${browserCoverageHtml}

@@ -23,7 +23,7 @@
 // and re-registers its console/pageerror/request listeners on every call,
 // so re-navigating the same page to the same url for a new width is safe.
 import { sweepPage } from './sweep.js'
-import { capturePage } from './pageshot.js'
+import { capturePage, captureTiles } from './pageshot.js'
 import { launchBrowser, preparePage, PAGE_TIMEOUT_MS } from './launch.js'
 import { buildBundle } from './bundle.js'
 import { proveRegions, regionOf } from './regions.js'
@@ -186,6 +186,11 @@ async function attemptPage({ newPage, url, widths, timeout, bundle, regions, hos
         // report's visual block.
         if (pageShots) {
           try { shots.push({ width, ...await capturePage(page, { host, url, width }) }) } catch { /* never fails the page */ }
+          // Pieces for Claude's visual review; a failure is recorded, so the review knows the page is not covered.
+          const shot = shots.find(s => s.width === width)
+          if (shot) {
+            try { shot.tiles = await captureTiles(page, { host, url, width }) } catch (e) { shot.tilesError = errorText(e) }
+          }
         }
       } catch (e) {
         if (i === 0) return { ok: false, error: errorText(e) }
