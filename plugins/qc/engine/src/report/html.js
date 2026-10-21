@@ -634,12 +634,6 @@ ${renderScoped(heur, pages, ctx)}`
       : `<h2>Browser pass (layout, responsive, interactive${esc(widthsLabel)})</h2>
 ${bGroups.length ? renderScoped(bGroups, pages, ctx) : '<p class="sub">No confirmed visual defects.</p>'}
 ${bHeur.length ? `<h3>Needs a look</h3><div class="note-box heuristic">Browser pass heuristics: they do not count toward the verdict.</div>${renderScoped(bHeur, pages, ctx)}` : ''}`
-    const rejectedGroups = rollUp(rejected)
-    const rejectedHtml = rejectedGroups.length
-      ? `<h2>Rejected in Claude’s review</h2>
-<div class="note-box heuristic">Claude checked these findings and judged them false positives. They do not count toward the verdict or the tiles; each one gives the reason.</div>
-${rejectedGroups.map(g => renderGroup(g, ctx)).join('')}`
-      : ''
 
     const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -678,7 +672,6 @@ ${heurHtml}
 ${browserHtml}
 ${renderManual(manualChecks, claudeFindings)}
 ${renderVisual(visual)}
-${rejectedHtml}
 <h2>Pages</h2>
 ${uniquePages.length ? `<div class="scroll"><table><tr><th>Page</th><th>Findings</th></tr>
 ${shownPages.map(p =>

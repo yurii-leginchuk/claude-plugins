@@ -199,7 +199,7 @@ user asks for it: translate the HTML artifact (`report.html`) and republish it; 
      (`manual`: your Playwright checks and the content check, format in `/qc-browse`) to
      `<runDir>/review-input.json` and run
      `node <plugin-root>/engine/src/cli.js review "<host>" "<runDir>/review-input.json"`. It re-renders
-     `report.html`: false positives move to "Rejected in Claude’s review" and stop counting, the rest
+     `report.html`: false positives are left out of the report (still saved, so they do not come back), the rest
      show your note. Use its printed `verdict`/`distinct` in the summary, not the pre-review ones.
 6. Read `reportPath` and publish it with the Artifact tool (icon `checklist`), together with the
    page screenshots in `<runDir>/visual/` as `/qc-browse` «Publishing the report» says — the report

@@ -148,8 +148,9 @@ test('qc findings lists distinct defects with ids, qc review moves false positiv
   const res = applyReview(host, file)
   assert.equal(res.falsePositive, 1)
   const html = readFileSync(res.reportPath, 'utf8')
-  assert.match(html, /Rejected in Claude’s review/)
-  assert.match(html, /the number is right/)
+  // Rejected findings are left out of the report altogether.
+  assert.doesNotMatch(html, /Rejected in Claude’s review/)
+  assert.doesNotMatch(html, /the number is right/)
   assert.match(html, /About the site:/)
   assert.throws(() => { write(file, JSON.stringify({ items: [{ id: 'D999', verdict: 'confirmed' }] })); applyReview(host, file) }, /no defect D999/)
 
