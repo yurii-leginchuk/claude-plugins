@@ -100,6 +100,25 @@ export const VERIFY = {
   C2: 'Playwright: screenshot at this width. Is there horizontal scroll or cut-off content?',
 }
 
+// Rules whose findings are a judgement, not a measurement: whether two lists
+// are meant to be one, whether a city is foreign to this business, whether two
+// claims contradict. The engine only proposes candidates; Claude decides each
+// one by reading the page, and only a confirmed or unsure one reaches the
+// report. `og:site_name` (H17) is a fact, not a judgement.
+export const JUDGED = {
+  H14: 'Claude: is this list meant to be the same on every page (insurers, service areas, what is included)? Lists that only share a heading — recipe ingredients, menus, product specs, posts — differ by design: false-positive',
+  H12: 'Claude: is the place really foreign to this business (not a city it serves, not a neighbourhood, not a name like West New York or a person’s name)?',
+  H16: 'Claude: read both places. Do the two claims really contradict for a visitor, or do they speak about different services, plans or locations?',
+  H17: 'Claude: is it really another spelling of the brand, or the brand plus what the business does, a legal name, a product name?',
+  G13: 'Claude: should a visitor be able to pick this service in the form, or is the form for something else (a job, a newsletter, a single service)?',
+  E16: 'Claude: is this really a service of the business that the hub or footer should list, or a sub-page, an add-on, a location?',
+  E17: 'Claude: does the CTA promise something this page does not offer, or is it worded generally on purpose?',
+  E2: 'Claude: should the same link text go to one place? «Learn more» and «Read more» naturally go to different pages',
+  E15: 'Claude: is the link really useless for a visitor, or does it help (a logo to home, a breadcrumb, a skip link)?',
+  I21: 'Claude: does the page really look copied from the other one, or do they share a heading for a reason (a product and its hub)?',
+}
+export const isJudged = (f) => Boolean(JUDGED[f.rule]) && !(f.rule === 'H17' && /og:site_name/.test(String(f.found || '')))
+
 function runOf(host) {
   const dir = latestRunDir(host)
   if (!dir || !existsSync(join(dir, 'report-input.json'))) {
@@ -141,12 +160,15 @@ export function listFindings(host) {
   const { dir, findings, input, profile } = runOf(host)
   const defects = distinctDefects(findings, input.pages)
   writeFileSync(join(dir, 'distinct.json'), JSON.stringify(defects.map(d => ({ id: d.id, identity: d.identity }))))
-  return { runDir: dir, profile, defects: defects.map(({ identity, ...d }) => (VERIFY[d.rule] && d.confidence === 'heuristic' ? { ...d, verify: VERIFY[d.rule] } : d)) }
+  return {
+    runDir: dir, profile,
+    defects: defects.map(({ identity, ...d }) => (isJudged(d) ? { ...d, judge: JUDGED[d.rule] } : VERIFY[d.rule] && d.confidence === 'heuristic' ? { ...d, verify: VERIFY[d.rule] } : d)),
+  }
 }
 
 // The run's findings split by Claude's verdicts: kept (with notes, plus the
 // manual-check findings), rejected (false positives), and the manual checks.
-function sortByReview(dir, findings, review) {
+export function sortByReview(dir, findings, review) {
   const ids = existsSync(join(dir, 'distinct.json')) ? JSON.parse(readFileSync(join(dir, 'distinct.json'), 'utf8')) : []
   const identityOf = new Map(ids.map(x => [x.id, x.identity]))
   const byIdentity = new Map()
@@ -159,17 +181,21 @@ function sortByReview(dir, findings, review) {
   }
   const kept = []
   const rejected = []
+  const unjudged = new Set()
   for (let f of findings) {
     const r = byIdentity.get(defectIdentity(f))
     if (r?.category) f = { ...f, category: r.category }
+    // A judgement candidate nobody judged is not a defect yet: left out.
+    if (!r && isJudged(f)) { unjudged.add(defectIdentity(f)); continue }
     if (r?.verdict === 'false-positive') rejected.push({ ...f, review: r })
+    else if (r?.verdict === 'confirmed' && isJudged(f)) kept.push({ ...f, confidence: 'high', confirmedHeuristic: true, review: r })
     // A heuristic Claude settled (in Playwright, by eye) is a defect: it counts.
     else if (r?.verdict === 'confirmed' && f.confidence === 'heuristic') kept.push({ ...f, confidence: 'high', confirmedHeuristic: true, review: r })
     else kept.push(r ? { ...f, review: r } : f)
   }
   const manual = manualOf(review, dir)
   kept.push(...manual.findings)
-  return { kept, rejected, manual, byIdentity }
+  return { kept, rejected, manual, byIdentity, unjudged: unjudged.size }
 }
 
 // The latest run as Claude left it (review.json, if `qc review` ran), for `qc push`.
@@ -183,15 +209,15 @@ export function applyReview(host, reviewPath) {
   const { dir, findings, input } = runOf(host)
   const review = JSON.parse(readFileSync(reviewPath, 'utf8'))
   attachEvidence(host, findings)
-  const { kept, rejected, manual, byIdentity } = sortByReview(dir, findings, review)
+  const { kept, rejected, manual, byIdentity, unjudged } = sortByReview(dir, findings, review)
   inlineScreenshots([...kept, ...rejected])
-  const html = renderReport({ ...input, findings: kept, rejected, siteSummary: review.summary || null, manualChecks: manual.checks, ids: idsFor(findings, input.pages) })
+  const html = renderReport({ ...input, findings: kept, rejected, siteSummary: review.summary || null, manualChecks: manual.checks, ids: idsFor(findings, input.pages), unjudged })
   writeFileSync(join(dir, 'report.html'), html)
   writeFileSync(join(dir, 'review.json'), JSON.stringify(review, null, 2))
   const count = (v) => [...byIdentity.values()].filter(r => r.verdict === v).length
   return {
     host, runDir: dir, reportPath: join(dir, 'report.html'), verdict: verdict(kept), distinct: countDistinct(kept),
     reviewed: byIdentity.size, confirmed: count('confirmed'), falsePositive: count('false-positive'), unsure: count('unsure'),
-    manualChecked: manual.checks.length, manualDefects: manual.findings.length,
+    manualChecked: manual.checks.length, manualDefects: manual.findings.length, unjudged,
   }
 }

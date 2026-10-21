@@ -147,6 +147,15 @@ user asks for it: translate the HTML artifact (`report.html`) and republish it; 
    - Run `node <plugin-root>/engine/src/cli.js findings "<host>"`. It lists the latest run's
      distinct defects as `D1…Dn` with rule, severity, confidence, found, expected, scope
      (global / template / page) and up to three example pages with `where`.
+   - **Judgement rules are yours to decide.** A defect that carries `judge` (H14 lists, H12 places,
+     H16 contradictions, H17 brand spellings, G13 form options, E16 inventory, E17 CTA, E2 link
+     text, E15 extra links, I21 copied pages) is only a candidate: the engine matched a pattern, it
+     cannot tell whether it matters. It is left out of the report until you give it a verdict, and
+     the report says how many were left unjudged. Judge **all** of them, outside the cap below —
+     read the page and the profile and answer the `judge` question the way a person would
+     («recipes have their own ingredients» → false-positive; «one location lists 11 insurers,
+     the others 12» → confirmed). Candidates of one rule that share the cause (every «Ingredients»
+     list) can be settled together with one note, each id listed.
    - Judge each defect: all critical and major ones, and every heuristic (cap ~60, most severe
      first; leave the rest unreviewed and say so). Verdicts: `confirmed`, `false-positive`, `unsure`,
      each with a one-line note in English saying why — a page it names written as a link,

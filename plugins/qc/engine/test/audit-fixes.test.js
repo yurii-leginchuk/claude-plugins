@@ -255,3 +255,23 @@ test('page types from facts give the profile its services when no list is given'
   assert.deepEqual(buildProfile({ pages, facts }).services.items.map(i => i.name), ['Drug Rehab'])
   assert.throws(() => normalizeFacts({ pages: { '/a/': 'blogpost' } }, 'f.json'), /is not one of/)
 })
+
+test('a judgement candidate (H14) reaches the report only with Claude’s verdict', async () => {
+  const { sortByReview, isJudged } = await import('../src/review.js')
+  const { defectIdentity } = await import('../src/report/json.js')
+  const { writeFileSync: write } = await import('node:fs')
+  const dir = mkdtempSync(join(tmpdir(), 'qc-judged-'))
+  try {
+    const list = { rule: 'H14', title: 'List', severity: 'note', confidence: 'heuristic', selector: 'ul', found: 'list “Ingredients” has “kale”', page: 'https://ex.com/r/' }
+    const og = { rule: 'H17', title: 'Brand', severity: 'minor', selector: 'meta', found: 'og:site_name = “Site”', page: 'https://ex.com/' }
+    write(join(dir, 'distinct.json'), JSON.stringify([{ id: 'D1', identity: defectIdentity(list) }, { id: 'D2', identity: defectIdentity(og) }]))
+    assert.equal(isJudged(og), false, 'og:site_name is a fact')
+    const none = sortByReview(dir, [list, og], { items: [] })
+    assert.deepEqual(none.kept.map(f => f.rule), ['H17'])
+    assert.equal(none.unjudged, 1)
+    const yes = sortByReview(dir, [list, og], { items: [{ id: 'D1', verdict: 'confirmed', note: 'the same insurers list' }] })
+    assert.equal(yes.kept.find(f => f.rule === 'H14').confidence, 'high')
+    const no = sortByReview(dir, [list, og], { items: [{ id: 'D1', verdict: 'false-positive', note: 'recipes differ' }] })
+    assert.deepEqual(no.rejected.map(f => f.rule), ['H14'])
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})

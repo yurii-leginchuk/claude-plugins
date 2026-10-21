@@ -453,6 +453,7 @@ export function renderReport({
   browserCoverage,
   rejected = [],
   siteSummary = null,
+  unjudged = 0,
   visual = [],
   manualChecks = [],
   // identity -> «D12», the same ids `qc findings` prints
@@ -650,6 +651,7 @@ pages: ${esc(pages)} · page list source: ${esc(source)} ·
 snapshot: ${ageLabel}</p>
 <p><span class="verdict ${vClass}">${esc(v)}</span></p>
 ${siteSummary ? `<div class="note-box heuristic"><b>About the site:</b> ${esc(siteSummary)}</div>` : ''}
+${unjudged ? `<div class="note-box heuristic">${unjudged} ${unjudged === 1 ? 'candidate' : 'candidates'} from the judgement rules (lists, places, contradictions, brand, form options) were not looked at by Claude and are not shown: they are defects only once Claude confirms them.</div>` : ''}
 ${snapshotAgeDays > STALENESS_WARNING_DAYS ? `<div class="note-box">The snapshot is more than ${esc(STALENESS_WARNING_DAYS)} days old, so the data may be out of date. Run again with <code>--fresh</code>.</div>` : ''}
 ${sitemapWarning ? `<div class="note-box">Sitemap: <b>${esc(sitemapStatus)}</b>. The page list may be incomplete, so some of the site’s pages may be missing from the report.</div>` : ''}
 ${browserCoverageHtml}
