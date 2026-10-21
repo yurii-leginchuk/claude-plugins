@@ -148,15 +148,16 @@ drives its own Chromium with the engine's playwright from a `node` script).
 
 | Agent | Needs a browser | Job |
 |---|---|---|
-| copy & facts (`sonnet`) | no — PA CMS markdown | the `content` check: contradictions, false or placeholder text, typos, CTAs copied from another page, facts against the knowledge base |
-| visual (`sonnet`), ~60 pieces each from `qc tiles` | no — the piece files | the visual review above, every piece it was given, and the `hints` on them |
+| copy & facts (`qc:copy-reviewer`) | no — PA CMS markdown | the `content` check: contradictions, false or placeholder text, typos, CTAs copied from another page, facts against the knowledge base |
+| visual (`qc:visual-reviewer`), ~60 pieces each from `qc tiles` | no — the piece files | the visual review above, every piece it was given, and the `hints` on them |
 | judge | no — reads pages | every engine candidate with `judge` |
 | browser checker | yes | every engine candidate with `verify`, the manual checks (menu, popups, forms, FAQ, focus) |
 | journeys | yes | the journeys above |
 | verifier | yes | the second check (below), after all the others |
 
-**Models.** Looking at pieces and reading copy is wide, simple work: run those agents with
-`model: "sonnet"` in the Agent call. The judge, the browser checker, the journeys and the verifier
+**Models.** Looking at pieces and reading copy is wide, simple work: the plugin's own agents
+`qc:visual-reviewer` and `qc:copy-reviewer` run on Sonnet (set in their files) — launch them by
+`subagent_type`; where they are not loaded, pass `model: "sonnet"` in the Agent call. The judge, the browser checker, the journeys and the verifier
 reason about cause and evidence: leave them on the default model.
 
 Give every agent: the host, the knowledge base path, the run dir, what to check, «a defect is
