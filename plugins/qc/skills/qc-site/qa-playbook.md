@@ -85,39 +85,59 @@ Record each journey as one `manual` entry with `check: "journey"` (format in qc-
 
 A whole-page screenshot is shrunk when read, and a 1–2 px defect (an icon touching its text, a
 label one pixel past its pill) disappears. So the browser pass also cuts every page at every
-width into **pieces**: PNG at full size, 1000 px tall, overlapping by 100 px, covering the
-whole height of the page. Look at the pieces, never at the shrunk whole page.
+width into **pieces** at full size: the first screen as the visitor sees it (fixed bars and
+popups included), then the rest of the page cut at the tops of its sections with fixed elements
+hidden, a section taller than 1000 px split with a 100 px overlap. Before cutting it scrolls the
+page through (lazy images, entrance animations), waits for the images and stops carousels on
+their first slide, so a piece shows the page, not the moment it was taken. Every row of the page
+is in a piece. Pieces are named by their pixels: a footer, a testimonials block or a CTA band
+that is the same on 150 pages is **one** piece with the list of its pages.
 
 ```bash
 node <plugin-root>/engine/src/cli.js tiles "<host>"
 ```
 
-lists every piece (`T1…Tn`) by page type and page, with its file, width and `top`–`bottom` in
-px; `missing` lists page widths that have no pieces (an old browser pass: `qc browse --force`).
-The pieces cover every page that is not a post and the newest 10 posts. **Look at every piece —
-nothing is skipped or sampled.** Read the files with the Read tool, one page's pieces in order,
-and compare sibling pages of one template.
+lists the pieces to look at (`T1…Tn`): `shared` — pieces on several pages (`pages`: how many),
+then by page type and page, with file, width, `top`–`bottom` and `kind` (`screen` or
+`section`). `cached` pieces are left out: the same pixels were looked at on an earlier QC and
+that look stands (its defects carry over by themselves). `hints` on a piece are the script's
+measurements on it (B9 icon touching text, B5 text past its box, B3 empty block, C2 wider than
+the screen, B6 overlap) with their `D` ids: look at that spot first and settle each hint with a
+verdict in `items`, like any candidate. `missing` lists page widths with no pieces (an old
+browser pass: `qc browse --force`). The pieces cover every page that is not a post and the newest
+10 posts. **Look at every piece — nothing is skipped or sampled.**
+
+How to look, so it stays cheap:
+- **Read 6–10 pieces in one step** (several Read calls in one message), one page's pieces in
+  order; never one piece per step: every step resends everything already read.
+- One agent takes **about 60 pieces**: the shared pieces in one or two agents, the rest split
+  by page type. A type with more pieces is split.
+- Compare sibling pages of one template by their pieces side by side in one step.
 
 In each piece look at every element, edge to edge, not only the big blocks: text past its box or
 cut off; an icon touching or overlapping its text, no gap between an icon and a label; text
 crowding a rounded edge; overlapping elements; anything past the screen edge; a broken grid (one
 card alone on a row, cards of different heights where the design has them equal, a column
 squeezed to a word per line); an empty block or a big blank gap; a broken or missing image or
-icon; text over an image that cannot be read; a sticky bar covering content; a section spaced or
-styled differently from the same section on sibling pages; a block duplicated or missing compared
-with the siblings; a placeholder. A defect that sits on the overlap of two pieces is one defect.
+icon; text over an image that cannot be read; a sticky bar covering content (first screen); a
+section spaced or styled differently from the same section on sibling pages; a block duplicated
+or missing compared with the siblings; a placeholder. A defect that sits on the overlap of two
+pieces is one defect.
 
-Record one `check: "visual"` entry per page × width with **`tiles`: the ids you looked at**
-(`["T12-T19"]`), `ok` ones too, and say in `checked` what you compared. The evidence for a defect
-is the piece itself (its path in `shots`), or a tighter crop of it with `sips`:
+Record **one `check: "visual"` entry per agent batch** (or per page): `tiles` — every id looked
+at (`["T12-T19", "T40"]`), `ok` ones too; `checked` — what was compared. **Each defect once**,
+with `tile`: the piece it is on. The piece is its picture and the piece's pages are its pages —
+do not repeat a defect per page or per width; a defect seen at two widths names one piece and
+says the other width in `where`. Give a tighter crop in `shots` only when the piece alone does
+not show the spot:
 
 ```bash
 sips -c <height> <width> --cropOffset <y> <x> "<piece>.png" --out ~/.qc-cache/<host>/manual/visual-<n>.png
 ```
 
-`qc review` prints `tiles`: `seen` of `total`, and the first `unseen` pieces. **Do not publish
-until `seen` equals `total`** — give the unseen pieces to an agent and review again. The report
-says plainly when the look did not cover every piece.
+`qc review` prints `tiles`: `seen` of `total` (cached ones count as seen), and the first
+`unseen` pieces. **Do not publish until `seen` equals `total`** — give the unseen pieces to an
+agent and review again. The report says plainly when the look did not cover every piece.
 
 ## Subagents
 
@@ -128,12 +148,16 @@ drives its own Chromium with the engine's playwright from a `node` script).
 
 | Agent | Needs a browser | Job |
 |---|---|---|
-| copy & facts | no — PA CMS markdown | the `content` check: contradictions, false or placeholder text, typos, CTAs copied from another page, facts against the knowledge base |
-| visual, one per page type from `qc tiles` (split a big type) | no — the piece files | the visual review above, every piece it was given |
+| copy & facts (`sonnet`) | no — PA CMS markdown | the `content` check: contradictions, false or placeholder text, typos, CTAs copied from another page, facts against the knowledge base |
+| visual (`sonnet`), ~60 pieces each from `qc tiles` | no — the piece files | the visual review above, every piece it was given, and the `hints` on them |
 | judge | no — reads pages | every engine candidate with `judge` |
 | browser checker | yes | every engine candidate with `verify`, the manual checks (menu, popups, forms, FAQ, focus) |
 | journeys | yes | the journeys above |
 | verifier | yes | the second check (below), after all the others |
+
+**Models.** Looking at pieces and reading copy is wide, simple work: run those agents with
+`model: "sonnet"` in the Agent call. The judge, the browser checker, the journeys and the verifier
+reason about cause and evidence: leave them on the default model.
 
 Give every agent: the host, the knowledge base path, the run dir, what to check, «a defect is
 what is broken or wrong, never a design suggestion», «answer `unsure` when the evidence does not
@@ -146,7 +170,12 @@ each returns before using it: a defect without its picture or quote goes back to
 Before the review file is applied, a **fresh** agent that saw none of the work gets only the
 list of defects Claude found (every `manual` defect: page, width, steps, found, the picture)
 and tries to reproduce each one from scratch: the same page and width in Playwright, the same
-steps; for a content defect, the quoted words on the pages named. For each it answers
+steps. For content defects first run `node <plugin-root>/engine/src/cli.js quotes "<host>"
+"<review-input.json>"`: it looks up every quoted «…» on the pages named, in the crawled text. A
+quote it finds is there — the verifier only judges whether the claim about it is right (a
+contradiction, a typo, a false fact), reading those pages' Markdown from the PA CMS, not the
+browser. Quotes it does not find (alt text, a file name, an href, a page not crawled) the
+verifier checks on the page itself. For each it answers
 `reproduced` (with its own screenshot), `not-reproduced` (what it saw instead), or `unable`
 (why). Write that answer into the defect's `verified`. The engine drops `not-reproduced` ones
 and shows `unable` ones as «needs a look», not counted. Do not argue with the verifier inside

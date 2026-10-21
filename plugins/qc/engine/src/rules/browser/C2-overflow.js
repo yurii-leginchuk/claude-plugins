@@ -92,7 +92,7 @@ export function check(ctx) {
     out.push({
       rule: 'C2', title: 'Element wider than the viewport', severity: 'major', confidence: 'heuristic',
       engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint, selector: sel,
-      containerId: ctx.helpers.containerId(el),
+      containerId: ctx.helpers.containerId(el), y: Math.round(r.top + window.scrollY),
       found: 'width ' + Math.round(r.width) + 'px at viewport ' + vw + 'px',
       expected: 'no wider than the viewport',
     })

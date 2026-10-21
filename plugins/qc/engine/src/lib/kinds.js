@@ -15,12 +15,25 @@ export const isLandingPath = (path) => LANDING.test(path || '')
 export const isThankYouUrl = (url) => { try { return /thank/i.test(new URL(url).pathname) } catch { return false } }
 
 // The pages the browser pass and Claude look at closely: every page that is
-// not a post, plus the newest `posts` posts (Infinity: all of them). Posts
-// share one template, so the newest ten show how it renders; the static audit
-// still reads every post.
+// not a post, plus the newest `posts` posts of each section (Infinity: all).
+// Posts share a template per section, so the newest ten of each show how it
+// renders; the static audit still reads every post. `postSections` names
+// sections of custom post types (news, white-paper) the WordPress body class
+// does not mark as posts; `skipSections` are left out (popup bodies published
+// as pages).
 export const BROWSE_POSTS = 10
-export function browsePages(pages, posts = BROWSE_POSTS) {
-  const newest = pages.filter(isPost).sort((a, b) => String(b.published || '').localeCompare(String(a.published || ''))).slice(0, posts)
-  const keep = new Set(newest.map(p => p.url))
-  return pages.filter(p => !isPost(p) || keep.has(p.url)).map(p => p.url)
+const sectionOf = (url) => { try { return new URL(url).pathname.split('/').filter(Boolean)[0] || '' } catch { return '' } }
+export function browsePages(pages, posts = BROWSE_POSTS, { postSections = [], skipSections = [] } = {}) {
+  const isEntry = (p) => isPost(p) || (postSections.includes(sectionOf(p.url)) && new URL(p.url).pathname.split('/').filter(Boolean).length > 1)
+  const bySection = new Map()
+  for (const p of pages.filter(isEntry)) {
+    const k = sectionOf(p.url)
+    if (!bySection.has(k)) bySection.set(k, [])
+    bySection.get(k).push(p)
+  }
+  const keep = new Set()
+  for (const list of bySection.values()) {
+    for (const p of list.sort((a, b) => String(b.published || '').localeCompare(String(a.published || ''))).slice(0, posts)) keep.add(p.url)
+  }
+  return pages.filter(p => !skipSections.includes(sectionOf(p.url)) && (!isEntry(p) || keep.has(p.url))).map(p => p.url)
 }

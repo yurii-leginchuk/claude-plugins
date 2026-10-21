@@ -147,13 +147,17 @@ Every check is recorded as one entry per page × width in the review file's `man
 ```
 
 A visual entry adds `"tiles": ["T12-T19"]` — the screen pieces (`qc tiles <host>`) you looked at;
-the review counts them against every piece there is. A journey adds `"title": "Book a cleaning from a service page"` and `"steps": ["Opened …",
+the review counts them against every piece there is. A visual defect names its piece,
+`"tile": "T14"`: the piece is its picture (no `shots` needed) and every page that shows the same
+piece gets the defect, so it is written once. A defect with `tile` is also remembered by the
+piece's pixels, and the next QC reuses it while the pixels stay the same. A journey adds `"title": "Book a cleaning from a service page"` and `"steps": ["Opened …",
 "Tapped «Get a Quote»", …]` — one line per thing the visitor does, in order, and one screenshot
 per step in `shots`. `ok` entries go in too — the report shows what was looked at, not only what
 broke.
 
 Every defect needs, or the engine refuses the file:
-- **evidence**: at least one screenshot in `shots` (`shot` picks which one shows this defect);
+- **evidence**: at least one screenshot in `shots` (`shot` picks which one shows this defect), or
+  for `visual` the piece in `tile`;
   for `content`, the words from the page quoted in `found` («…»);
 - **`impact`**: `blocker` (the visitor cannot finish a journey) · `broken` (visibly broken or
   wrong, the journey still possible) · `degraded` (works, worse than it should) · `cosmetic` —

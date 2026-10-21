@@ -6,7 +6,7 @@
 // confirmed and unsure ones carry Claude's note.
 import { readFileSync, writeFileSync, existsSync, copyFileSync, mkdirSync } from 'node:fs'
 import { join, extname } from 'node:path'
-import { latestRunDir } from './crawl/store.js'
+import { latestRunDir, snapshotDir, loadSnapshot } from './crawl/store.js'
 import { defectIdentity, verdict, countDistinct } from './report/json.js'
 import { renderReport, scopeOf } from './report/html.js'
 import { inlineScreenshots } from './report/inline.js'
@@ -64,6 +64,7 @@ export const MANUAL_TITLES = {
 // quote for a content defect) and the verifier's result: one it could not
 // reproduce is dropped, one it could not check either way only needs a look.
 function manualOf(review, dir) {
+  const pieces = new Map((tilesOf(dir)?.tiles || []).map(t => [t.id, t]))
   const checks = []
   const findings = []
   const manualIds = new Map()
@@ -85,6 +86,14 @@ function manualOf(review, dir) {
       return `visual/${name}`
     })
     for (const d of m.defects || []) {
+      // A visual defect may name its piece: the piece is its picture and its places are its pages.
+      const piece = m.check === 'visual' && d.tile ? pieces.get(d.tile) : null
+      if (d.tile && m.check === 'visual' && !piece) throw new Error(`${at}: no piece ${d.tile} in this run (qc tiles)`)
+      if (piece && !shots.some(s => s.endsWith(`tile-${d.tile}.png`))) {
+        mkdirSync(join(dir, 'visual'), { recursive: true })
+        copyFileSync(piece.file, join(dir, 'visual', `tile-${d.tile}.png`))
+        shots.push(`visual/tile-${d.tile}.png`)
+      }
       if (!allows(m.check, d.rule)) throw new Error(`${at}: rule for ${m.check} must be ${MANUAL_CHECKS[m.check] instanceof RegExp ? 'a taxonomy code like C2' : `one of ${MANUAL_CHECKS[m.check].join(', ')}`}`)
       if (!IMPACT[d.impact]) throw new Error(`${at}: impact must be one of ${Object.keys(IMPACT).join(', ')}`)
       if (!d.found || !d.expected) throw new Error(`${at}: a defect needs found and expected`)
@@ -96,8 +105,9 @@ function manualOf(review, dir) {
       if (d.verified === 'not-reproduced') { notReproduced++; continue }
       const key = `${i}|${d.rule}|${d.found}`
       if (!manualIds.has(key)) manualIds.set(key, `M${manualIds.size + 1}`)
-      const how = m.check === 'content' ? 'found by Claude while reading the pages' : m.check === 'journey' ? `found by Claude on the journey «${m.title}»` : 'checked by Claude in Playwright'
-      for (const page of d.pages?.length ? d.pages : [m.page]) {
+      const how = m.fromCache ? 'found by Claude on an earlier QC, the same picture now' : m.check === 'content' ? 'found by Claude while reading the pages' : m.check === 'journey' ? `found by Claude on the journey «${m.title}»` : 'checked by Claude in Playwright'
+      const piecePages = piece ? [...new Set((piece.places || [piece]).map(p => p.page || piece.page))] : null
+      for (const page of d.pages?.length ? d.pages : piecePages || [m.page]) {
         findings.push({
           id: manualIds.get(key),
           rule: d.rule, title: d.title || MANUAL_TITLES[d.rule], severity: IMPACT[d.impact], impact: d.impact,
@@ -105,7 +115,7 @@ function manualOf(review, dir) {
           check: m.check, manual: i, page, breakpoint: width, category: CATEGORIES.includes(d.category) ? d.category : (m.check === 'content' ? 'copy' : 'dev'), selector: d.selector || null, found: d.found, expected: d.expected,
           where: d.where || null, zone: m.check === 'menu' ? 'header' : null,
           // the defect card shows its own picture: d.shot picks one of the check's shots, the first by default
-          ...(shots.length ? { shot: join(dir, shots[d.shot] || shots[0]) } : {}),
+          ...(shots.length ? { shot: join(dir, piece ? `visual/tile-${d.tile}.png` : shots[d.shot] || shots[0]) } : {}),
           review: { verdict: d.verified === 'unable' ? 'unsure' : 'confirmed', note: d.verified === 'unable' ? `${how}; the second check could not repeat it either way` : `${how}, repeated by a second check` },
         })
       }
@@ -127,6 +137,9 @@ export const VERIFY = {
   X1: 'Playwright: open the page and read the console. Is the error from the site or from a third-party widget (captcha, chat)?',
   B6: 'Playwright: screenshot at this width. Do the elements really overlap?',
   C2: 'Playwright: screenshot at this width. Is there horizontal scroll or cut-off content?',
+  B3: 'Visual review: look at the spot on its piece (a hint in qc tiles). Is the block really empty, or a band of colour by design?',
+  B5: 'Visual review: look at the spot on its piece (a hint in qc tiles). Does the text really stick out of a visible box?',
+  B9: 'Visual review: look at the spot on its piece (a hint in qc tiles). Is there really no gap between the icon and the text?',
 }
 
 // Rules whose findings are a judgement, not a measurement: whether two lists
@@ -158,19 +171,47 @@ const BROWSER_CHECKED = new Set(['F12', 'X1', 'J3', 'F1', 'F4'])
 // needs Claude's verdict.
 export const isCandidate = (f) => isJudged(f) || f.confidence === 'heuristic' || BROWSER_CHECKED.has(f.rule)
 
+// Claude's look at a piece, kept by the hash of its pixels: the same picture
+// on the next run needs no second look, and its defects carry over.
+const cachePath = (host) => join(snapshotDir(host), 'visual-cache.json')
+export const loadVisualCache = (host) => (existsSync(cachePath(host)) ? JSON.parse(readFileSync(cachePath(host), 'utf8')) : {})
+// the cached look at a piece: any of the pixel hashes it was seen under
+const cachedLook = (cache, t) => (t.hashes || [t.hash]).filter(Boolean).map(h => cache[`${t.width}|${h}`]).find(Boolean)
+const tilesOf = (dir) => (existsSync(join(dir, 'tiles.json')) ? JSON.parse(readFileSync(join(dir, 'tiles.json'), 'utf8')) : null)
+// Script measurements that point the visual review at a spot (y on the page).
+export const HINT_RULES = new Set(['B3', 'B5', 'B9', 'C2', 'B6'])
+
 // The screen pieces of the latest run (tiles.json, written by qc audit),
-// grouped by page type and page for splitting between visual agents.
+// grouped for splitting between visual agents: a piece shown on several
+// pages once, the rest by page type and page. Pieces seen on an earlier run
+// (the same pixels) are left out; script hints are attached to their piece.
 export function listTiles(host) {
-  const { dir } = runOf(host)
-  const file = join(dir, 'tiles.json')
-  if (!existsSync(file)) throw new Error(`no screen pieces in ${dir}: run qc browse, then qc audit`)
-  const { tiles, missing } = JSON.parse(readFileSync(file, 'utf8'))
-  const byType = {}
-  for (const t of tiles) {
-    const pages = (byType[t.type] ||= {})
-    ;(pages[t.page] ||= []).push({ id: t.id, width: t.width, file: t.file, top: t.top, bottom: t.bottom })
+  const { dir, findings, input } = runOf(host)
+  const manifest = tilesOf(dir)
+  if (!manifest) throw new Error(`no screen pieces in ${dir}: run qc browse, then qc audit`)
+  const cache = loadVisualCache(host)
+  const ids = idsFor(findings, input.pages)
+  const hints = new Map()
+  for (const f of findings) {
+    if (!HINT_RULES.has(f.rule) || !Number.isFinite(f.y)) continue
+    const t = manifest.tiles.find(t => t.width === f.breakpoint && (t.places || [t]).some(p => (p.page || t.page) === f.page && p.top <= f.y && f.y < p.bottom))
+    if (!t) continue
+    const list = hints.get(t.id) || []
+    const id = ids[defectIdentity(f)]
+    if (!list.some(h => h.id === id)) list.push({ id, rule: f.rule, found: f.found })
+    hints.set(t.id, list)
   }
-  return { runDir: dir, total: tiles.length, missing, byType }
+  const byType = { shared: {} }
+  let cached = 0
+  for (const t of manifest.tiles) {
+    if (cachedLook(cache, t)) { cached++; continue }
+    const n = new Set((t.places || []).map(p => p.page)).size
+    const piece = { id: t.id, width: t.width, file: t.file, top: t.top, bottom: t.bottom, kind: t.kind, ...(n > 1 ? { pages: n } : {}), ...(hints.has(t.id) ? { hints: hints.get(t.id) } : {}) }
+    const [type, page] = n > 1 ? ['shared', 'on several pages'] : [t.type, t.page]
+    ;((byType[type] ||= {})[page] ||= []).push(piece)
+  }
+  if (!Object.keys(byType.shared).length) delete byType.shared
+  return { runDir: dir, total: manifest.tiles.length, cached, toLook: manifest.tiles.length - cached, missing: manifest.missing, byType }
 }
 
 // "T3", "T3-T9" or "T3–T9" -> every id named.
@@ -186,17 +227,59 @@ function tileIds(list) {
 
 // Which pieces the visual entries say Claude looked at, against every piece there is.
 export function tileCoverage(dir, review) {
-  const file = join(dir, 'tiles.json')
-  if (!existsSync(file)) return null
-  const { tiles, missing } = JSON.parse(readFileSync(file, 'utf8'))
+  const manifest = tilesOf(dir)
+  if (!manifest) return null
+  const { tiles, missing } = manifest
   const seen = new Set()
   for (const m of review.manual || []) if (m?.check === 'visual') for (const id of tileIds(m.tiles)) seen.add(id)
   const unseen = tiles.filter(t => !seen.has(t.id))
   return {
     total: tiles.length, seen: tiles.length - unseen.length,
     unseen: unseen.slice(0, 100).map(t => `${t.id} ${t.page} ${t.width}px ${t.top}-${t.bottom}`),
-    unseenPages: [...new Set(unseen.map(t => t.page))].length, missing: missing.length,
+    unseenPages: [...new Set(unseen.flatMap(t => (t.places || [t]).map(p => p.page || t.page)))].length, missing: missing.length,
   }
+}
+
+const CARRIED = ['rule', 'title', 'impact', 'found', 'expected', 'category', 'verified', 'where', 'selector']
+
+// Pieces the review did not look at whose pixels were looked at before: the
+// earlier look is added as a visual entry, so they count as seen.
+function fromCache(host, dir, review) {
+  const manifest = tilesOf(dir)
+  if (!manifest) return []
+  const cache = loadVisualCache(host)
+  const seen = new Set()
+  for (const m of review.manual || []) if (m?.check === 'visual') for (const id of tileIds(m.tiles)) seen.add(id)
+  return manifest.tiles.filter(t => !seen.has(t.id) && cachedLook(cache, t)).map(t => {
+    const c = cachedLook(cache, t)
+    return {
+      check: 'visual', page: t.page, width: t.width, tiles: [t.id], status: c.defects?.length ? 'defect' : 'ok', fromCache: true,
+      checked: `the same picture as on the QC of ${String(c.at).slice(0, 10)}; that look stands`,
+      defects: (c.defects || []).map(d => ({ ...d, tile: t.id })),
+    }
+  })
+}
+
+// After a review: each piece's look by its pixels. Only entries whose every
+// defect names its piece (`tile`) are kept, so a defect is never cached on
+// the wrong piece and a piece with an unplaced defect is not cached as ok.
+function saveVisualCache(host, dir, review) {
+  const manifest = tilesOf(dir)
+  if (!manifest) return
+  const byId = new Map(manifest.tiles.map(t => [t.id, t]))
+  const cache = loadVisualCache(host)
+  const at = new Date().toISOString()
+  for (const m of review.manual || []) {
+    if (m?.check !== 'visual' || m.fromCache || (m.defects || []).some(d => !d.tile)) continue
+    for (const id of tileIds(m.tiles)) {
+      const t = byId.get(id)
+      if (!t) continue
+      const defects = (m.defects || []).filter(d => d.tile === id && d.verified !== 'not-reproduced').map(d => Object.fromEntries(CARRIED.filter(k => d[k] != null).map(k => [k, d[k]])))
+      for (const h of (t.hashes || [t.hash]).filter(Boolean)) cache[`${t.width}|${h}`] = { at, ...(defects.length ? { defects } : {}) }
+    }
+  }
+  mkdirSync(snapshotDir(host), { recursive: true })
+  writeFileSync(cachePath(host), JSON.stringify(cache))
 }
 
 function runOf(host) {
@@ -289,6 +372,7 @@ export function reviewedRun(host) {
 export function applyReview(host, reviewPath) {
   const { dir, findings, input } = runOf(host)
   const review = JSON.parse(readFileSync(reviewPath, 'utf8'))
+  review.manual = [...(review.manual || []).filter(m => !m?.fromCache), ...fromCache(host, dir, review)]
   attachEvidence(host, findings)
   const { kept, rejected, manual, byIdentity, unjudged } = sortByReview(dir, findings, review)
   inlineScreenshots([...kept, ...rejected])
@@ -296,6 +380,7 @@ export function applyReview(host, reviewPath) {
   const html = renderReport({ ...input, findings: kept, rejected, siteSummary: review.summary || null, manualChecks: manual.checks, ids: idsFor(findings, input.pages), unjudged, tiles })
   writeFileSync(join(dir, 'report.html'), html)
   writeFileSync(join(dir, 'review.json'), JSON.stringify(review, null, 2))
+  saveVisualCache(host, dir, review)
   const count = (v) => [...byIdentity.values()].filter(r => r.verdict === v).length
   return {
     host, runDir: dir, reportPath: join(dir, 'report.html'), verdict: verdict(kept), distinct: countDistinct(kept),
@@ -304,4 +389,34 @@ export function applyReview(host, reviewPath) {
     tiles,
     journeys: manual.checks.filter(c => c.check === 'journey').map(c => ({ title: c.title, width: c.width, status: c.status })),
   }
+}
+
+// The words a content defect quotes, looked up on the pages it names in the
+// crawled text: what a script settles without error, so the second check
+// only has to judge whether the claim is right. Letters and digits only, so
+// Markdown from the CMS (**, #, [link](url)) and spacing do not matter; a
+// quote cut with «…» or « / » is looked up part by part.
+const letters = (t) => String(t).replace(/\]\([^)]*\)/g, '').toLowerCase().normalize('NFKD').replace(/[^\p{L}\p{N}]/gu, '')
+export function checkQuotes(host, reviewPath) {
+  const snap = loadSnapshot(host)
+  if (!snap) throw new Error(`no crawl of ${host}: run qc audit first`)
+  const textOf = new Map(snap.pages.map(p => [p.url.replace(/\/$/, ''), letters([p.title, p.metaDescription, p.text].filter(Boolean).join(' '))]))
+  const review = JSON.parse(readFileSync(reviewPath, 'utf8'))
+  const out = []
+  ;(review.manual || []).forEach((m, i) => {
+    if (m?.check !== 'content') return
+    for (const d of m.defects || []) {
+      const quotes = [...String(d.found).matchAll(/«([^»]+)»|“([^”]+)”|"([^"]+)"/g)].map(x => x[1] || x[2] || x[3])
+      const pages = d.pages?.length ? d.pages : [m.page]
+      for (const q of quotes) {
+        const parts = q.split(/…|\.\.\.|\s\/\s/).map(letters).filter(x => x.length >= 3)
+        const where = pages.map(page => {
+          const text = textOf.get(String(page).replace(/\/$/, ''))
+          return { page, found: text == null ? null : parts.every(x => text.includes(x)) }
+        })
+        out.push({ entry: i, rule: d.rule, quote: q, onAPage: where.some(w => w.found), pages: where })
+      }
+    }
+  })
+  return { quotes: out.length, notFound: out.filter(q => !q.onAPage).length, items: out }
 }

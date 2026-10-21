@@ -41,6 +41,7 @@ import { join, basename } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { readFileSync, writeFileSync, copyFileSync, mkdirSync, existsSync, statSync } from 'node:fs'
 import { SNAPSHOT_TTL_MS } from './lib/snapshot-ttl.js'
+import { pngSize, fingerprint, samePicture } from './browser/png.js'
 
 // How long a saved snapshot is trusted as a stand-in for a live crawl when
 // --fresh is not given. See the `--fresh` section of audit() below for the
@@ -51,8 +52,12 @@ import { SNAPSHOT_TTL_MS } from './lib/snapshot-ttl.js'
 // was already fixed; it set the reuse TTL to the banner's own 7 days, which
 // made the banner unreachable instead of fixing it).
 
+// One entry per distinct picture: a piece that looks the same on many pages
+// (a footer, a testimonials block) gets one id and the list of its places.
+// Equal files first, then pieces of one size compared by eye-level likeness
+// (png.js): one section at sub-pixel different heights is other bytes.
 export function tileManifest(pages, browseSet, rowByUrl, typeOf) {
-  const tiles = []
+  const byKey = new Map()
   const missing = []
   for (const p of pages.filter(p => browseSet.has(p.url))) {
     const row = rowByUrl.get(p.url)
@@ -60,17 +65,43 @@ export function tileManifest(pages, browseSet, rowByUrl, typeOf) {
     for (const shot of row.shots || []) {
       const ok = (shot.tiles || []).filter(t => existsSync(t.path))
       if (!ok.length) { missing.push({ page: p.url, width: shot.width, reason: shot.tilesError || 'no pieces: run qc browse --force' }); continue }
-      for (const t of ok) tiles.push({ id: `T${tiles.length + 1}`, page: p.url, type: typeOf(p), width: shot.width, file: t.path, top: t.top, bottom: t.bottom })
+      for (const t of ok) {
+        const key = t.hash ? `${shot.width}|${t.hash}` : t.path
+        if (!byKey.has(key)) byKey.set(key, { hash: t.hash || null, hashes: t.hash ? [t.hash] : [], page: p.url, type: typeOf(p), width: shot.width, file: t.path, top: t.top, bottom: t.bottom, kind: t.kind || 'section', places: [] })
+        byKey.get(key).places.push({ page: p.url, top: t.top, bottom: t.bottom })
+      }
     }
   }
+  // pieces of one width whose heights are within a pixel of another's
+  const byWidth = new Map()
+  for (const t of byKey.values()) {
+    if (!t.hash) continue
+    t.size = pngSize(t.file)
+    byWidth.set(t.width, [...(byWidth.get(t.width) || []), t])
+  }
+  const merged = new Set()
+  for (const list of byWidth.values()) {
+    const heights = new Map()
+    for (const t of list) heights.set(t.size.height, (heights.get(t.size.height) || 0) + 1)
+    const near = (h) => (heights.get(h) || 0) + (heights.get(h - 1) || 0) + (heights.get(h + 1) || 0) > 1
+    const reps = []
+    for (const t of list.filter(t => near(t.size.height))) {
+      const fp = fingerprint(t.file)
+      const rep = reps.find(r => samePicture(r.fp, fp))
+      if (rep) { rep.t.places.push(...t.places); rep.t.hashes.push(t.hash); merged.add(t) } else reps.push({ t, fp })
+    }
+  }
+  for (const t of byKey.values()) delete t.size
+  const tiles = [...byKey.values()].filter(t => !merged.has(t)).map((t, i) => ({ id: `T${i + 1}`, ...t }))
   return { tiles, missing }
 }
 
 const USAGE = `qc audit <site-url|sheet-url> [--fresh] [--env dev|prod] [--prod <url>] [--facts <file.json>] [--only IDs] [--skip IDs] [--concurrency n]
-qc browse <host|url> [--breakpoints a,b] [--sweep step|0] [--pages n] [--posts n|all] [--force] [--concurrency n] [--headed] [--only IDs] [--skip IDs]
+qc browse <host|url> [--breakpoints a,b] [--sweep step|0] [--pages n] [--posts n|all] [--post-sections a,b] [--skip-sections a,b] [--force] [--concurrency n] [--headed] [--only IDs] [--skip IDs]
   note: in browse, --only/--skip filter only the PRINTED findings (all browser rules still run) --
   this is NOT the same as audit's --only/--skip, which control which rules execute
 qc findings <host>                 distinct defects of the latest run with ids, for review
+qc quotes <host> <review.json>     looks up every «quote» of the content defects on the pages they name
 qc tiles <host>                    the screen pieces of every page for Claude's visual review, with ids
 qc review <host> <review.json>     re-render the latest report with Claude's verdicts
 qc evidence <host> [--force]       crop a picture of the spot of every defect of the latest run
@@ -502,17 +533,19 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   const browserFailedRows = browserRows.filter(r => r.error)
   let droppedWidths = []
   let metaPosts = BROWSE_POSTS
+  let metaSections = {}
   try {
     const metaSnap = loadSnapshot(host)
     if (Array.isArray(metaSnap?.meta?.browserWidthsDropped)) {
       droppedWidths = metaSnap.meta.browserWidthsDropped
     }
     if (metaSnap?.meta?.browserPosts != null) metaPosts = metaSnap.meta.browserPosts === 'all' ? Infinity : metaSnap.meta.browserPosts
+    metaSections = { postSections: metaSnap?.meta?.browserPostSections || [], skipSections: metaSnap?.meta?.browserSkipSections || [] }
   } catch {
     // A corrupt snapshot is already the caller's problem elsewhere; the list
     // of excluded widths is not worth failing a whole report over.
   }
-  const browseSet = new Set(browsePages(pages, metaPosts))
+  const browseSet = new Set(browsePages(pages, metaPosts, metaSections))
   const browserCoverage = allBrowserRows.length
     ? {
         stalePages: staleBrowserPages,
@@ -795,6 +828,11 @@ export async function browse(input, flags) {
     if (postsLimit !== Infinity && (!Number.isInteger(postsLimit) || postsLimit < 0)) throw new Error(`--posts must be a number or all, got: ${postsFlag}`)
   }
 
+  // Custom post type sections to treat as posts, and sections to leave out.
+  const sectionsFlag = (name) => { const v = requireStringFlag(flags, name, `--${name}`); return v === null ? null : list(v) }
+  const postSectionsFlag = sectionsFlag('post-sections')
+  const skipSectionsFlag = sectionsFlag('skip-sections')
+
   const force = Boolean(flags.force)
   const headed = Boolean(flags.headed)
   // Resize sweep 1920→320 between the breakpoints; --sweep <step px>, 0 = off.
@@ -911,11 +949,15 @@ export async function browse(input, flags) {
   // "persisting widths does not reset savedAt" tests.
   const savedPosts = snap.meta.browserPosts === 'all' ? Infinity : (snap.meta.browserPosts ?? BROWSE_POSTS)
   const posts = postsLimit ?? savedPosts
-  if (discoveredNow || posts !== savedPosts) {
+  const postSections = postSectionsFlag ?? snap.meta.browserPostSections ?? []
+  const skipSections = skipSectionsFlag ?? snap.meta.browserSkipSections ?? []
+  if (discoveredNow || posts !== savedPosts || postSectionsFlag || skipSectionsFlag) {
     saveSnapshot(host, {
       meta: {
         ...snap.meta,
         browserPosts: posts === Infinity ? 'all' : posts,
+        browserPostSections: postSections,
+        browserSkipSections: skipSections,
         browserWidths: widths,
         browserWidthsDropped: dropped,
         browserWidthsUnparseable: unparseable,
@@ -934,7 +976,7 @@ export async function browse(input, flags) {
 
   const result = await runBrowserPass({
     host,
-    pages: browsePages(snap.pages, posts),
+    pages: browsePages(snap.pages, posts, { postSections, skipSections }),
     widths,
     opts: { force, maxPages, headed, regions, sweep },
   })
@@ -1023,6 +1065,12 @@ async function main() {
     if (cmd === 'findings') {
       if (!args[0]) throw new Error('give a host: qc findings <host>')
       console.log(JSON.stringify(listFindings(resolveHostInput(args[0])), null, 2))
+      return
+    }
+    if (cmd === 'quotes') {
+      if (!args[0] || !args[1]) throw new Error('give a host and a review file: qc quotes <host> <review.json>')
+      const { checkQuotes } = await import('./review.js')
+      console.log(JSON.stringify(checkQuotes(resolveHostInput(args[0]), args[1]), null, 2))
       return
     }
     if (cmd === 'tiles') {

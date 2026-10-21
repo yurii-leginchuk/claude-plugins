@@ -115,7 +115,7 @@ user asks for it: translate the HTML artifact (`report.html`) and republish it; 
    While the engine runs, **start the QA work** (`qa-playbook.md` «Subagents»): the copy & facts
    agent and the judge can start at once (they read the CMS markdown and the pages); the
    journeys and the manual checks (mobile and desktop menu, popups, forms without submitting,
-   FAQ, keyboard focus — `/qc-browse` «Manual checks») need the browser; the visual agents start
+   FAQ, keyboard focus — `/qc-browse` «Manual checks») need the browser; the visual agents (`model: "sonnet"`, ~60 pieces each, 6–10 read per step) start
    after the second audit, from `qc tiles <host>` (every page cut into full-size pieces — each
    agent gets its page types and must look at every piece). Everything they find goes into the
    review file in step 5.

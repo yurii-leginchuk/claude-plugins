@@ -83,7 +83,7 @@ export function check(ctx) {
       out.push({
         rule: 'B6', title: 'Overlapping elements', severity: 'major', confidence: 'heuristic',
         engine: 'browser', page: ctx.url, breakpoint: ctx.breakpoint, selector: sa,
-        containerId: ctx.helpers.containerId(a.el),
+        containerId: ctx.helpers.containerId(a.el), y: Math.round(Math.max(a.r.top, b.r.top) + window.scrollY),
         found: 'overlaps ' + sb + ' by ' + Math.round(area) + 'px²',
         expected: 'elements should not overlap',
       })

@@ -338,3 +338,51 @@ test('the visual review says which screen pieces Claude looked at, and the repor
     assert.throws(() => tileCoverage(dir, { manual: [{ check: 'visual', tiles: ['page 1'] }] }), /not a tile id/)
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
+
+test('custom post types count as posts per section, newest 10 of each; skipped sections are left out', async () => {
+  const { browsePages } = await import('../src/lib/kinds.js')
+  const e = (sec, n, d) => ({ url: `https://ex.com/${sec}/${n}/`, published: d })
+  const pages = [{ url: 'https://ex.com/news/' }, e('news', 'a', '2026-01-01'), e('news', 'b', '2025-01-01'), e('letter', 'x', null), e('letter', 'y', null), e('jet-popup', 'form', null), e('meet-the-team', 'jo', '2026-02-01')]
+  assert.deepEqual(browsePages(pages, 1, { postSections: ['news', 'letter'], skipSections: ['jet-popup'] }),
+    ['https://ex.com/news/', 'https://ex.com/news/a/', 'https://ex.com/letter/x/', 'https://ex.com/meet-the-team/jo/'])
+})
+
+test('a piece shared by pages is one look; its defect lands on every page; the next run reuses the look', () => withCache(async () => {
+  const { applyReview, reviewedRun, listTiles } = await import('../src/review.js')
+  const { writeFileSync: write } = await import('node:fs')
+  const out = await audit(base, { fresh: true })
+  const png = (n) => { const p = join(out.runDir, `p${n}.png`); write(p, 'png'); return p }
+  const tiles = [
+    { id: 'T1', hash: 'aaa', page: 'https://ex.com/', type: 'home', width: 360, file: png(1), top: 900, bottom: 1500, kind: 'section', places: [{ page: 'https://ex.com/', top: 900, bottom: 1500 }, { page: 'https://ex.com/b/', top: 700, bottom: 1300 }] },
+    { id: 'T2', hash: 'bbb', page: 'https://ex.com/', type: 'home', width: 360, file: png(2), top: 0, bottom: 900, kind: 'screen', places: [{ page: 'https://ex.com/', top: 0, bottom: 900 }] },
+  ]
+  write(join(out.runDir, 'tiles.json'), JSON.stringify({ tiles, missing: [] }))
+  const listed = listTiles(host)
+  assert.deepEqual(Object.keys(listed.byType).sort(), ['home', 'shared'])
+  assert.equal(listed.byType.shared['on several pages'][0].pages, 2)
+  const file = join(out.runDir, 'r.json')
+  const defect = { tile: 'T1', rule: 'B9', title: 'No gap between an icon and its text', impact: 'cosmetic', verified: 'reproduced', found: 'the phone icon touches «Call»', expected: 'a gap' }
+  write(file, JSON.stringify({ manual: [{ check: 'visual', page: 'https://ex.com/', width: 360, tiles: ['T1-T2'], status: 'defect', defects: [defect] }] }))
+  const first = applyReview(host, file)
+  assert.deepEqual([first.tiles.seen, first.tiles.total], [2, 2])
+  const m = reviewedRun(host).kept.filter(f => f.rule === 'B9' && f.engine === 'claude')
+  assert.deepEqual(m.map(f => f.page).sort(), ['https://ex.com/', 'https://ex.com/b/'])
+  assert.match(m[0].shot, /visual\/tile-T1\.png$/)
+  // the same pixels next time: nothing to look at, the defect carries over
+  assert.equal(listTiles(host).toLook, 0)
+  write(file, JSON.stringify({ manual: [] }))
+  const again = applyReview(host, file)
+  assert.deepEqual([again.tiles.seen, again.tiles.total], [2, 2])
+  assert.equal(reviewedRun(host).kept.filter(f => f.rule === 'B9' && f.engine === 'claude').length, 2)
+}))
+
+test('qc quotes finds a content defect’s words on its page, Markdown and spacing aside', () => withCache(async () => {
+  const { checkQuotes } = await import('../src/review.js')
+  const { writeFileSync: write } = await import('node:fs')
+  const out = await audit(base, { fresh: true })
+  const file = join(out.runDir, 'q.json')
+  write(file, JSON.stringify({ manual: [{ check: 'content', page: `${base}/a`, status: 'defect', defects: [{ rule: 'H3', found: 'the page says «# **Hello**…call» and «Goodbye»' }] }] }))
+  const r = checkQuotes(host, file)
+  assert.deepEqual(r.items.map(q => q.onAPage), [true, false])
+  assert.equal(r.notFound, 1)
+}))
