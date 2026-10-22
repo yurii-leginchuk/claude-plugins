@@ -166,7 +166,10 @@ async function loadSheetTarget(sheetUrl, fetchImpl) {
   // pairs /services/x-dev/ with /services/x/, which same-path guessing misses.
   const pairs = new Map(sheet.rows.filter(r => r.devUrl && r.url).map(r => [r.devUrl, r.url]))
 
-  return { urls, source: `sheet:${sheet.sheet}`, pairedAsDev, prodHost, pairs }
+  // pages with a Figma frame (and their copy doc): what /qc-figma compares
+  const design = sheet.rows.filter(r => r.figma).map(r => ({ page: r.devUrl || r.url, name: r.pageName, figma: r.figma, copyDoc: r.copyDoc || null }))
+
+  return { urls, source: `sheet:${sheet.sheet}`, pairedAsDev, prodHost, pairs, design }
 }
 
 // Reads a cached snapshot for `host` and returns it only if it is still
@@ -624,6 +627,7 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   // for Claude, who reads the profile to describe the site.
   writeFileSync(join(runDir, 'report-input.json'), JSON.stringify(reportInput))
   writeFileSync(join(runDir, 'profile.json'), JSON.stringify(profile, null, 2))
+  if (sheetTarget?.design?.length) writeFileSync(join(runDir, 'design.json'), JSON.stringify(sheetTarget.design, null, 2))
   // Every piece of every page Claude must look at in the visual review, with
   // an id the review names, and the pages × widths that have none.
   if (browserCoverage) writeFileSync(join(runDir, 'tiles.json'), JSON.stringify(tileManifest(pages, browseSet, rowByUrl, (p) => pageType(p, profile, facts))))
@@ -675,6 +679,8 @@ export async function audit(input, flags, { fetchImpl } = {}) {
       brand: profile.brand, services: profile.services.items.length, locations: profile.locations.items.length,
       forms: profile.forms.length, path: join(runDir, 'profile.json'),
     },
+    // pages the strategy sheet gives a Figma frame for: /qc-figma compares them
+    design: sheetTarget?.design?.length ? { pages: sheetTarget.design.length, path: join(runDir, 'design.json') } : null,
     // K13's live side: null when this was not a dev audit with a known
     // production host, so "dev matches live" is never claimed unchecked.
     prodCompare: prod ? {

@@ -191,6 +191,11 @@ user asks for it: translate the HTML artifact (`report.html`) and republish it; 
      obvious typos (H3). Each contradiction is one `content` defect naming every page it is on
      (`pages`), quoting both claims in `found`. Record `check: "content"` entries without `width`;
      one `ok` entry per site when nothing contradicts, listing in `checked` what was compared.
+   - **Compare with the design when there is one.** The user gave Figma links, or the audit
+     printed `design` (the strategy sheet's Figma column, saved as `<runDir>/design.json`): follow
+     `../qc-figma/SKILL.md` for those pages — sections, layout, images, counts, text against the
+     copy doc, fonts and colours by value — and put its `check: "design"` entries into `manual`.
+     No Figma → skip it and say «not compared with a design» in the summary.
    - **Look at every defect's evidence crop.** Run
      `node <plugin-root>/engine/src/cli.js evidence "<host>"` (Playwright opens each defect's page,
      finds the spot and saves a crop with it outlined; `--force` redoes them). Open the crops
@@ -313,8 +318,9 @@ Without it H9 and H11 report nothing, and E9 and E12 only compare the site with 
 - Never submit a real form or place an order; ask the user before a test submission.
 - If a rule seems wrong, say so and propose a fix to the rule file; do not paper over it in the
   summary or quietly override its output.
-- If the input is a Figma link only, tell the user this command needs a site URL — design
-  comparison is not part of this version.
+- If the input is a Figma link only, tell the user this command needs a site URL; with a site
+  URL and Figma links, or a sheet with a Figma column, the design comparison runs (step 5,
+  `/qc-figma`).
 - If the sheet's column mapping looks ambiguous (the JSON reports a `source` of `sheet:<name>`
   but a page count far off what the user expects), show the detected sheet and column mapping
   and confirm before continuing.

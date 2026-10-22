@@ -192,7 +192,7 @@ ul.md,ol.md{margin:4px 0;padding-left:20px}ul.md li,ol.md li{margin:2px 0}p.md{m
 .md .pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:6px 0}.md .before,.md .after{border:1px solid var(--line);border-radius:6px;padding:6px 10px}
 .md .before{border-left:3px solid var(--crit)}.md .after{border-left:3px solid var(--ok)}.md .value{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--card);padding:0 4px;border-radius:4px}
 .md pre{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:8px;overflow-x:auto;font-size:12px}.md kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;font-size:12px}
-.md mark{background:color-mix(in srgb,var(--hi) 25%,transparent);color:inherit}.dbody{display:grid;gap:16px;margin-top:4px}@media (min-width:980px){.dbody:has(.shot){grid-template-columns:minmax(0,11fr) minmax(0,10fr);align-items:start}.dbody:has(.shot) .dshot{position:sticky;top:72px}}.dshot:empty{display:none}.dshot .shot{margin:0;max-width:none}.dshot .noshot{margin:0}.dtext{min-width:0;max-width:74ch}.dtext>.row{display:grid;grid-template-columns:72px minmax(0,1fr);gap:4px 14px;padding:12px 0;border-top:1px solid var(--line)}.dtext>.row:first-child{border-top:0;padding-top:2px}.dtext>.row>.lab{font-size:13px;font-weight:600;color:var(--mut);padding-top:2px}.dtext>.row>.val{min-width:0;overflow-wrap:anywhere}.dtext>.row>.val>.md>:first-child{margin-top:0}.dtext>.row>.val>.md>:last-child{margin-bottom:0}.dtext>.row.fix>.lab{color:var(--ok)}.dtext>.row.fix>.val{background:color-mix(in srgb,var(--ok) 7%,var(--bg));border-radius:8px;padding:10px 12px}.dtext>.row.note{font-size:14px;color:var(--mut)}@media (max-width:600px){.dtext>.row{grid-template-columns:minmax(0,1fr)}}.md .pair{display:block;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:0 12px;margin:10px 0}.md .pair>.before,.md .pair>.after{position:relative;border:0;border-radius:0;padding:8px 0 8px 86px}.md .pair>.after{border-top:1px solid var(--line)}.md .pair>.before::before,.md .pair>.after::before{position:absolute;left:0;top:10px;font-size:12px;font-weight:600}@media (max-width:600px){.md .pair>.before,.md .pair>.after{padding-left:0}.md .pair>.before::before,.md .pair>.after::before{position:static;display:block}}.md .pair>.before::before{content:"Now";color:var(--crit)}.md .pair>.after::before{content:"Should be";color:var(--ok)}.md .pair>.before{color:var(--mut)}.md ul,.md ol{margin:6px 0;padding-left:18px}.md li{margin:4px 0}.md li::marker{color:var(--mut)}.md .callout{background:none;border:0;border-top:1px dashed color-mix(in srgb,var(--ok) 40%,var(--line));border-radius:0;padding:8px 0 0;margin:10px 0 0;font-size:14px;color:var(--mut)}.md code,.md .value{font-size:.92em}
+.md mark{background:color-mix(in srgb,var(--hi) 25%,transparent);color:inherit}.dbody{display:grid;gap:16px;margin-top:4px}@media (min-width:980px){.dbody:has(.shot){grid-template-columns:minmax(0,11fr) minmax(0,10fr);align-items:start}.dbody:has(.shot) .dshot{position:sticky;top:72px}}.vs{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}.dshot:empty{display:none}.dshot .shot{margin:0;max-width:none}.dshot .noshot{margin:0}.dtext{min-width:0;max-width:74ch}.dtext>.row{display:grid;grid-template-columns:72px minmax(0,1fr);gap:4px 14px;padding:12px 0;border-top:1px solid var(--line)}.dtext>.row:first-child{border-top:0;padding-top:2px}.dtext>.row>.lab{font-size:13px;font-weight:600;color:var(--mut);padding-top:2px}.dtext>.row>.val{min-width:0;overflow-wrap:anywhere}.dtext>.row>.val>.md>:first-child{margin-top:0}.dtext>.row>.val>.md>:last-child{margin-bottom:0}.dtext>.row.fix>.lab{color:var(--ok)}.dtext>.row.fix>.val{background:color-mix(in srgb,var(--ok) 7%,var(--bg));border-radius:8px;padding:10px 12px}.dtext>.row.note{font-size:14px;color:var(--mut)}@media (max-width:600px){.dtext>.row{grid-template-columns:minmax(0,1fr)}}.md .pair{display:block;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:0 12px;margin:10px 0}.md .pair>.before,.md .pair>.after{position:relative;border:0;border-radius:0;padding:8px 0 8px 86px}.md .pair>.after{border-top:1px solid var(--line)}.md .pair>.before::before,.md .pair>.after::before{position:absolute;left:0;top:10px;font-size:12px;font-weight:600}@media (max-width:600px){.md .pair>.before,.md .pair>.after{padding-left:0}.md .pair>.before::before,.md .pair>.after::before{position:static;display:block}}.md .pair>.before::before{content:"Now";color:var(--crit)}.md .pair>.after::before{content:"Should be";color:var(--ok)}.md .pair>.before{color:var(--mut)}.md ul,.md ol{margin:6px 0;padding-left:18px}.md li{margin:4px 0}.md li::marker{color:var(--mut)}.md .callout{background:none;border:0;border-top:1px dashed color-mix(in srgb,var(--ok) 40%,var(--line));border-radius:0;padding:8px 0 0;margin:10px 0 0;font-size:14px;color:var(--mut)}.md code,.md .value{font-size:.92em}
 hr.sep{border:0;border-top:1px dashed var(--line);margin:12px 0}
 [hidden]{display:none!important}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
@@ -215,7 +215,7 @@ export function renderVisual(visual) {
 const SEVERITIES = ['critical', 'major', 'minor', 'note']
 const CHECK_LABEL = {
   journey: 'Visitor journeys', visual: 'Screenshot review', content: 'Copy', menu: 'Menu', popup: 'Popups',
-  form: 'Forms', faq: 'Tabs, accordions and sliders', focus: 'Keyboard focus', pages: 'Service pages',
+  form: 'Forms', faq: 'Tabs, accordions and sliders', focus: 'Keyboard focus', pages: 'Service pages', design: 'Design vs Figma',
 }
 const CHECK_WHAT = {
   menu: 'the burger opens, fits the screen, every item reachable, submenus open, it closes, links match the desktop menu',
@@ -223,6 +223,7 @@ const CHECK_WHAT = {
   form: 'required fields and *, error texts, phone mask, the button after an error, mobile layout (not submitted)',
   faq: 'every tab, item and slide opened, the layout holds',
   pages: '404, search with results and with none, listings and archives, gated content',
+  design: 'sections, layout, images and counts against the Figma frame; text against the copy doc; fonts and colours by their values',
   focus: 'focus is visible on Tab and reaches the menu, buttons and forms',
   content: 'timelines, numbers, hours, prices and promises compared between pages',
   visual: 'every page at every width, piece by piece: text past its box, overlaps, cut or empty blocks, broken grids and images',
@@ -242,7 +243,9 @@ function picture(x) {
   if (x.suppressed) return '<p class="noshot">Picture hidden to fit the size limit.</p>'
   if (src) {
     const cap = x.spot ? spotText(x.spot, x.shotWidth) : `the problem is outlined${x.shotWidth ? ` · at ${x.shotWidth} px` : ''}`
-    return `<figure class="shot"><button type="button" data-full="${src.startsWith('data:') ? '' : esc(src)}" data-label="${esc(x.id || x.title)}"><img loading="lazy" src="${esc(src)}" alt=""></button><figcaption>${esc(cap)}</figcaption></figure>`
+    const site = `<figure class="shot"><button type="button" data-full="${src.startsWith('data:') ? '' : esc(src)}" data-label="${esc(x.id || x.title)}"><img loading="lazy" src="${esc(src)}" alt=""></button><figcaption>${esc(cap)}</figcaption></figure>`
+    if (!(typeof x.designSrc === 'string' && /^visual\/[\w.-]+$/.test(x.designSrc))) return site
+    return `<div class="vs"><figure class="shot"><button type="button" data-full="${esc(x.designSrc)}" data-label="${esc(`${x.id || x.title} · Figma`)}"><img loading="lazy" src="${esc(x.designSrc)}" alt=""></button><figcaption>Figma design</figcaption></figure>${site}</div>`
   }
   if (x.rule === 'X1') return '<p class="noshot">Nothing to see on the page: this is an error in the browser console.</p>'
   // there, but hidden at this moment (a closed tab, a slide, another width)
@@ -308,7 +311,7 @@ function items(groups, claude, { totalPages, breakpointsByIdentity, suppressedSh
     out.push({
       group: CHECK_LABEL[d.check] || 'Checked by the agent', rule: d.rule, id: d.id, severity: d.severity, title: d.title, found: d.found, expected: d.expected,
       pages: d.pages, widths: d.widths, selector: d.selector, scope: d.pages.length > 1 ? scopeOf({ pages: d.pages, zones: [] }, totalPages) : 'page',
-      where: null, note: d.confidence === 'heuristic' ? reviewNote(d.review) : '', shotSrc: d.shotSrc, shotDataUri: d.shotDataUri, shotWidth: d.shotWidth ?? d.breakpoint, spot: d.spot,
+      where: null, note: d.confidence === 'heuristic' ? reviewNote(d.review) : '', shotSrc: d.shotSrc, shotDataUri: d.shotDataUri, shotWidth: d.shotWidth ?? d.breakpoint, spot: d.spot, designSrc: d.designSrc,
       evidenceStatus: d.evidenceStatus, suppressed: false, cat: categoryOf(d),
     })
   }

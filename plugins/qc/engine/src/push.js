@@ -51,18 +51,21 @@ export function buildPayload(run) {
     if (f.page && !g.pages.has(f.page)) g.pages.set(f.page, f.where || null)
     if (f.breakpoint != null) g.breakpoints.add(f.breakpoint)
     if (f.shot && existsSync(f.shot) && !rejected.includes(f)) g.shots.add(f.shot)
+    if (f.designShot && existsSync(f.designShot) && !rejected.includes(f)) g.design = f.designShot
     if (!g.spot && f.spot) g.spot = spotText(f.spot, f.shotWidth)
   }
   const files = new Map()
   const defects = [...groups.values()].filter(g => g.code).map(g => {
     const pages = [...g.pages.keys()]
     for (const s of g.shots) files.set(basename(s), s)
+    // the Figma side of a design defect travels as the first picture, named figma-…
+    if (g.design) files.set(`figma-${basename(g.design)}`, g.design)
     return {
       code: g.code, identity: g.identity, rule: g.rule, title: g.title, severity: g.severity, confidence: g.confidence,
       engine: g.engine, check: g.check, category: g.category, found: g.found, expected: g.expected, selector: g.selector, review: g.review,
       scope: scopeOf({ zones: g.zones, pages, region: g.region }, input.pages),
       pages: pages.map(url => ({ url, where: g.pages.get(url) })), page_count: pages.length,
-      breakpoints: [...g.breakpoints].sort((a, b) => a - b), evidence: [...g.shots].map(s => basename(s)), spot: g.spot || '',
+      breakpoints: [...g.breakpoints].sort((a, b) => a - b), evidence: [...(g.design ? [`figma-${basename(g.design)}`] : []), ...[...g.shots].map(s => basename(s))], spot: g.spot || '',
     }
   })
   // Pictures only for what failed: a check that passed sends none for now.

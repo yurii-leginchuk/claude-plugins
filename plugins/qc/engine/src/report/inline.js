@@ -27,6 +27,11 @@ export function inlineScreenshots(findings) {
 export function linkScreenshots(findings, dir) {
   mkdirSync(join(dir, 'visual'), { recursive: true })
   for (const f of findings) {
+    if (f.designShot && existsSync(f.designShot)) {
+      const d = join(dir, 'visual', basename(f.designShot))
+      if (!existsSync(d)) copyFileSync(f.designShot, d)
+      f.designSrc = `visual/${basename(f.designShot)}`
+    }
     if (!f.shot || !existsSync(f.shot)) continue
     const name = f.shot.startsWith(join(dir, 'visual')) ? basename(f.shot) : `ev-${basename(f.shot)}`
     const to = join(dir, 'visual', name)

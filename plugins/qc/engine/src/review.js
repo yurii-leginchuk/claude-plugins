@@ -60,6 +60,8 @@ export const MANUAL_CHECKS = {
   visual: CODE,
   // 404, search, listings and archives, gated content
   pages: CODE,
+  // a page against its Figma frame and copy doc (/qc-figma): layout, images, counts, text, fonts and colours
+  design: CODE,
 }
 const allows = (check, rule) => (MANUAL_CHECKS[check] instanceof RegExp ? MANUAL_CHECKS[check].test(String(rule)) : MANUAL_CHECKS[check].includes(rule))
 export const MANUAL_TITLES = {
@@ -124,7 +126,7 @@ function manualOf(review, dir, host = null) {
       if (d.verified === 'not-reproduced') { notReproduced++; continue }
       const key = `${i}|${d.rule}|${d.found}`
       if (!manualIds.has(key)) manualIds.set(key, `M${manualIds.size + 1}`)
-      const how = m.fromCache ? 'found by the agent on an earlier QC, the same picture now' : m.check === 'content' ? 'found by the agent while reading the pages' : m.check === 'journey' ? `found by the agent on the journey «${m.title}»` : 'checked by the agent in Playwright'
+      const how = m.fromCache ? 'found by the agent on an earlier QC, the same picture now' : m.check === 'content' ? 'found by the agent while reading the pages' : m.check === 'design' ? 'found by the agent comparing the page with its Figma frame' : m.check === 'journey' ? `found by the agent on the journey «${m.title}»` : 'checked by the agent in Playwright'
       const piecePages = piece ? [...new Set((piece.places || [piece]).map(p => p.page || piece.page))] : null
       // The spot outlined: the agent's box on its picture, else qc evidence's crop of the page, else the plain picture.
       let shot = shots.length ? join(dir, piece ? `visual/tile-${d.tile}.png` : shots[d.shot] || shots[0]) : null
@@ -144,6 +146,8 @@ function manualOf(review, dir, host = null) {
           target: targetOf(d.target || review.targets?.[manualIds.get(key)]),
           // the defect card shows its own picture: d.shot picks one of the check's shots, the first by default
           ...(shot ? { shot } : {}), marked,
+          // a design defect shows the Figma section next to the page: d.design picks it from shots
+          ...(Number.isInteger(d.design) && shots[d.design] ? { designShot: join(dir, shots[d.design]) } : {}),
           review: { verdict: d.verified === 'unable' ? 'unsure' : 'confirmed', note: d.verified === 'unable' ? `${how}; the second check could not repeat it either way` : `${how}, repeated by a second check` },
         })
       }

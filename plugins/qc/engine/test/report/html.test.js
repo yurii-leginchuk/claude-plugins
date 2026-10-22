@@ -598,3 +598,10 @@ test('folds a rule with three or more problems into one closed block', () => {
   assert.match(out, /<details class="rule group"><summary>.*Internal link through a redirect<\/b><span class="cnt">3 problems/)
   assert.doesNotMatch(out, /<details class="rule group"[^>]*>.*tel: format/)
 })
+
+test('a design defect shows the Figma section next to the site', () => {
+  const f = { id: 'M1', rule: 'A5', title: '«Why us» has 3 cards, the design has 4', severity: 'major', engine: 'claude', confidence: 'high', check: 'design',
+    page: 'https://ex.com/s/', breakpoint: 1440, found: '3 cards', expected: '4 cards', shotSrc: 'visual/manual-0-1.png', designSrc: 'visual/manual-0-0.png', review: { verdict: 'confirmed' } }
+  const out = renderReport({ host: 'ex.com', env: 'dev', envReason: 'x', pages: 1, findings: [f], diff: { fixed: [], remaining: [], added: [] }, snapshotAgeDays: 0, source: 'sitemap' })
+  assert.match(out, /<div class="vs"><figure class="shot"><button type="button" data-full="visual\/manual-0-0\.png"[^]*?Figma design<\/figcaption><\/figure><figure class="shot"><button type="button" data-full="visual\/manual-0-1\.png"/)
+})
