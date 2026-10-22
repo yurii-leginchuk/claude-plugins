@@ -1,0 +1,20 @@
+<!doctype html><html><head><meta name="viewport" content="width=device-width"><style>
+body{margin:0;font:16px sans-serif}header{display:flex;gap:20px;padding:10px;background:#eee;position:relative}
+nav.main ul{list-style:none;margin:0;padding:0;display:flex;gap:20px}
+nav.main li{position:relative}nav.main li>ul{display:none;position:absolute;top:100%;left:0;background:#fff;border:1px solid #999;width:200px;flex-direction:column}
+nav.main li:hover>ul,nav.main li:focus-within>ul{display:flex}
+#wide>ul{left:1350px}
+.burger,.panel{display:none}
+@media (max-width:800px){nav.main{display:none}.burger{display:block}.panel.open{display:block}}
+.panel ul ul{display:none}.panel li.open>ul{display:block}
+</style></head><body><header>
+<nav class="main"><ul>
+<li><a href="/services/">Services</a><ul><li><a href="/a/">Cleaning</a></li><li><a href="/b/">Repairs</a></li></ul></li>
+<li id="wide"><a href="/wide/">Wide</a><ul><li><a href="/w/">Far away link</a></li></ul></li>
+<li><a href="/contact/">Contact</a></li></ul></nav>
+<button class="burger" aria-label="Menu" onclick="document.querySelector('.panel').classList.toggle('open')">☰</button>
+<nav class="panel"><ul>
+<li><a href="/areas/" class="has-submenu" onclick="event.preventDefault();this.parentElement.classList.toggle('open')">Areas</a><ul><li><a href="/north/">North</a></li><li><a href="/south/">South</a></li></ul></li>
+<li><a href="/broken/" class="has-submenu" onclick="event.preventDefault()">Broken</a><ul><li><a href="/x/">Hidden forever</a></li></ul></li>
+<li><a href="/about/">About</a></li></ul></nav>
+</header><main><p>Body</p></main></body></html>

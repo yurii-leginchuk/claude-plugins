@@ -47,16 +47,19 @@ export const evidenceKey = (f) => `claude:${defectIdentity(f)}${f.target ? `|${f
 // the pages), with the taxonomy codes each check may report. The engine
 // never clicks or reads for meaning; these are the parts it leaves to Claude.
 export const MANUAL_CHECKS = {
-  menu: ['D1', 'C2', 'C6', 'C9', 'D9', 'D2', 'B6'],
-  popup: ['K4', 'C6', 'D9', 'J2', 'B6'],
+  // menu, popups, tabs and sliders are looked at state by state: any code they show
+  menu: CODE,
+  popup: CODE,
   form: ['G2', 'G3', 'G5', 'G6', 'G7', 'G11', 'G12', 'G14', 'J5'],
-  faq: ['F9', 'C2', 'J2'],
+  faq: CODE,
   focus: ['J2', 'J5'],
   content: ['H16', 'H8', 'H3', 'H12', 'E17'],
   // A visitor's task done end to end (find a price, book, buy, call) and
   // Claude's look at the page screenshots: any taxonomy code, with a title.
   journey: CODE,
   visual: CODE,
+  // 404, search, listings and archives, gated content
+  pages: CODE,
 }
 const allows = (check, rule) => (MANUAL_CHECKS[check] instanceof RegExp ? MANUAL_CHECKS[check].test(String(rule)) : MANUAL_CHECKS[check].includes(rule))
 export const MANUAL_TITLES = {
@@ -146,7 +149,7 @@ function manualOf(review, dir, host = null) {
       }
     }
     if (m.status === 'defect' && !(m.defects || []).length) throw new Error(`${at}: status defect without defects`)
-    checks.push({ index: i, check: m.check, form: [].concat(m.form ?? []).map(String), title: m.title ? String(m.title) : null, steps: (m.steps || []).map(String), page: m.page, width, status: m.status, checked: m.checked ? String(m.checked) : null, shots })
+    checks.push({ index: i, check: m.check, form: [].concat(m.form ?? []).map(String), part: [].concat(m.part ?? []).map(String), title: m.title ? String(m.title) : null, steps: (m.steps || []).map(String), page: m.page, width, status: m.status, checked: m.checked ? String(m.checked) : null, shots })
   })
   for (const f of findings) {
     if (f.marked) continue
@@ -413,12 +416,22 @@ export function formCoverage(profile, checks) {
   })
 }
 
+
+// Popups, tabs, accordions and sliders (profile.parts) and whether a hand
+// check named it in `part` («popup:18298», «accordion:8c0d489»).
+export function partCoverage(profile, checks) {
+  const named = new Set(checks.flatMap(c => c.part || []).map(p => p.toLowerCase().trim()))
+  return (profile?.parts || []).map(x => {
+    const pages = [...new Set(x.pages || [])]
+    return { id: x.key, kind: x.kind, page: pages[0] || null, pages: pages.length, fields: x.label ? [x.label] : [], checked: named.has(x.key.toLowerCase()) }
+  })
+}
 // The latest run as Claude left it (review.json, if `qc review` ran), for `qc push`.
 export function reviewedRun(host) {
   const { dir, findings, input, profile } = runOf(host)
   const review = existsSync(join(dir, 'review.json')) ? JSON.parse(readFileSync(join(dir, 'review.json'), 'utf8')) : { items: [] }
   const sorted = sortByReview(dir, findings, review, host)
-  return { dir, input, findings, review, ids: idsFor(findings, input.pages), ...sorted, forms: formCoverage(profile, sorted.manual.checks) }
+  return { dir, input, findings, review, ids: idsFor(findings, input.pages), ...sorted, forms: formCoverage(profile, sorted.manual.checks), parts: partCoverage(profile, sorted.manual.checks) }
 }
 
 export function applyReview(host, reviewPath) {
@@ -430,7 +443,8 @@ export function applyReview(host, reviewPath) {
   linkScreenshots(kept, dir)
   const tiles = tileCoverage(dir, review)
   const forms = formCoverage(profile, manual.checks)
-  const html = renderReport({ ...input, findings: kept, rejected, siteSummary: review.summary || null, manualChecks: manual.checks, ids: idsFor(findings, input.pages), unjudged, tiles, forms })
+  const parts = partCoverage(profile, manual.checks)
+  const html = renderReport({ ...input, findings: kept, rejected, siteSummary: review.summary || null, manualChecks: manual.checks, ids: idsFor(findings, input.pages), unjudged, tiles, forms, parts })
   writeFileSync(join(dir, 'report.html'), html)
   writeFileSync(join(dir, 'review.json'), JSON.stringify(review, null, 2))
   saveVisualCache(host, dir, review)
@@ -441,6 +455,7 @@ export function applyReview(host, reviewPath) {
     manualChecked: manual.checks.length, manualDefects: manual.findings.length, notReproduced: manual.notReproduced, unjudged,
     tiles,
     forms: { checked: forms.filter(f => f.checked).length, total: forms.length, notChecked: forms.filter(f => !f.checked).map(f => f.id) },
+    parts: { checked: parts.filter(f => f.checked).length, total: parts.length, notChecked: parts.filter(f => !f.checked).map(f => f.id) },
     journeys: manual.checks.filter(c => c.check === 'journey').map(c => ({ title: c.title, width: c.width, status: c.status })),
   }
 }

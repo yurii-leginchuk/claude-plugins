@@ -21,3 +21,15 @@ test('the report lists forms nobody checked', () => {
   assert.match(html, /Forms not checked by hand<\/b><span class="cnt">2 of 3 forms/)
   assert.match(html, /1 of 3 forms checked by hand/)
 })
+
+test('popups, tabs, accordions and sliders are found once each and counted when a check names them', async () => {
+  const { parsePage } = await import('../src/parse/page.js')
+  const html = `<div data-jet-popup='{"attached-popup":"jet-popup-77"}'><a href="#">Inquire</a></div>
+    <div class="elementor-element" data-id="ab12"><div class="e-n-accordion"><details><summary>What do you do?</summary></details></div></div>
+    <div class="elementor-element" data-id="cd34"><div class="swiper"><div class="swiper">inner</div></div></div>`
+  const parts = parsePage({ url: 'https://ex.com/', status: 200, html }).parts
+  assert.deepEqual(parts.map(p => p.key), ['popup:77', 'accordion:ab12', 'slider:cd34'])
+  const { partCoverage } = await import('../src/review.js')
+  const out = partCoverage({ parts: parts.map(p => ({ ...p, pages: ['https://ex.com/'] })) }, [{ check: 'popup', part: ['popup:77'] }])
+  assert.deepEqual(out.map(p => p.checked), [true, false, false])
+})

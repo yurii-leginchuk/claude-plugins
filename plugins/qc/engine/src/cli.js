@@ -1099,6 +1099,18 @@ async function main() {
       console.log(JSON.stringify({ ...rest, notFoundIds: notFoundIdentities.map(i => ids[i]).filter(Boolean) }, null, 2))
       return
     }
+    if (cmd === 'nav') {
+      if (!args[0]) throw new Error('give a host: qc nav <host> [--pages url,url] [--widths 360,1440]')
+      const { navSweep, NAV_WIDTHS } = await import('./browser/nav.js')
+      const host = resolveHostInput(args[0])
+      const pages = flags.pages ? String(flags.pages).split(',').map(s => s.trim()).filter(Boolean) : [`https://${host}/`]
+      const widths = flags.widths ? String(flags.widths).split(',').map(Number).filter(Boolean) : NAV_WIDTHS
+      const res = await navSweep(host, { pages, widths, onProgress: ({ url, width }) => process.stderr.write(`nav ${url} @${width}\n`) })
+      const bad = res.rows.filter(r => r.problems.length)
+      console.log(JSON.stringify({ host, pages, widths, states: res.rows.length, shots: res.rows.filter(r => r.shot).length, withProblems: bad.length,
+        problems: bad.map(r => ({ width: r.width, mode: r.mode, item: r.item, problems: r.problems, shot: r.shot })), file: `${(await import('./browser/nav.js')).navDir(host)}/nav.json` }, null, 2))
+      return
+    }
     if (cmd === 'push') {
       if (!args[0]) throw new Error('give a host: qc push <host>')
       const { push } = await import('./push.js')

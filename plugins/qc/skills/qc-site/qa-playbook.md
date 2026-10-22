@@ -102,6 +102,46 @@ form names it the same way). The report counts «N of M forms checked by hand» 
 form nobody named under «Forms not checked by hand»; that list must be empty before you publish,
 or say in the summary why a form was left (it needs a login, a payment step).
 
+**Every popup, tab, accordion and slider gets opened.** The page screenshots show each one in
+its first state; what it hides — the second tab, the other accordion items, the next slides, the
+popup itself — nobody has seen. `profile.json` → `parts` lists each one once (`popup:18298`,
+`accordion:8c0d489`, `slider:672f3e48`, with its pages). Open every part at 360 and 1440 on one page
+that carries it: every tab, every item, every slide (arrows, dots and a swipe at 360), the popup
+from its button — a screenshot of each state and the overflow probe after opening. Record it as
+`check: "popup"` / `"faq"` (tabs and sliders go under `faq`) naming the part: `"part":
+"accordion:8c0d489"`. The report lists every part nobody named under «Popups, tabs, accordions and
+sliders not opened by hand»; that list must be empty before you publish.
+
+**The service pages, once per site** (`check: "pages"`, at 360 and 1440):
+- **404** — open `/qc-missing-<random>/`: it answers HTTP 404 (not 200, not a redirect to the
+  home page), has the header and footer, says the page is gone and offers a way on (search, home,
+  main links).
+- **Search** — search a word the site uses (a service name): results come, are relevant, each
+  links to a live page; then a nonsense word: a clear «nothing found» with a way on, not an empty
+  page. Both at 360 and 1440, from the header search as a visitor opens it.
+- **Listings** — the blog or news listing, page 2 and the last page (pagination works, no
+  duplicate or missing posts, the page number is in the title), every category or tag archive the
+  menu or posts link to, any filter on the listing.
+- **Gated content** — content behind an email gate or a «read more»: fill the gate with a test
+  address only where submitting is allowed (see «Test submissions»), else record what the
+  visitor sees before the gate.
+
+**The navigation, once per site, in depth.** Run `node <engine>/src/cli.js nav <host>` (add
+`--pages <a page with another header>` when the site has more than one header). It opens every
+dropdown at every level by hover and by keyboard focus, the burger and every submenu inside it
+(drill-down menus included), at 360, 390, 768, 1024, 1280, 1440 and 1920, saves a screenshot of
+every state to `~/.qc-cache/<host>/nav/` and measures what a script can be sure of: did not open,
+past the screen edge, a cut label, the burger panel wider than the screen, last items unreachable.
+Its problems are facts — record each as a `menu` defect. Then look at **every** screenshot as a
+visitor, against the rest of the site: alignment and spacing of the dropdown and its columns,
+the active and hover states, contrast of every item and of the back / close controls, the
+dropdown covering something it should not, the logo and the header at that width, icons that
+repeat (two searches, two closes), the gap between the header and the dropdown that drops the
+hover on the way down. Then by hand at 360 and 1440: the header after scrolling (sticky, its
+height, still opens), closing (X, a tap outside, Esc, back to the page where it was), the burger
+on a long page, the current page marked in the menu. Every look is one `check: "menu"` entry per
+width with the screenshots it used.
+
 ## Visual review of the screenshots
 
 A whole-page screenshot is shrunk when read, and a 1–2 px defect (an icon touching its text, a

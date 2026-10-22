@@ -47,6 +47,34 @@ function optionsOf(scope) {
   return [...opts, ...choices].filter(Boolean).slice(0, 200)
 }
 
+// What hides content until a visitor opens it -- popups, tabs, accordions,
+// sliders -- keyed so the same one on many pages is one part: a popup by its
+// id, a widget by its Elementor data-id. The agent opens each by hand.
+const PART_KINDS = [
+  ['tabs', '.e-n-tabs, .elementor-tabs, .jet-tabs, [role="tablist"]'],
+  ['accordion', '.e-n-accordion, .elementor-accordion, .elementor-toggle, .jet-accordion, details'],
+  ['slider', '.swiper, .elementor-image-carousel-wrapper, .slick-slider, .splide'],
+]
+function parseParts(root) {
+  const out = []
+  const seen = new Set()
+  const add = (kind, key, label) => { if (key && !seen.has(`${kind}:${key}`)) { seen.add(`${kind}:${key}`); out.push({ kind, key: `${kind}:${key}`, label: squash(label || '').slice(0, 80) }) } }
+  for (const el of root.querySelectorAll('[data-jet-popup], a[href*="elementor-action"][href*="popup"]')) {
+    const raw = el.getAttribute('data-jet-popup') || decodeURIComponent(el.getAttribute('href') || '')
+    const id = /jet-popup-(\d+)/.exec(raw)?.[1] || /popup[^0-9]{0,20}(\d+)/.exec(raw)?.[1]
+    add('popup', id, el.text)
+  }
+  for (const [kind, sel] of PART_KINDS) {
+    for (const el of root.querySelectorAll(sel)) {
+      // the outermost match only: a slider inside a tab is the tab's content
+      if (el.parentNode?.closest?.(sel)) continue
+      const holder = el.closest?.('[data-id]')
+      add(kind, holder?.getAttribute('data-id') || selectorOf(el), el.querySelector('h1, h2, h3, h4, summary, .e-n-accordion-item-title-text, .e-n-tab-title-text')?.text || el.text.slice(0, 60))
+    }
+  }
+  return out
+}
+
 function parseForms(root) {
   return root.querySelectorAll('form').map((form) => {
     const wrapper = form.closest?.('.gform_wrapper') || null
@@ -222,7 +250,7 @@ const JSONLD_PUBLISHED = /"datePublished"\s*:\s*"([^"]+)"/i
 // parsed by another version is re-crawled rather than reused: an old PageDoc
 // without `region` made K13 see an empty dev menu and report every live menu
 // item as lost.
-export const PARSE_VERSION = 6
+export const PARSE_VERSION = 7
 
 export function parsePage({ url, html, status = 200, headers = {} }) {
   const root = parse(html, PARSE_OPTIONS)
@@ -344,6 +372,7 @@ export function parsePage({ url, html, status = 200, headers = {} }) {
     links,
     images,
     forms: parseForms(root),
+    parts: parseParts(root),
     jsonLd,
     jsonLdRaw,
     mapEmbeds,

@@ -85,6 +85,7 @@ export function buildPayload(run) {
         diff: input.diff ? { added: input.diff.added?.length ?? 0, fixed: input.diff.fixed?.length ?? 0, remaining: input.diff.remaining?.length ?? 0 } : null,
         browserCoverage: input.browserCoverage || null, rejected: new Set(rejected.map(defectIdentity)).size, rulesPassed,
         forms: (run.forms || []).map(f => ({ id: f.id, page: f.page, pages: f.pages, fields: f.fields, checked: f.checked })),
+        parts: (run.parts || []).map(f => ({ id: f.id, page: f.page, pages: f.pages, fields: f.fields, checked: f.checked })),
       },
       defects, manual: checks,
     },

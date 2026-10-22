@@ -378,7 +378,7 @@ test('for now the report shows no full-page screenshots, only the pictures of wh
 
 test('without a menu check the passed tab says what was not checked by hand', () => {
   const html = renderReport({ ...base, findings: [] })
-  assert.match(html, /Not checked by hand: Menu, Popups, Forms, FAQ and accordions, Keyboard focus, Copy/)
+  assert.match(html, /Not checked by hand: Menu, Popups, Forms, Tabs, accordions and sliders, Keyboard focus, Copy, Service pages/)
 })
 
 test("Claude's menu defects are failed problems that count; the ok menu check is passed", () => {

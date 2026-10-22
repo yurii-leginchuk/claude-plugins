@@ -100,6 +100,18 @@ function formsOf(pages) {
   return [...byId.values()]
 }
 
+// Popups, tabs, accordions and sliders, one entry per part with every page it is on.
+function partsOf(pages) {
+  const byKey = new Map()
+  for (const p of pages) {
+    for (const x of p.parts || []) {
+      if (!byKey.has(x.key)) byKey.set(x.key, { ...x, pages: [] })
+      byKey.get(x.key).pages.push(p.url)
+    }
+  }
+  return [...byKey.values()]
+}
+
 // Pages Claude classified as this type in facts.pages, as {name, url}.
 function typed(pages, facts, type) {
   const types = facts?.pages || {}
@@ -128,6 +140,7 @@ export function buildProfile(site) {
     phones: [...phones].sort((a, b) => b[1] - a[1]).map(([key, links]) => ({ key, links })),
     emails: [...emails],
     forms: formsOf(pages),
+    parts: partsOf(pages),
   }
   cache.set(site, profile)
   return profile

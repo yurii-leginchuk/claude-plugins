@@ -203,7 +203,8 @@ test('qc findings lists distinct defects with ids, qc review moves false positiv
   assert.match(manualHtml, /<ul class="found"><li><a class="did" href="#M\d+">/, 'the journey links its problems, the card is in the list once')
   assert.match(manualHtml, /<li><a href="https:\/\/ex\.com\/b\/"/, 'a content defect lists every page it names')
   const bad = (d, m = {}) => { write(file, JSON.stringify({ manual: [{ check: 'menu', page: 'https://ex.com/', width: 360, status: 'defect', shots: [shot], defects: [{ rule: 'C6', impact: 'broken', verified: 'reproduced', found: 'a', expected: 'b', ...d }], ...m }] })); applyReview(host, file) }
-  assert.throws(() => bad({ rule: 'H16' }), /rule for menu must be one of/)
+  assert.throws(() => bad({ rule: 'H16' }, { check: 'form' }), /rule for form must be one of/)
+  assert.throws(() => bad({ rule: 'nonsense' }), /rule for menu must be a taxonomy code/)
   assert.throws(() => bad({ impact: undefined, severity: 'major' }), /impact must be one of/)
   assert.throws(() => bad({ verified: undefined }), /verified must be/)
   assert.throws(() => bad({}, { shots: [] }), /needs its evidence: .*screenshot/)
