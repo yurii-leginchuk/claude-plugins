@@ -140,11 +140,15 @@ Every check is recorded as one entry per page × width in the review file's `man
 
 ```json
 { "check": "menu|popup|form|faq|focus|content|visual|journey", "page": "https://site/", "width": 360,
+  "form": "gform_9",
   "status": "ok|defect|skipped", "checked": "what was checked, with numbers",
   "shots": ["/Users/…/.qc-cache/site/manual/menu-360-open.png"],
   "defects": [{ "rule": "D2", "impact": "broken", "verified": "reproduced", "category": "dev",
                 "found": "…", "expected": "…", "selector": "…", "shot": 0 }] }
 ```
+
+A form check or a journey that fills a form names it in `form` (its Gravity Forms id from
+`profile.json` → `forms`; a list when it fills two); the report counts every form against them.
 
 A visual entry adds `"tiles": ["T12-T19"]` — the screen pieces (`qc tiles <host>`) you looked at;
 the review counts them against every piece there is. A visual defect names its piece,

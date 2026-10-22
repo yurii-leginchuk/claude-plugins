@@ -362,16 +362,23 @@ ${defs.length ? `<ul class="found">${defs.map(d => `<li><a class="did" href="#${
 }
 
 // Passed: what was checked and found right, as text (no pictures for now).
-function renderPassed({ manualChecks, claude, rulesPassed, tiles, browserCoverage, pages }) {
+function renderPassed({ manualChecks, claude, rulesPassed, tiles, browserCoverage, pages, forms = [] }) {
   const checks = Array.isArray(manualChecks) ? manualChecks : []
   const js = journeyGroups(checks).filter(runs => runStatus(runs) === 'ok')
   const byCheck = Object.keys(CHECK_LABEL).filter(k => k !== 'journey').map(k => [k, checks.filter(m => m.check === k && m.status === 'ok')]).filter(([, rows]) => rows.length)
   const cov = browserCoverage ? `${browserCoverage.pagesDone} of ${browserCoverage.pagesTotal} pages in a browser${Array.isArray(browserCoverage.widths) && browserCoverage.widths.length ? ` at ${browserCoverage.widths.join(', ')} px` : ''}` : 'no browser pass'
-  return `<p class="sub">Checked: ${esc(pages)} pages read, ${esc(cov)}${tiles ? `, ${esc(tiles.seen)} of ${esc(tiles.total)} screen pieces looked at by the agent` : ''}.</p>
+  return `<p class="sub">Checked: ${esc(pages)} pages read, ${esc(cov)}${tiles ? `, ${esc(tiles.seen)} of ${esc(tiles.total)} screen pieces looked at by the agent` : ''}${forms.length ? `, ${forms.filter(f => f.checked).length} of ${forms.length} forms checked by hand` : ''}.</p>
 ${js.length ? `<h2>Visitor journeys that went through</h2>${js.map(runs => journey(runs, [])).join('')}` : ''}
 ${byCheck.length ? `<h2>Checked by the agent and right</h2>${byCheck.map(([k, rows]) => `<details class="rule"><summary><span class="chip ok">ok</span> <b>${esc(CHECK_LABEL[k])}</b><span class="cnt">${rows.length} ${rows.length === 1 ? 'check' : 'checks'}</span></summary><div class="body"><p class="sub">${esc(CHECK_WHAT[k] || '')}</p>${rows.map(m => `<div class="check"><p class="kv">${m.width != null ? `<b>${esc(m.width)} px</b> · ` : ''}${rich(m.page)}</p>${m.checked ? `<div class="kv sub">${md(m.checked)}</div>` : ''}</div>`).join('')}</div></details>`).join('')}` : ''}
 ${(() => { const none = ['menu', 'popup', 'form', 'faq', 'focus', 'content'].filter(k => !checks.some(m => m.check === k)); return none.length ? `<p class="sub">Not checked by hand: ${none.map(k => esc(CHECK_LABEL[k])).join(', ')}.</p>` : '' })()}
 ${rulesPassed.length ? `<h2>Automatic checks with no problems</h2><div class="rules-ok">${rulesPassed.map(r => `<div><span class="chip ok">ok</span> <b>${esc(r.id)}</b> ${esc(r.title)}</div>`).join('')}</div>` : ''}`
+}
+
+// Forms the crawl found that no hand check or journey named: a gap in the QC, not a defect.
+function renderFormsLeft(forms) {
+  const left = forms.filter(f => !f.checked)
+  if (!left.length) return ''
+  return `<details class="rule unsure"><summary><span class="chip note">needs a look</span> <b>Forms not checked by hand</b><span class="cnt">${left.length} of ${forms.length} forms</span></summary><div class="body"><p class="sub">The crawl found these forms, but the agent did not fill them in at 360 and 1440. They are not defects; nobody has looked at them yet.</p><ul class="pages">${left.map(f => `<li><b>${esc(f.id)}</b>${f.fields.length ? ` <span class="sub">(${f.fields.map(esc).join(', ')}…)</span>` : ''}<div class="where">${f.page ? rich(f.page) : ''}${f.pages > 1 ? ` <span class="sub">and ${f.pages - 1} more pages</span>` : ''}</div></li>`).join('')}</ul></div></details>`
 }
 
 const TABS = `<script>(()=>{const tabs=[...document.querySelectorAll('[data-tab]')];const show=n=>{tabs.forEach(t=>{const on=t.dataset.tab===n;t.setAttribute('aria-selected',String(on));document.getElementById('panel-'+t.dataset.tab).hidden=!on})};
@@ -418,6 +425,8 @@ export function renderReport({
   rejected = [],
   siteSummary = null,
   unjudged = 0,
+  // every form the crawl found, and whether the agent checked it by hand: [{id, page, pages, fields, checked}]
+  forms = [],
   // the screen pieces Claude looked at in the visual review: {total, seen, unseenPages, missing}
   tiles = null,
   manualChecks = [],
@@ -510,10 +519,11 @@ ${oversizeBytes != null ? `<div class="note-box">The report is over the recommen
 <section id="panel-failed" role="tabpanel">
 ${failedJourneys.length ? `<h2>Visitor journeys with problems</h2><p class="sub">The agent did what a visitor comes to do, step by step; ${failedJourneys.length} of ${journeys.length} ran into a problem.</p>${failedJourneys.map(runs => journey(runs, defsOf(runs), { open: true })).join('')}` : ''}
 ${renderProblems(problems)}
+${renderFormsLeft(forms)}
 ${unsure.length ? `<details class="rule unsure"><summary><span class="chip note">needs a look</span> <b>Unconfirmed heuristics and unsure finds</b><span class="cnt">${unsure.length} — not counted</span></summary><div class="body"><p class="sub">The scripts or the agent could not tell either way; a person should look before filing a task.</p>${unsure.slice(0, DEFECT_CAP * 2).map(card).join('')}</div></details>` : ''}
 </section>
 <section id="panel-passed" role="tabpanel" hidden>
-${renderPassed({ manualChecks: checks, claude: claudeSolid, rulesPassed, tiles, browserCoverage, pages })}
+${renderPassed({ manualChecks: checks, claude: claudeSolid, rulesPassed, tiles, browserCoverage, pages, forms })}
 </section>
 </main></div>${LIGHTBOX}${TABS}${FIND}</body></html>`
     return { html, candidates }

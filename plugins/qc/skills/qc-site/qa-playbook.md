@@ -92,6 +92,16 @@ one path, so the developer knows where to fix it. Each journey still runs at 360
 
 Record each journey as one `manual` entry with `check: "journey"` (format in qc-browse).
 
+**Every form on the site gets checked.** The journeys cover the forms on the visitor's main
+paths; the rest are easy to miss (a referral form, a form on one industry page, a white-paper
+download). The crawl lists every form it found in `profile.json` → `forms` (Gravity Forms id,
+pages, first fields). Each form with an id gets its own `check: "form"` at 360 and 1440 —
+required fields and `*`, error texts, masks, the button after an error, never submitted — on
+one page that carries it, and the entry names it: `"form": "gform_9"` (a journey that fills a
+form names it the same way). The report counts «N of M forms checked by hand» and lists every
+form nobody named under «Forms not checked by hand»; that list must be empty before you publish,
+or say in the summary why a form was left (it needs a login, a payment step).
+
 ## Visual review of the screenshots
 
 A whole-page screenshot is shrunk when read, and a 1–2 px defect (an icon touching its text, a

@@ -146,7 +146,7 @@ function manualOf(review, dir, host = null) {
       }
     }
     if (m.status === 'defect' && !(m.defects || []).length) throw new Error(`${at}: status defect without defects`)
-    checks.push({ index: i, check: m.check, title: m.title ? String(m.title) : null, steps: (m.steps || []).map(String), page: m.page, width, status: m.status, checked: m.checked ? String(m.checked) : null, shots })
+    checks.push({ index: i, check: m.check, form: [].concat(m.form ?? []).map(String), title: m.title ? String(m.title) : null, steps: (m.steps || []).map(String), page: m.page, width, status: m.status, checked: m.checked ? String(m.checked) : null, shots })
   })
   for (const f of findings) {
     if (f.marked) continue
@@ -402,22 +402,35 @@ export function sortByReview(dir, findings, review, host = null) {
   return { kept, rejected, manual, byIdentity, unjudged: unjudged.size }
 }
 
+// Every form the crawl found (profile.forms, by its Gravity Forms id) and whether a
+// hand check or journey named it in `form`; «gform_5», «5» and «form 5» are one form.
+const formNo = (v) => String(v).replace(/\D/g, '')
+export function formCoverage(profile, checks) {
+  const named = new Set(checks.flatMap(c => c.form || []).map(formNo).filter(Boolean))
+  return (profile?.forms || []).filter(f => f.id && formNo(f.id)).map(f => {
+    const pages = [...new Set(f.pages || [])]
+    return { id: f.id, page: pages[0] || null, pages: pages.length, fields: (f.fields || []).map(x => x.label).filter(Boolean).slice(0, 3), checked: named.has(formNo(f.id)) }
+  })
+}
+
 // The latest run as Claude left it (review.json, if `qc review` ran), for `qc push`.
 export function reviewedRun(host) {
-  const { dir, findings, input } = runOf(host)
+  const { dir, findings, input, profile } = runOf(host)
   const review = existsSync(join(dir, 'review.json')) ? JSON.parse(readFileSync(join(dir, 'review.json'), 'utf8')) : { items: [] }
-  return { dir, input, findings, review, ids: idsFor(findings, input.pages), ...sortByReview(dir, findings, review, host) }
+  const sorted = sortByReview(dir, findings, review, host)
+  return { dir, input, findings, review, ids: idsFor(findings, input.pages), ...sorted, forms: formCoverage(profile, sorted.manual.checks) }
 }
 
 export function applyReview(host, reviewPath) {
-  const { dir, findings, input } = runOf(host)
+  const { dir, findings, input, profile } = runOf(host)
   const review = JSON.parse(readFileSync(reviewPath, 'utf8'))
   review.manual = [...(review.manual || []).filter(m => !m?.fromCache), ...fromCache(host, dir, review)]
   attachEvidence(host, findings)
   const { kept, rejected, manual, byIdentity, unjudged } = sortByReview(dir, findings, review, host)
   linkScreenshots(kept, dir)
   const tiles = tileCoverage(dir, review)
-  const html = renderReport({ ...input, findings: kept, rejected, siteSummary: review.summary || null, manualChecks: manual.checks, ids: idsFor(findings, input.pages), unjudged, tiles })
+  const forms = formCoverage(profile, manual.checks)
+  const html = renderReport({ ...input, findings: kept, rejected, siteSummary: review.summary || null, manualChecks: manual.checks, ids: idsFor(findings, input.pages), unjudged, tiles, forms })
   writeFileSync(join(dir, 'report.html'), html)
   writeFileSync(join(dir, 'review.json'), JSON.stringify(review, null, 2))
   saveVisualCache(host, dir, review)
@@ -427,6 +440,7 @@ export function applyReview(host, reviewPath) {
     reviewed: byIdentity.size, confirmed: count('confirmed'), falsePositive: count('false-positive'), unsure: count('unsure'),
     manualChecked: manual.checks.length, manualDefects: manual.findings.length, notReproduced: manual.notReproduced, unjudged,
     tiles,
+    forms: { checked: forms.filter(f => f.checked).length, total: forms.length, notChecked: forms.filter(f => !f.checked).map(f => f.id) },
     journeys: manual.checks.filter(c => c.check === 'journey').map(c => ({ title: c.title, width: c.width, status: c.status })),
   }
 }
