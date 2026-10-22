@@ -65,10 +65,12 @@ export function buildPayload(run) {
       breakpoints: [...g.breakpoints].sort((a, b) => a - b), evidence: [...g.shots].map(s => basename(s)), spot: g.spot || '',
     }
   })
-  // Pictures only for what failed (each defect's own); a check's screenshots are not sent for now.
+  // Pictures only for what failed: a check that passed sends none for now.
   const checks = manual.checks.map(c => {
+    const evidence = c.status === 'ok' ? [] : (c.shots || []).map(src => basename(src))
+    for (const name of evidence) files.set(name, join(dir, 'visual', name))
     const codes = [...new Set(manual.findings.filter(f => f.manual === c.index).map(f => f.id))]
-    return { check: c.check, title: c.title || '', steps: c.steps || [], defects: codes, page: c.page, width: c.width, status: c.status, checked: c.checked, evidence: [] }
+    return { check: c.check, title: c.title || '', steps: c.steps || [], defects: codes, page: c.page, width: c.width, status: c.status, checked: c.checked, evidence }
   })
   const withProblems = new Set([...kept].map(f => f.rule))
   const rulesPassed = (input.rules || []).filter(r => !withProblems.has(r.id))

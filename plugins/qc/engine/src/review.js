@@ -356,7 +356,7 @@ export function sortByReview(dir, findings, review, host = null) {
     const identity = identityOf.get(item.id)
     if (!identity) throw new Error(`review: no defect ${item.id} in the last run (run qc findings first)`)
     if (item.category && !CATEGORIES.includes(item.category)) throw new Error(`review ${item.id}: category must be one of ${CATEGORIES.join(', ')}`)
-    byIdentity.set(identity, { verdict: item.verdict, note: item.note ? String(item.note) : null, category: item.category || null })
+    byIdentity.set(identity, { verdict: item.verdict, note: item.note ? String(item.note) : null, category: item.category || null, fix: item.fix ? String(item.fix) : null })
   }
   const kept = []
   const rejected = []
@@ -364,6 +364,8 @@ export function sortByReview(dir, findings, review, host = null) {
   for (let f of findings) {
     const r = byIdentity.get(defectIdentity(f))
     if (r?.category) f = { ...f, category: r.category }
+    // Claude's own fix for this defect (the right link, the right address) replaces the rule's generic one.
+    if (r?.fix) f = { ...f, expected: r.fix }
     // A candidate nobody checked is not a defect yet: left out.
     if (!r && isCandidate(f)) { unjudged.add(defectIdentity(f)); continue }
     if (r?.verdict === 'false-positive') rejected.push({ ...f, review: r })

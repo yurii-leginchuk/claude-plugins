@@ -36,6 +36,23 @@ function rich(s) {
   return out + esc(str.slice(last))
 }
 
+// Claude's longer texts, written in a small Markdown: paragraphs (blank
+// line), lists («- » or «1. »), **bold** and `code`, with pages as links
+// (rich). A long single paragraph with no Markdown reads as one fact per
+// line. Everything still goes through esc(): no HTML from the text gets in.
+const inline = (t) => rich(t).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>')
+export function md(s) {
+  let text = String(s ?? '').trim()
+  if (!text) return ''
+  if (!/\n/.test(text) && text.length > 280) text = text.split(/(?<=[.;])\s+(?=[A-Z«“"(])/).map(x => `- ${x}`).join('\n')
+  return text.split(/\n\s*\n/).map(block => {
+    const lines = block.split('\n').map(l => l.trim()).filter(Boolean)
+    if (lines.every(l => /^[-*] /.test(l))) return `<ul class="md">${lines.map(l => `<li>${inline(l.slice(2))}</li>`).join('')}</ul>`
+    if (lines.every(l => /^\d+[.)] /.test(l))) return `<ol class="md">${lines.map(l => `<li>${inline(l.replace(/^\d+[.)] /, ''))}</li>`).join('')}</ol>`
+    return `<p class="md">${lines.map(inline).join('<br>')}</p>`
+  }).join('')
+}
+
 const CHIP = { critical: 'crit', major: 'maj', minor: 'min', note: 'note' }
 const LABEL = { critical: 'Critical', major: 'Major', minor: 'Minor', note: 'Note' }
 
@@ -140,6 +157,8 @@ dialog.lb::backdrop{background:rgba(0,0,0,.6)}
 dialog.lb .bar{position:sticky;top:0;margin:0;padding:8px 12px;background:var(--card);font-size:13px}
 dialog.lb button{font:inherit;background:none;border:1px solid var(--line);border-radius:6px;color:var(--fg);padding:2px 10px;cursor:pointer}
 dialog.lb img{display:block;max-width:100%;margin:0 auto}
+ul.md,ol.md{margin:4px 0;padding-left:20px}ul.md li,ol.md li{margin:2px 0}p.md{margin:4px 0}.kv>b+p.md,.kv>b+ul.md{margin-top:2px}
+.fix{border-left:3px solid var(--ok);padding-left:10px}.saw{font-size:14px}
 [hidden]{display:none!important}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 @media (max-width:600px){.badge{margin-left:0}.find input{width:7em}}
@@ -187,7 +206,7 @@ function picture(x) {
   if (x.suppressed) return '<p class="noshot">Picture hidden to fit the size limit.</p>'
   if (src) {
     const cap = x.spot ? spotText(x.spot, x.shotWidth) : `the problem is outlined${x.shotWidth ? ` · at ${x.shotWidth} px` : ''}`
-    return `<figure class="shot"><button type="button" data-full="${src.startsWith('data:') ? '' : esc(src)}" data-label="${esc(x.id || x.title)}"><img loading="lazy" src="${esc(src)}" alt="${esc(`${x.title}: ${cap}`)}"></button><figcaption>${esc(cap)}</figcaption></figure>`
+    return `<figure class="shot"><button type="button" data-full="${src.startsWith('data:') ? '' : esc(src)}" data-label="${esc(x.id || x.title)}"><img loading="lazy" src="${esc(src)}" alt=""></button><figcaption>${esc(cap)}</figcaption></figure>`
   }
   if (x.evidenceStatus === 'invisible' || /^(head|html|title)$|^(meta|script|link)\b|meta\[|script\[/i.test(String(x.selector || ''))) {
     return `<p class="noshot">Nothing to see on the page: this is in the page’s code${x.selector ? ` (<code>${esc(x.selector)}</code>)` : ''}.</p>`
@@ -204,9 +223,9 @@ function card(x) {
 <div class="dhead">${x.id ? `<a class="did" href="#${esc(x.id)}">${esc(x.id)}</a>` : ''}<span class="chip ${CHIP[x.severity] || 'note'}">${esc(LABEL[x.severity] || x.severity)}</span><b class="dtitle">${esc(x.title)}</b>${x.rule ? `<span class="sub">${esc(x.rule)}</span>` : ''}${scopeBadge(x.scope, pages.length)}</div>
 ${first ? `<p class="kv where">${rich(first)}${pages.length > 1 ? ` <span class="sub">and ${pages.length - 1} more</span>` : ''}${widths}</p>` : ''}
 ${picture(x)}
-<p class="kv"><b>Problem:</b> ${rich(x.found)}</p>
-${x.expected ? `<p class="kv"><b>Fix:</b> ${rich(x.expected)}</p>` : ''}
-${x.note ? `<p class="kv sub">${rich(x.note)}</p>` : ''}
+<div class="kv"><b>Problem:</b> ${md(x.found)}</div>
+${x.expected ? `<div class="kv fix"><b>Fix:</b> ${md(x.expected)}</div>` : ''}
+${x.note ? `<div class="kv sub">${md(x.note)}</div>` : ''}
 ${x.region ? `<p class="kv sub">${String(x.region).startsWith(UNNAMED_REGION_PREFIX) ? `region: shared Elementor container <code>${esc(x.region.slice(UNNAMED_REGION_PREFIX.length))}</code> (its name could not be determined)` : `region: <code>${esc(x.region)}</code>`}, shared by every page below: fix it once</p>` : ''}
 ${pages.length > 1 || x.selector ? `<details class="more"><summary>Details</summary>${x.selector ? `<p class="kv sub">selector <code>${esc(x.selector)}</code></p>` : ''}${pages.length > 1 ? `<ul class="pages">${pages.slice(0, PAGE_LIST_CAP).map(p => `<li>${rich(p)}${x.where?.[p] ? `<div class="where">${rich(x.where[p])}</div>` : ''}</li>`).join('')}</ul>${pages.length > PAGE_LIST_CAP ? `<p class="kv sub">…and ${pages.length - PAGE_LIST_CAP} more pages not shown (list limit)</p>` : ''}` : ''}</details>` : ''}
 </article>`
@@ -277,7 +296,8 @@ function journey(m, defs, { open = false } = {}) {
   return `<details class="rule journey"${open ? ' open' : ''}><summary><span class="chip ${cls}">${esc(label)}</span> <b>${esc(m.title)}</b><span class="cnt">${m.width != null ? `${esc(m.width)} px · ` : ''}${m.steps.length} steps</span></summary><div class="body">
 ${defs.length ? `<ul class="found">${defs.map(d => `<li><a class="did" href="#${esc(d.id)}">${esc(d.id)}</a> <span class="chip ${CHIP[d.severity] || 'note'}">${esc(LABEL[d.severity] || d.severity)}</span> ${esc(d.title)}</li>`).join('')}</ul>` : ''}
 <p class="kv">start: ${rich(m.page)}</p><ol class="steps">${m.steps.map(st => `<li>${rich(st)}</li>`).join('')}</ol>
-${m.checked ? `<details class="more"><summary>What Claude saw</summary><p class="kv">${rich(m.checked)}</p></details>` : ''}</div></details>`
+${m.checked ? `<details class="more"${m.status === 'ok' ? '' : ' open'}><summary>What Claude saw</summary><div class="kv saw">${md(m.checked)}</div></details>` : ''}
+${m.status !== 'ok' && (m.shots || []).length ? `<div class="strip">${m.shots.map((src, i) => thumb(src, `${m.width != null ? `${m.width} px · ` : ''}step ${i + 1}`, m.width || 768)).join('')}</div>` : ''}</div></details>`
 }
 
 // Passed: what was checked and found right, as text (no pictures for now).
@@ -288,7 +308,7 @@ function renderPassed({ manualChecks, claude, rulesPassed, tiles, browserCoverag
   const cov = browserCoverage ? `${browserCoverage.pagesDone} of ${browserCoverage.pagesTotal} pages in a browser${Array.isArray(browserCoverage.widths) && browserCoverage.widths.length ? ` at ${browserCoverage.widths.join(', ')} px` : ''}` : 'no browser pass'
   return `<p class="sub">Checked: ${esc(pages)} pages read, ${esc(cov)}${tiles ? `, ${esc(tiles.seen)} of ${esc(tiles.total)} screen pieces looked at by Claude` : ''}.</p>
 ${js.length ? `<h2>Visitor journeys that went through</h2>${js.map(m => journey(m, [])).join('')}` : ''}
-${byCheck.length ? `<h2>Checked by Claude and right</h2>${byCheck.map(([k, rows]) => `<details class="rule"><summary><span class="chip ok">ok</span> <b>${esc(CHECK_LABEL[k])}</b><span class="cnt">${rows.length} ${rows.length === 1 ? 'check' : 'checks'}</span></summary><div class="body"><p class="sub">${esc(CHECK_WHAT[k] || '')}</p>${rows.map(m => `<div class="check"><p class="kv">${m.width != null ? `<b>${esc(m.width)} px</b> · ` : ''}${rich(m.page)}</p>${m.checked ? `<p class="kv sub">${rich(m.checked)}</p>` : ''}</div>`).join('')}</div></details>`).join('')}` : ''}
+${byCheck.length ? `<h2>Checked by Claude and right</h2>${byCheck.map(([k, rows]) => `<details class="rule"><summary><span class="chip ok">ok</span> <b>${esc(CHECK_LABEL[k])}</b><span class="cnt">${rows.length} ${rows.length === 1 ? 'check' : 'checks'}</span></summary><div class="body"><p class="sub">${esc(CHECK_WHAT[k] || '')}</p>${rows.map(m => `<div class="check"><p class="kv">${m.width != null ? `<b>${esc(m.width)} px</b> · ` : ''}${rich(m.page)}</p>${m.checked ? `<div class="kv sub">${md(m.checked)}</div>` : ''}</div>`).join('')}</div></details>`).join('')}` : ''}
 ${(() => { const none = ['menu', 'popup', 'form', 'faq', 'focus', 'content'].filter(k => !checks.some(m => m.check === k)); return none.length ? `<p class="sub">Not checked by hand: ${none.map(k => esc(CHECK_LABEL[k])).join(', ')}.</p>` : '' })()}
 ${rulesPassed.length ? `<h2>Automatic checks with no problems</h2><div class="rules-ok">${rulesPassed.map(r => `<div><span class="chip ok">ok</span> <b>${esc(r.id)}</b> ${esc(r.title)}</div>`).join('')}</div>` : ''}`
 }

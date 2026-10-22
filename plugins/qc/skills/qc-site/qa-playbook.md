@@ -207,3 +207,26 @@ Do not economise on pages: every page that is not a post gets the browser pass, 
 review and its copy read. Posts share one template: the static audit reads all of them, the
 browser pass and the visual review (every piece) take the newest 10 (`qc browse --posts 10`, the default), the
 copy agent reads the newest 10 in full and skims the rest's titles and intros.
+
+## Every failed item says how to fix it
+
+The rule's own «expected» is generic («a working link», «a valid path»). For every defect that
+stays in the report — the engine's confirmed ones and your own — work out the concrete fix and
+write it as `fix` on the item (`{ "id": "D12", "verdict": "confirmed", "note": "…", "fix": "…" }`)
+or as `expected` on a manual defect. Look it up, do not guess:
+
+- **a broken or wrong link**: find where it should go — the page that moved (the sitemap, the
+  site search, the PA CMS page list, a page with the same title), the file in the uploads (the
+  same file name under `/wp-content/uploads/`), the live site's URL for a dev link; give the
+  exact URL to put in;
+- **a Google Business Profile link, a phone, an address, hours**: the right one from the facts
+  file and the knowledge base (the contact page, the GBP the site lists elsewhere); say which
+  source it comes from;
+- **text**: the corrected words, quoted;
+- **layout**: what to change and where (the Elementor widget or section, the setting, the width);
+- when the right value cannot be found, say what is missing and who has it («the client must
+  send the new PDF»), never invent one.
+
+Write it in the small Markdown the report renders: a short paragraph or a «- » list, `code` for
+values to paste, **bold** for the one thing to change. The same Markdown works in `checked`:
+one fact per line («- Popup opened in 3 s»), not one long paragraph.

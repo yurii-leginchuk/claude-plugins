@@ -574,3 +574,11 @@ test('two tabs: failed is open by default with the problems, passed lists rules 
   assert.match(passed, /Call/)
   assert.doesNotMatch(out, /visual\/j\.png/, 'no pictures for what passed')
 })
+
+test('Claude writes a small Markdown: lists, bold and code render, HTML in it does not', async () => {
+  const { md } = await import('../../src/report/html.js')
+  assert.equal(md('- Popup opened in 3 s\n- **Submit** stays `visible`'), '<ul class="md"><li>Popup opened in 3 s</li><li><b>Submit</b> stays <code>visible</code></li></ul>')
+  assert.doesNotMatch(md('<script>alert(1)</script> **x**'), /<script>/)
+  const long = 'Popup opened in about 3 s. Service Type is a custom dropdown. '.repeat(6)
+  assert.match(md(long), /^<ul class="md"><li>Popup opened in about 3 s\.<\/li>/, 'a long paragraph reads as one fact per line')
+})

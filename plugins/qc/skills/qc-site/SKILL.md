@@ -207,7 +207,10 @@ user asks for it: translate the HTML artifact (`report.html`) and republish it; 
      (a heading-level skip that is a tag swap is `dev`; a schema placeholder address needs the real
      address — `seo`; a hub card for a missing service needs its text — `copy`). The report shows
      the team on every defect (the split is hidden in the report for now; the data is kept).
-   - Write `{ "summary": "<about the site>", "items": [{ "id": "D3", "verdict": "...", "note": "...", "category": "dev" }], "manual": [ … ] }`
+   - **Give every kept defect its concrete fix** (`qa-playbook.md` «Every failed item says how to
+     fix it»): the right URL, the right GBP link, the corrected text — looked up, not guessed —
+     in `fix` on the item.
+   - Write `{ "summary": "<about the site>", "items": [{ "id": "D3", "verdict": "...", "note": "...", "fix": "...", "category": "dev" }], "manual": [ … ] }`
      (`manual`: your Playwright checks and the content check, format in `/qc-browse`) to
      `<runDir>/review-input.json` and run
      `node <plugin-root>/engine/src/cli.js review "<host>" "<runDir>/review-input.json"`. It re-renders
