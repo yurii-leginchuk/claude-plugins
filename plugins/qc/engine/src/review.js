@@ -152,7 +152,7 @@ function manualOf(review, dir, host = null) {
     if (f.marked) continue
     const e = evidence[evidenceKey(f)]
     if (e?.status === 'ok' && e.path && existsSync(e.path)) { f.shot = e.path; f.shotWidth = e.width; if (e.spot) f.spot = e.spot }
-    else if (e) f.evidenceStatus = e.status
+    else if (e) { f.evidenceStatus = e.status; if (e.why) f.spot = { note: e.why } }
   }
   return { checks, findings, notReproduced }
 }

@@ -32,6 +32,9 @@ const MOBILE = 360
 const INVISIBLE = /^(head|html|title)$|^(meta|script|link)\b|script\[|meta\[/i
 const GENERIC = /^(body|html|main|a|div|span|p|li|ul|section|img|svg)$/i
 
+// Something the page lacks (no H1, no FAQ block): there is nothing to outline,
+// so the picture is the page's first screen, saying so.
+export const isMissing = (f) => !f.target && (!f.selector || /^(body|main)$/.test(f.selector)) && /\b(not found|missing|does not|has no|no \w+ block)\b/i.test(String(f.found || ''))
 const sha = (s) => createHash('sha1').update(String(s)).digest('hex').slice(0, 16)
 const indexPath = (host) => join(snapshotDir(host), 'evidence.json')
 
@@ -89,7 +92,10 @@ export function needles(f) {
   const urls = [...found.matchAll(/https?:\/\/[^\s”"»)]+/g)].map(m => m[0].replace(/[.,;:]+$/, ''))
   const paths = [...found.matchAll(/(?<![\w.:/-])\/(?:[a-z0-9-]+\/){1,4}/g)].map(m => m[0])
   const phones = [...found.matchAll(/\+?\d[\d\s().-]{8,}\d/g)].map(m => m[0].trim())
-  const short = [...phones, ...paths, ...quoted, ...urls]
+  // a bare email in the text (E6), a tel:/mailto: href written as found (E4)
+  const emails = [...found.matchAll(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g)].map(m => m[0])
+  const hrefs = [...found.matchAll(/\b(?:tel|mailto):[^\s”"»)]+/gi)].map(m => m[0])
+  const short = [...hrefs, ...emails, ...phones, ...paths, ...quoted, ...urls]
   const where = String(f.where || '')
   const snippet = (where.split(' · ').find(s => s.startsWith('…')) || '').replace(/^…|…$/g, '').trim()
   for (const n of short) {
@@ -123,6 +129,13 @@ export function locateSpot({ sel, href, linkText, needles: ns, cores = [], notIn
   }
   if (!el) {
     for (const n of ns) {
+      if (!/^(tel|mailto):/i.test(n)) continue
+      el = pick([...document.querySelectorAll('a[href]')].filter(a => a.getAttribute('href').trim().toLowerCase() === n.toLowerCase()))
+      if (el) { how = 'link href'; break }
+    }
+  }
+  if (!el) {
+    for (const n of ns) {
       if (!/^https?:\/\//.test(n)) continue
       el = pick(byText([...document.querySelectorAll('a[href]')].filter(a => a.href === n || a.href.replace(/\/$/, '') === n.replace(/\/$/, ''))))
       if (el) { how = 'link url'; break }
@@ -150,7 +163,7 @@ export function locateSpot({ sel, href, linkText, needles: ns, cores = [], notIn
       const want = norm(n)
       const img = [...document.querySelectorAll('img')].find(i => norm(i.alt).includes(want) || String(i.currentSrc || i.src).toLowerCase().includes(want))
       if (img && want.length > 8) {
-        if (!vis(img)) return { hidden: 'the image is on the page but hidden at this width' }
+        if (!vis(img)) return { hidden: img.closest('.jet-popup, .elementor-popup-modal, [role=dialog], dialog, [class*=popup], [class*=modal]') ? 'it is inside a popup that is closed when the page loads; open the popup to see it' : 'the image is on the page but hidden at this width' }
         el = img; how = `image: ${n.slice(0, 40)}`; break
       }
       // With notInLinks, only the element's own words outside any link count.
@@ -185,7 +198,16 @@ export function locateSpot({ sel, href, linkText, needles: ns, cores = [], notIn
     // There, but not visible: screen-reader text, a hidden-at-this-width block.
     let any = null
     try { any = (href && href !== '#' && document.querySelector(`a[href="${CSS.escape(href)}"]`)) || (sel && document.querySelector(sel)) } catch { any = null }
-    if (any && !vis(any)) return { hidden: 'the element is on the page but not visible at this width' }
+    const POPUP = '.jet-popup, .elementor-popup-modal, [role=dialog], dialog, [class*=popup], [class*=modal]'
+    const inPopup = (e) => Boolean(e && e.closest(POPUP))
+    const closedPopup = 'it is inside a popup that is closed when the page loads; open the popup to see it'
+    if (any && !vis(any)) return { hidden: inPopup(any) ? closedPopup : 'the element is on the page but not visible at this width' }
+    // the words are in the page but nobody sees them now: a closed popup, tab, slider or menu
+    for (const n of ns.filter(n => n.length > 8)) {
+      const want = norm(n)
+      const holder = [...document.body.querySelectorAll('*')].reverse().find(e => norm(e.textContent).includes(want))
+      if (holder) return { hidden: inPopup(holder) ? closedPopup : 'the text is on the page but hidden (a closed tab, slide or menu); open it to see it' }
+    }
     return null
   }
   // Several mistakes in one block (typos, a repeated phrase): the block is the
@@ -333,13 +355,13 @@ export async function captureEvidence(host, { force = false, launchBrowserImpl =
     if (f.shot && !ours) summary.browserShots++
     if (ours && force) { delete f.shot; delete f.shotWidth; delete f.shotDataUri }
     if (index[identity]?.status === 'ok' && existsSync(index[identity].path)) { summary.already++; continue }
-    if (INVISIBLE.test(String(f.selector || '')) || f.zone === 'head' || f.rule === 'X1' || /screen-reader|screen-only|skip-link/.test(String(f.selector || ''))) {
+    if (INVISIBLE.test(String(f.selector || '')) || f.zone === 'head' || ['X1', 'J1'].includes(f.rule) || /screen-reader|screen-only|skip-link/.test(String(f.selector || ''))) {
       index[identity] = { status: 'invisible', page: f.page }
       summary.invisible++
       continue
     }
     // At the width it was found at: a 320 px overflow does not exist at 1440.
-    todo.push({ identity, f, width: f.shotWidth || f.breakpoint || EVIDENCE_WIDTH })
+    todo.push({ identity, f, width: f.shotWidth || f.breakpoint || EVIDENCE_WIDTH, missing: isMissing(f) })
   }
   const groups = new Map()
   for (const t of todo) {
@@ -356,7 +378,16 @@ export async function captureEvidence(host, { force = false, launchBrowserImpl =
       const page = await newPage()
       try {
         await preparePage(page, { width, url: f0.page })
-        for (const { identity, f } of items) {
+        for (const { identity, f, missing } of items) {
+          if (missing) {
+            const path = join(snapshotDir(host), 'evidence', sha(identity) + '.webp')
+            await page.evaluate(() => window.scrollTo(0, 0))
+            await crop(page, { x: 0, y: 0, w: width, h: 700, docW: width }, width, path)
+            index[identity] = { status: 'ok', path, page: f.page, width, how: 'first screen', spot: { region: 'the page’s first screen', label: null, kind: 'nothing to outline: it is missing' } }
+            summary.captured++
+            done++
+            continue
+          }
           // A defect that names its target is looked for by that only.
           const t = f.target
           const sel = t ? (t.selector || null) : f.selector && !GENERIC.test(f.selector) ? f.selector : null

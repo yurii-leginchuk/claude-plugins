@@ -33,3 +33,18 @@ test('several mistakes in one block: the block is the spot, each mistake is mark
     assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('[data-qc-mark]')].map(m => m.textContent)), ['buiness', 'instance', 'needed help Mike'])
   } finally { await b.browser.close() }
 })
+
+test('a bare email and a tel: href are found; words in a closed tab say they are hidden', async () => {
+  const { needles } = await import('../../src/browser/evidence.js')
+  assert.ok(needles({ found: 'SPetrella@starshep.com' }).includes('SPetrella@starshep.com'))
+  assert.ok(needles({ found: 'tel:8008544625' }).includes('tel:8008544625'))
+  const b = await launchBrowser()
+  try {
+    const page = await b.newPage()
+    await page.setContent('<a id="t" href="tel:8008544625">(800) 854-4625</a><div style="display:none">How One Small Click Led To Big Headaches</div>')
+    assert.ok(await page.evaluate(locateSpot, { sel: null, href: null, linkText: null, needles: ['tel:8008544625'], cores: [] }))
+    assert.equal(await page.evaluate(() => document.querySelector('[data-qc-ev]')?.id), 't')
+    const hidden = await page.evaluate(locateSpot, { sel: null, href: null, linkText: null, needles: ['How One Small Click Led To Big Headaches'], cores: [] })
+    assert.match(hidden.hidden, /hidden/)
+  } finally { await b.browser.close() }
+})

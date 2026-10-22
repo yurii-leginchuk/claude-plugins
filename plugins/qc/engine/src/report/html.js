@@ -243,6 +243,9 @@ function picture(x) {
     const cap = x.spot ? spotText(x.spot, x.shotWidth) : `the problem is outlined${x.shotWidth ? ` · at ${x.shotWidth} px` : ''}`
     return `<figure class="shot"><button type="button" data-full="${src.startsWith('data:') ? '' : esc(src)}" data-label="${esc(x.id || x.title)}"><img loading="lazy" src="${esc(src)}" alt=""></button><figcaption>${esc(cap)}</figcaption></figure>`
   }
+  if (x.rule === 'X1') return '<p class="noshot">Nothing to see on the page: this is an error in the browser console.</p>'
+  // there, but hidden at this moment (a closed tab, a slide, another width)
+  if (x.spot?.note) return `<p class="noshot">No picture: ${esc(x.spot.note)}.</p>`
   if (x.evidenceStatus === 'invisible' || /^(head|html|title)$|^(meta|script|link)\b|meta\[|script\[/i.test(String(x.selector || ''))) {
     return `<p class="noshot">Nothing to see on the page: this is in the page’s code${x.selector ? ` (<code>${esc(x.selector)}</code>)` : ''}.</p>`
   }
