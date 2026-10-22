@@ -170,9 +170,9 @@ button:focus-visible,input:focus-visible,a:focus-visible,summary:focus-visible{o
 .shot img{display:block;max-width:100%;height:auto;max-height:520px;object-fit:contain}
 .shot figcaption{font-size:12px;color:var(--mut);margin-top:4px}
 .noshot{font-size:13px;color:var(--mut);background:var(--card);border:1px dashed var(--line);border-radius:8px;padding:8px 12px;margin:10px 0}
-details.more>summary{cursor:pointer;color:var(--mut);font-size:13px;margin-top:6px}
+details.more>summary{cursor:pointer;color:var(--mut);font-size:13px;margin-top:6px}.steps-box>summary{font-weight:600;color:var(--fg);font-size:14px}
 ul.pages{margin:6px 0 0;padding-left:18px;color:var(--mut);font-size:13px}ul.pages li{overflow-wrap:anywhere}ul.pages .where{color:var(--fg)}
-ul.found{list-style:none;padding:0;margin:4px 0 10px;display:grid;gap:12px}ul.found>li{border-bottom:1px solid var(--line);padding-bottom:10px}.small-shot .shot{max-width:460px}.small-shot .shot img{max-height:340px}
+ul.found{list-style:none;padding:0;margin:4px 0 10px;display:grid;gap:6px}.small-shot .shot{max-width:460px}.small-shot .shot img{max-height:340px}
 .steps{margin:6px 0 10px;padding-left:22px}.steps li{margin:3px 0;overflow-wrap:anywhere}
 .check{border-top:1px solid var(--line);padding:8px 0}.check:first-of-type{border-top:0}
 .rules-ok{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:6px 16px;font-size:14px}
@@ -268,12 +268,14 @@ ${pages.length > 1 || x.selector ? `<details class="more"><summary>Details</summ
 // Claude's defects, one per id with every page it names.
 function claudeDefects(findings) {
   const byId = new Map()
+  // the same defect found at two widths or on two checks (M8 at 360, M9 at 1440) is one card
   for (const f of findings) {
-    const k = f.id || `${f.rule}|${f.found}`
-    if (!byId.has(k)) byId.set(k, { ...f, pages: [], widths: new Set() })
+    const k = defectIdentity(f)
+    if (!byId.has(k)) byId.set(k, { ...f, pages: [], widths: new Set(), manuals: new Set() })
     const d = byId.get(k)
     if (f.page && !d.pages.includes(f.page)) d.pages.push(f.page)
     if (f.breakpoint != null) d.widths.add(f.breakpoint)
+    if (f.manual != null) d.manuals.add(f.manual)
   }
   return [...byId.values()].map(d => ({ ...d, widths: [...d.widths].sort((a, b) => a - b) }))
 }
@@ -308,17 +310,12 @@ function items(groups, claude, { totalPages, breakpointsByIdentity, suppressedSh
   return out
 }
 
-// Failed: problems by severity, then by what kind of problem.
+// Failed: every problem once, one list, the worst first.
 function renderProblems(list) {
   if (!list.length) return '<p class="sub">No violations found: everything checked passed.</p>'
-  return SEVERITIES.filter(s => list.some(x => x.severity === s)).map(s => {
-    const inSev = list.filter(x => x.severity === s)
-    const groups = new Map()
-    for (const x of inSev) (groups.get(x.group) || groups.set(x.group, []).get(x.group)).push(x)
-    const open = s === 'critical' || s === 'major'
-    return `<section class="sev"><h2><span class="chip ${CHIP[s]}">${LABEL[s]}</span> ${inSev.length} ${inSev.length === 1 ? 'problem' : 'problems'}</h2>
-${[...groups].sort((a, b) => b[1].length - a[1].length).map(([g, xs]) => `<details class="rule group"${open ? ' open' : ''}><summary><b>${esc(g)}</b><span class="cnt">${xs.length} ${xs.length === 1 ? 'problem' : 'problems'} · ${new Set(xs.flatMap(x => x.pages)).size} pages</span><span class="ids">${xs.filter(x => x.id).map(x => `<a class="did" href="#${esc(x.id)}">${esc(x.id)}</a>`).join('')}</span></summary><div class="body">${xs.slice(0, DEFECT_CAP).map(card).join('')}${xs.length > DEFECT_CAP ? `<p class="kv">…and ${xs.length - DEFECT_CAP} more defects not shown (list limit)</p>` : ''}</div></details>`).join('')}</section>`
-  }).join('')
+  const order = { critical: 0, major: 1, minor: 2, note: 3 }
+  const sorted = [...list].sort((a, b) => (order[a.severity] ?? 9) - (order[b.severity] ?? 9) || (b.pages?.length || 0) - (a.pages?.length || 0))
+  return `<h2>Problems <span class="sub">${list.length}</span></h2>${sorted.slice(0, DEFECT_CAP * 5).map(card).join('')}${sorted.length > DEFECT_CAP * 5 ? `<p class="kv">…and ${sorted.length - DEFECT_CAP * 5} more defects not shown (list limit)</p>` : ''}`
 }
 
 const JOURNEY_STATUS = { ok: ['ok', 'passed'], defect: ['crit', 'had problems'], skipped: ['note', 'not done'] }
@@ -328,10 +325,10 @@ const JOURNEY_STATUS = { ok: ['ok', 'passed'], defect: ['crit', 'had problems'],
 function journey(m, defs, { open = false } = {}) {
   const [cls, label] = JOURNEY_STATUS[m.status] || JOURNEY_STATUS.skipped
   return `<details class="rule journey"${open ? ' open' : ''}><summary><span class="chip ${cls}">${esc(label)}</span> <b>${esc(m.title)}</b><span class="cnt">${m.width != null ? `${esc(m.width)} px · ` : ''}${m.steps.length} steps</span></summary><div class="body">
-${defs.length ? `<ul class="found">${defs.map(d => `<li><div><a class="did" href="#${esc(d.id)}">${esc(d.id)}</a> <span class="chip ${CHIP[d.severity] || 'note'}">${esc(LABEL[d.severity] || d.severity)}</span> <b>${esc(d.title)}</b></div><div class="small-shot">${picture(d)}</div>${d.expected ? `<div class="kv fix"><b>Fix:</b> ${md(d.expected)}</div>` : ''}</li>`).join('')}</ul>` : ''}
-<p class="kv">start: ${rich(m.page)}</p><ol class="steps">${m.steps.map(st => `<li>${rich(st)}</li>`).join('')}</ol>
-${m.checked ? `<details class="more"${m.status === 'ok' ? '' : ' open'}><summary>What the agent saw</summary><div class="kv saw">${md(m.checked)}</div></details>` : ''}
-${m.status !== 'ok' && (m.shots || []).length ? `<div class="strip">${m.shots.map((src, i) => thumb(src, `${m.width != null ? `${m.width} px · ` : ''}step ${i + 1}`, m.width || 768)).join('')}</div>` : ''}</div></details>`
+${defs.length ? `<ul class="found">${defs.map(d => `<li><a class="did" href="#${esc(d.id)}">${esc(d.id)}</a> <span class="chip ${CHIP[d.severity] || 'note'}">${esc(LABEL[d.severity] || d.severity)}</span> <a href="#${esc(d.id)}" class="jlink">${esc(d.title)}</a></li>`).join('')}</ul>` : ''}
+<details class="more steps-box"><summary>Steps (${m.steps.length})</summary><p class="kv">start: ${rich(m.page)}</p><ol class="steps">${m.steps.map(st => `<li>${rich(st)}</li>`).join('')}</ol>
+${m.checked ? `<p class="kv"><b>What the agent saw</b></p><div class="kv saw">${md(m.checked)}</div>` : ''}
+${m.status !== 'ok' && (m.shots || []).length ? `<div class="strip">${m.shots.map((src, i) => thumb(src, `${m.width != null ? `${m.width} px · ` : ''}step ${i + 1}`, m.width || 768)).join('')}</div>` : ''}</details></div></details>`
 }
 
 // Passed: what was checked and found right, as text (no pictures for now).
@@ -358,7 +355,7 @@ if(!el||!/^[DM]\\d+$/.test(id)){if(!quiet&&msg)msg.textContent='No problem '+id+
 if(window.qcShowTab)window.qcShowTab('failed');for(let p=el.parentElement;p;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true;
 el.scrollIntoView({block:'center'});el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');if(msg)msg.textContent=''}
 const f=document.getElementById('qc-find-form');if(f)f.addEventListener('submit',e=>{e.preventDefault();go(document.getElementById('qc-find').value)});
-document.addEventListener('click',e=>{const a=e.target.closest('a.did');if(a){e.preventDefault();go(a.getAttribute('href'),true)}});
+document.addEventListener('click',e=>{const a=e.target.closest('a.did, a.jlink');if(a){e.preventDefault();go(a.getAttribute('href'),true)}});
 if(location.hash&&location.hash!=='#passed'&&location.hash!=='#failed')go(location.hash,true)})()</script>`
 
 // The picture full size; the <img> is made on first open, so a report with
@@ -460,7 +457,7 @@ export function renderReport({
     const ctx = { totalPages: pages, breakpointsByIdentity, suppressedShots: suppressedShots ?? new Set(), candidates, ids }
     const problems = items(groups, claudeSolid, ctx)
     const unsure = items(heur, claudeUnsure, ctx)
-    const defsOf = (m) => claudeSolid.filter(d => d.manual === m.index)
+    const defsOf = (m) => claudeSolid.filter(d => d.manuals.has(m.index))
     const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">

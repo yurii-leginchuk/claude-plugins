@@ -194,13 +194,13 @@ test('qc findings lists distinct defects with ids, qc review moves false positiv
   assert.match(manualHtml, /menu sticks out 40 px on the right/)
   const m1 = reviewedRun(host).kept.find(x => x.id === 'M1')
   assert.equal(m1.shot, join(out.runDir, 'visual', 'manual-0-0.png'), 'a manual defect carries its check screenshot, so the card and qc push show it')
-  assert.match(manualHtml, /<b>Copy<\/b><span class="cnt">1 problem/)
+  assert.match(manualHtml, /under an hour/)
   // Every defect carries the id `qc findings` gave it, manual ones M1…, and the report can find them.
   for (const d of listFindings(host).defects.filter(x => x.id !== e4.id && !x.verify && !x.judge)) assert.match(manualHtml, new RegExp(`id="${d.id}"`), d.id)
   assert.match(manualHtml, /<div class="defect" id="M1">|id="M1"/)
   assert.match(manualHtml, /id="qc-find"/)
   assert.match(manualHtml, /\/\^\[DM\]\\d\+\$\//, 'the id pattern survives escaping')
-  assert.match(manualHtml, /<b>Menu<\/b><span class="cnt">1 problem/)
+  assert.match(manualHtml, /<ul class="found"><li><a class="did" href="#M\d+">/, 'the journey links its problems, the card is in the list once')
   assert.match(manualHtml, /<li><a href="https:\/\/ex\.com\/b\/"/, 'a content defect lists every page it names')
   const bad = (d, m = {}) => { write(file, JSON.stringify({ manual: [{ check: 'menu', page: 'https://ex.com/', width: 360, status: 'defect', shots: [shot], defects: [{ rule: 'C6', impact: 'broken', verified: 'reproduced', found: 'a', expected: 'b', ...d }], ...m }] })); applyReview(host, file) }
   assert.throws(() => bad({ rule: 'H16' }), /rule for menu must be one of/)

@@ -394,7 +394,6 @@ test("Claude's menu defects are failed problems that count; the ok menu check is
   assert.doesNotMatch(html, /verdict v-Pass/, 'a menu defect counts')
   const [failed, passed] = html.split('id="panel-passed"')
   assert.match(failed, /no “Blog” item/)
-  assert.match(failed, /<b>Menu<\/b>/, 'grouped under the check it came from')
   assert.match(failed, /src="visual\/mark-0-M1\.png"/, 'the card shows its own outlined picture')
   assert.match(passed, /<span class="chip ok">ok<\/span> <b>Menu<\/b>/)
   assert.match(passed, /all fine/)

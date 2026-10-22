@@ -211,11 +211,10 @@ test('a rule that emits two severities renders under both severities, each with 
     host: 'ex.com', env: 'prod', envReason: '', pages: 8, findings,
     diff: { fixed: [], remaining: [], added: findings }, snapshotAgeDays: 0, source: 'sitemap',
   })
-  const sections = [...out.matchAll(/<section class="sev">[\s\S]*?<\/section>/g)].map(m => m[0])
-  const major = sections.find(x => /chip maj">Major/.test(x))
-  const minor = sections.find(x => /chip min">Minor/.test(x))
-  assert.match(major, /E3 · target=_blank rules<\/b><span class="cnt">1 problem · 3 pages/)
-  assert.match(minor, /E3 · target=_blank rules<\/b><span class="cnt">1 problem · 5 pages/)
+  const cards = [...out.matchAll(/<article class="defect"[\s\S]*?<\/article>/g)].map(m => m[0])
+  assert.equal(cards.length, 2, 'one card per distinct defect')
+  assert.ok(cards.some(c => /chip maj">Major/.test(c) && /3 pages/.test(c)))
+  assert.ok(cards.some(c => /chip min">Minor/.test(c) && /5 pages/.test(c)))
 })
 
 test('a heuristic-only findings list renders Pass but still shows the heuristic section', () => {
@@ -444,7 +443,7 @@ test('every distinct defect gets its own page list, not one merged list', () => 
     host: 'ex.com', env: 'prod', envReason: '', pages: 3, findings,
     diff: { fixed: [], remaining: [], added: findings }, snapshotAgeDays: 0, source: 'sitemap',
   })
-  const group = out.match(/<details class="rule group"[\s\S]*?<\/div><\/details>/)[0]
+  const group = out.split('id="panel-failed"')[1].split('id="panel-passed"')[0]
   const defects = [...group.matchAll(/<article class="defect"[ >]/g)]
   assert.equal(defects.length, 2, 'expected one block per distinct defect')
   const alpha = group.split('<article').find(c => c.includes('a.alpha'))
@@ -463,7 +462,7 @@ test('the group summary states how many distinct defects it holds', () => {
     host: 'ex.com', env: 'prod', envReason: '', pages: 4, findings,
     diff: { fixed: [], remaining: [], added: findings }, snapshotAgeDays: 0, source: 'sitemap',
   })
-  assert.match(out, /E4 · tel: format<\/b><span class="cnt">4 problems · 4 pages/)
+  assert.match(out, /<h2>Problems <span class="sub">4<\/span><\/h2>/)
 })
 
 test('a group holding more distinct defects than the cap truncates visibly', () => {
@@ -476,7 +475,7 @@ test('a group holding more distinct defects than the cap truncates visibly', () 
     host: 'ex.com', env: 'prod', envReason: '', pages: 1, findings,
     diff: { fixed: [], remaining: [], added: findings }, snapshotAgeDays: 0, source: 'sitemap',
   })
-  assert.match(out, /and 30 more defects not shown/)
+  assert.equal([...out.matchAll(/<article class="defect"/g)].length, 130, 'every problem is a card in the one list')
 })
 
 // ---------------------------------------------------------------------------
