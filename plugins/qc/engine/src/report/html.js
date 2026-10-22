@@ -193,6 +193,7 @@ ul.md,ol.md{margin:4px 0;padding-left:20px}ul.md li,ol.md li{margin:2px 0}p.md{m
 .md .before{border-left:3px solid var(--crit)}.md .after{border-left:3px solid var(--ok)}.md .value{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--card);padding:0 4px;border-radius:4px}
 .md pre{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:8px;overflow-x:auto;font-size:12px}.md kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;font-size:12px}
 .md mark{background:color-mix(in srgb,var(--hi) 25%,transparent);color:inherit}
+hr.sep{border:0;border-top:1px dashed var(--line);margin:12px 0}
 [hidden]{display:none!important}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 @media (max-width:600px){.badge{margin-left:0}.find input{width:7em}}
@@ -320,25 +321,38 @@ function renderProblems(list) {
 
 const JOURNEY_STATUS = { ok: ['ok', 'passed'], defect: ['crit', 'had problems'], skipped: ['note', 'not done'] }
 
-// A visitor's task: its steps, and the problems found on the way (linked, the
-// cards are in the list below).
-function journey(m, defs, { open = false } = {}) {
-  const [cls, label] = JOURNEY_STATUS[m.status] || JOURNEY_STATUS.skipped
-  return `<details class="rule journey"${open ? ' open' : ''}><summary><span class="chip ${cls}">${esc(label)}</span> <b>${esc(m.title)}</b><span class="cnt">${m.width != null ? `${esc(m.width)} px · ` : ''}${m.steps.length} steps</span></summary><div class="body">
-${defs.length ? `<ul class="found">${defs.map(d => `<li><a class="did" href="#${esc(d.id)}">${esc(d.id)}</a> <span class="chip ${CHIP[d.severity] || 'note'}">${esc(LABEL[d.severity] || d.severity)}</span> <a href="#${esc(d.id)}" class="jlink">${esc(d.title)}</a></li>`).join('')}</ul>` : ''}
-<details class="more steps-box"><summary>Steps (${m.steps.length})</summary><p class="kv">start: ${rich(m.page)}</p><ol class="steps">${m.steps.map(st => `<li>${rich(st)}</li>`).join('')}</ol>
+// A visitor's task at every width it ran at, as one card: its problems
+// (links to the cards in the list), then the steps of each width, folded.
+export function journeyGroups(checks) {
+  const by = new Map()
+  for (const m of checks.filter(c => c.check === 'journey')) {
+    const k = String(m.title || '').trim().toLowerCase()
+    if (!by.has(k)) by.set(k, [])
+    by.get(k).push(m)
+  }
+  return [...by.values()].map(runs => runs.sort((a, b) => (a.width ?? 0) - (b.width ?? 0)))
+}
+const runStatus = (runs) => (runs.some(m => m.status === 'defect') ? 'defect' : runs.every(m => m.status === 'ok') ? 'ok' : 'skipped')
+function journey(runs, defs, { open = false } = {}) {
+  const status = runStatus(runs)
+  const [cls, label] = JOURNEY_STATUS[status] || JOURNEY_STATUS.skipped
+  const widths = runs.map(m => m.width).filter(w => w != null)
+  const steps = (m) => `${runs.length > 1 ? `<p class="kv"><b>At ${esc(m.width)} px</b>${m.status === 'ok' ? ' · <span class="sub">passed</span>' : ''}</p>` : ''}<p class="kv">start: ${rich(m.page)}</p><ol class="steps">${m.steps.map(st => `<li>${rich(st)}</li>`).join('')}</ol>
 ${m.checked ? `<p class="kv"><b>What the agent saw</b></p><div class="kv saw">${md(m.checked)}</div>` : ''}
-${m.status !== 'ok' && (m.shots || []).length ? `<div class="strip">${m.shots.map((src, i) => thumb(src, `${m.width != null ? `${m.width} px · ` : ''}step ${i + 1}`, m.width || 768)).join('')}</div>` : ''}</details></div></details>`
+${m.status !== 'ok' && (m.shots || []).length ? `<div class="strip">${m.shots.map((src, i) => thumb(src, `${m.width != null ? `${m.width} px · ` : ''}step ${i + 1}`, m.width || 768)).join('')}</div>` : ''}`
+  return `<details class="rule journey"${open ? ' open' : ''}><summary><span class="chip ${cls}">${esc(label)}</span> <b>${esc(runs[0].title)}</b><span class="cnt">${widths.length ? `${widths.map(esc).join(', ')} px` : ''}</span></summary><div class="body">
+${defs.length ? `<ul class="found">${defs.map(d => `<li><a class="did" href="#${esc(d.id)}">${esc(d.id)}</a> <span class="chip ${CHIP[d.severity] || 'note'}">${esc(LABEL[d.severity] || d.severity)}</span> <a href="#${esc(d.id)}" class="jlink">${esc(d.title)}</a>${d.widths?.length ? ` <span class="sub">· ${d.widths.map(esc).join(', ')} px</span>` : ''}</li>`).join('')}</ul>` : ''}
+<details class="more steps-box"><summary>Steps</summary>${runs.map(steps).join('<hr class="sep">')}</details></div></details>`
 }
 
 // Passed: what was checked and found right, as text (no pictures for now).
 function renderPassed({ manualChecks, claude, rulesPassed, tiles, browserCoverage, pages }) {
   const checks = Array.isArray(manualChecks) ? manualChecks : []
-  const js = checks.filter(m => m.check === 'journey' && m.status === 'ok')
+  const js = journeyGroups(checks).filter(runs => runStatus(runs) === 'ok')
   const byCheck = Object.keys(CHECK_LABEL).filter(k => k !== 'journey').map(k => [k, checks.filter(m => m.check === k && m.status === 'ok')]).filter(([, rows]) => rows.length)
   const cov = browserCoverage ? `${browserCoverage.pagesDone} of ${browserCoverage.pagesTotal} pages in a browser${Array.isArray(browserCoverage.widths) && browserCoverage.widths.length ? ` at ${browserCoverage.widths.join(', ')} px` : ''}` : 'no browser pass'
   return `<p class="sub">Checked: ${esc(pages)} pages read, ${esc(cov)}${tiles ? `, ${esc(tiles.seen)} of ${esc(tiles.total)} screen pieces looked at by the agent` : ''}.</p>
-${js.length ? `<h2>Visitor journeys that went through</h2>${js.map(m => journey(m, [])).join('')}` : ''}
+${js.length ? `<h2>Visitor journeys that went through</h2>${js.map(runs => journey(runs, [])).join('')}` : ''}
 ${byCheck.length ? `<h2>Checked by the agent and right</h2>${byCheck.map(([k, rows]) => `<details class="rule"><summary><span class="chip ok">ok</span> <b>${esc(CHECK_LABEL[k])}</b><span class="cnt">${rows.length} ${rows.length === 1 ? 'check' : 'checks'}</span></summary><div class="body"><p class="sub">${esc(CHECK_WHAT[k] || '')}</p>${rows.map(m => `<div class="check"><p class="kv">${m.width != null ? `<b>${esc(m.width)} px</b> · ` : ''}${rich(m.page)}</p>${m.checked ? `<div class="kv sub">${md(m.checked)}</div>` : ''}</div>`).join('')}</div></details>`).join('')}` : ''}
 ${(() => { const none = ['menu', 'popup', 'form', 'faq', 'focus', 'content'].filter(k => !checks.some(m => m.check === k)); return none.length ? `<p class="sub">Not checked by hand: ${none.map(k => esc(CHECK_LABEL[k])).join(', ')}.</p>` : '' })()}
 ${rulesPassed.length ? `<h2>Automatic checks with no problems</h2><div class="rules-ok">${rulesPassed.map(r => `<div><span class="chip ok">ok</span> <b>${esc(r.id)}</b> ${esc(r.title)}</div>`).join('')}</div>` : ''}`
@@ -419,8 +433,8 @@ export function renderReport({
   const distinct = countDistinct(solid)
   const distinctTotal = distinct.critical + distinct.major + distinct.minor + distinct.note
   const checks = Array.isArray(manualChecks) ? manualChecks : []
-  const journeys = checks.filter(m => m.check === 'journey')
-  const failedJourneys = journeys.filter(m => m.status !== 'ok')
+  const journeys = journeyGroups(checks)
+  const failedJourneys = journeys.filter(runs => runStatus(runs) !== 'ok')
   const withProblems = new Set(list.map(f => f.rule))
   const rulesPassed = (Array.isArray(rules) ? rules : []).filter(r => !withProblems.has(r.id))
   const passedCount = journeys.length - failedJourneys.length + checks.filter(m => m.check !== 'journey' && m.status === 'ok').length + rulesPassed.length
@@ -457,7 +471,7 @@ export function renderReport({
     const ctx = { totalPages: pages, breakpointsByIdentity, suppressedShots: suppressedShots ?? new Set(), candidates, ids }
     const problems = items(groups, claudeSolid, ctx)
     const unsure = items(heur, claudeUnsure, ctx)
-    const defsOf = (m) => claudeSolid.filter(d => d.manuals.has(m.index))
+    const defsOf = (runs) => claudeSolid.filter(d => runs.some(m => d.manuals.has(m.index)))
     const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -478,7 +492,7 @@ ${oversizeBytes != null ? `<div class="note-box">The report is over the recommen
 <form class="find" id="qc-find-form" role="search"><label for="qc-find">Find</label><input id="qc-find" name="qc-find" placeholder="D12 or M3" autocomplete="off" spellcheck="false"><button type="submit">Go</button><span id="qc-find-msg" class="sub" aria-live="polite"></span></form></div></header>
 <main>
 <section id="panel-failed" role="tabpanel">
-${failedJourneys.length ? `<h2>Visitor journeys with problems</h2><p class="sub">The agent did what a visitor comes to do, step by step; ${failedJourneys.length} of ${journeys.length} ran into a problem.</p>${failedJourneys.map(m => journey(m, defsOf(m), { open: true })).join('')}` : ''}
+${failedJourneys.length ? `<h2>Visitor journeys with problems</h2><p class="sub">The agent did what a visitor comes to do, step by step; ${failedJourneys.length} of ${journeys.length} ran into a problem.</p>${failedJourneys.map(runs => journey(runs, defsOf(runs), { open: true })).join('')}` : ''}
 ${renderProblems(problems)}
 ${unsure.length ? `<details class="rule unsure"><summary><span class="chip note">needs a look</span> <b>Unconfirmed heuristics and unsure finds</b><span class="cnt">${unsure.length} — not counted</span></summary><div class="body"><p class="sub">The scripts or the agent could not tell either way; a person should look before filing a task.</p>${unsure.slice(0, DEFECT_CAP * 2).map(card).join('')}</div></details>` : ''}
 </section>
