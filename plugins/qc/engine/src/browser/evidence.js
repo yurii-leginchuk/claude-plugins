@@ -103,7 +103,7 @@ export function needles(f) {
 
 // Runs in the page; self-contained. Finds the spot, outlines it, returns its
 // box -- or {hidden} when the spot is there but nobody can see it.
-export function locateSpot({ sel, href, linkText, needles: ns, cores = [], notInLinks = false, notInChrome = false, pastEdge = false, exact = false }) {
+export function locateSpot({ sel, href, linkText, needles: ns, cores = [], notInLinks = false, notInChrome = false, pastEdge = false, exact = false, marks = [] }) {
   const vis = (e) => {
     const r = e.getBoundingClientRect()
     if (r.width < 3 || r.height < 3) return false
@@ -188,9 +188,26 @@ export function locateSpot({ sel, href, linkText, needles: ns, cores = [], notIn
     if (any && !vis(any)) return { hidden: 'the element is on the page but not visible at this width' }
     return null
   }
-  // Inside a long block, outline the words themselves.
+  // Several mistakes in one block (typos, a repeated phrase): the block is the
+  // spot and each mistake is marked inside it.
   let target = el
-  if (norm(el.textContent).length > 80) {
+  if (marks.length) {
+    for (const m of marks) {
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const i = node.nodeValue.toLowerCase().indexOf(String(m).toLowerCase())
+        if (i < 0 || node.parentElement.closest('[data-qc-mark]')) continue
+        const range = document.createRange()
+        range.setStart(node, i)
+        range.setEnd(node, i + m.length)
+        const span = document.createElement('span')
+        span.setAttribute('data-qc-mark', '')
+        span.style.cssText = 'background:rgba(224,36,94,.22);outline:2px solid #e0245e;border-radius:2px'
+        try { range.surroundContents(span) } catch { /* across tags: the block stays the spot */ }
+        break
+      }
+    }
+  } else if (norm(el.textContent).length > 80) {
     const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
     outer: for (let node = walker.nextNode(); node; node = walker.nextNode()) {
       for (const c of cores) {
@@ -262,8 +279,7 @@ function clearSpot() {
     else el.removeAttribute('style')
     el.removeAttribute('data-qc-ev')
   }
-  const mark = document.querySelector('[data-qc-mark]')
-  if (mark) mark.replaceWith(...mark.childNodes)
+  document.querySelectorAll('[data-qc-mark]').forEach(mark => mark.replaceWith(...mark.childNodes))
   document.querySelectorAll('[data-qc-veil]').forEach(v => v.remove())
   document.querySelectorAll('[data-qc-hid]').forEach(e => { e.style.visibility = e.getAttribute('data-qc-hid'); e.removeAttribute('data-qc-hid') })
 }
@@ -346,7 +362,7 @@ export async function captureEvidence(host, { force = false, launchBrowserImpl =
           const sel = t ? (t.selector || null) : f.selector && !GENERIC.test(f.selector) ? f.selector : null
           const args = {
             sel, href: f.locate?.href || null, linkText: f.locate?.text || null,
-            needles: t ? (t.text ? [t.text] : []) : needles(f), cores: t ? (t.text ? [t.text] : []) : cores(f), exact: Boolean(t?.selector),
+            needles: t ? (t.text ? [t.text] : []) : needles(f), cores: t ? (t.text ? [t.text] : []) : cores(f), exact: Boolean(t?.selector), marks: t?.marks || [],
             notInLinks: f.rule === 'E13', notInChrome: f.zone === 'main' || f.selector === 'main', pastEdge: ['C1', 'C8'].includes(f.rule),
           }
           let box = null

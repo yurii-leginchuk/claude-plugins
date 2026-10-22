@@ -37,9 +37,11 @@ export function targetOf(t) {
   const out = {}
   if (typeof t.text === 'string' && t.text.trim()) out.text = t.text.trim()
   if (typeof t.selector === 'string' && t.selector.trim()) out.selector = t.selector.trim()
+  // the mistakes inside it, each marked on the picture («buiness», «instance»)
+  if (Array.isArray(t.marks)) { const m = t.marks.map(x => String(x).trim()).filter(Boolean); if (m.length) out.marks = m }
   return out.text || out.selector ? out : null
 }
-export const evidenceKey = (f) => `claude:${defectIdentity(f)}${f.target ? `|${f.target.selector || ''}|${f.target.text || ''}` : ''}`
+export const evidenceKey = (f) => `claude:${defectIdentity(f)}${f.target ? `|${f.target.selector || ''}|${f.target.text || ''}|${(f.target.marks || []).join('|')}` : ''}`
 
 // What Claude checks by hand in Playwright (and, for `content`, by reading
 // the pages), with the taxonomy codes each check may report. The engine

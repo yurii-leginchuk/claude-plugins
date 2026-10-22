@@ -156,7 +156,10 @@ piece's pixels, and the next QC reuses it while the pixels stay the same.
 {"text": "<the exact words of the broken element, unique on the page>"}` and/or `"selector":
 "<a selector that matches only it>"` (a string is read as `text`). `qc evidence` outlines the
 target only, so quoting the right text in `found` for comparison can no longer put the frame on
-the wrong element. Check the text is unique (it appears once on the page at that width).
+the wrong element. Check the text is unique (it appears once on the page at that width). When the defect is several mistakes in one
+block (typos, a repeated phrase, a wrong number in a sentence), add `"marks": ["buiness",
+"instance", "needed help Mike jumped in"]` — the exact wrong words; the block is outlined and
+each mark is highlighted inside it.
 
 **Every defect shows its spot outlined.** Give `box: {x, y, w, h}` (px, on the picture in
 `shots` or on the `tile`) and the engine draws a frame on it; or give `selector`, or quote the
