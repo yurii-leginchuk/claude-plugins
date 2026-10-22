@@ -172,7 +172,7 @@ button:focus-visible,input:focus-visible,a:focus-visible,summary:focus-visible{o
 .noshot{font-size:13px;color:var(--mut);background:var(--card);border:1px dashed var(--line);border-radius:8px;padding:8px 12px;margin:10px 0}
 details.more>summary{cursor:pointer;color:var(--mut);font-size:13px;margin-top:6px}
 ul.pages{margin:6px 0 0;padding-left:18px;color:var(--mut);font-size:13px}ul.pages li{overflow-wrap:anywhere}ul.pages .where{color:var(--fg)}
-ul.found{list-style:none;padding:0;margin:4px 0 10px;display:grid;gap:6px}
+ul.found{list-style:none;padding:0;margin:4px 0 10px;display:grid;gap:12px}ul.found>li{border-bottom:1px solid var(--line);padding-bottom:10px}.small-shot .shot{max-width:460px}.small-shot .shot img{max-height:340px}
 .steps{margin:6px 0 10px;padding-left:22px}.steps li{margin:3px 0;overflow-wrap:anywhere}
 .check{border-top:1px solid var(--line);padding:8px 0}.check:first-of-type{border-top:0}
 .rules-ok{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:6px 16px;font-size:14px}
@@ -328,7 +328,7 @@ const JOURNEY_STATUS = { ok: ['ok', 'passed'], defect: ['crit', 'had problems'],
 function journey(m, defs, { open = false } = {}) {
   const [cls, label] = JOURNEY_STATUS[m.status] || JOURNEY_STATUS.skipped
   return `<details class="rule journey"${open ? ' open' : ''}><summary><span class="chip ${cls}">${esc(label)}</span> <b>${esc(m.title)}</b><span class="cnt">${m.width != null ? `${esc(m.width)} px · ` : ''}${m.steps.length} steps</span></summary><div class="body">
-${defs.length ? `<ul class="found">${defs.map(d => `<li><div><a class="did" href="#${esc(d.id)}">${esc(d.id)}</a> <span class="chip ${CHIP[d.severity] || 'note'}">${esc(LABEL[d.severity] || d.severity)}</span> <b>${esc(d.title)}</b></div>${d.expected ? `<div class="kv fix"><b>Fix:</b> ${md(d.expected)}</div>` : ''}</li>`).join('')}</ul>` : ''}
+${defs.length ? `<ul class="found">${defs.map(d => `<li><div><a class="did" href="#${esc(d.id)}">${esc(d.id)}</a> <span class="chip ${CHIP[d.severity] || 'note'}">${esc(LABEL[d.severity] || d.severity)}</span> <b>${esc(d.title)}</b></div><div class="small-shot">${picture(d)}</div>${d.expected ? `<div class="kv fix"><b>Fix:</b> ${md(d.expected)}</div>` : ''}</li>`).join('')}</ul>` : ''}
 <p class="kv">start: ${rich(m.page)}</p><ol class="steps">${m.steps.map(st => `<li>${rich(st)}</li>`).join('')}</ol>
 ${m.checked ? `<details class="more"${m.status === 'ok' ? '' : ' open'}><summary>What the agent saw</summary><div class="kv saw">${md(m.checked)}</div></details>` : ''}
 ${m.status !== 'ok' && (m.shots || []).length ? `<div class="strip">${m.shots.map((src, i) => thumb(src, `${m.width != null ? `${m.width} px · ` : ''}step ${i + 1}`, m.width || 768)).join('')}</div>` : ''}</div></details>`
