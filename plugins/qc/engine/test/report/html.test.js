@@ -589,3 +589,12 @@ test('the agent may write HTML with the report classes; other tags, attributes a
   assert.doesNotMatch(out, /<script|onclick|style=|javascript:|evil/)
   assert.match(out, /<span class="ok">ok<\/span>/)
 })
+
+test('folds a rule with three or more problems into one closed block', () => {
+  const many = ['a', 'b', 'c'].map(p => ({ rule: 'I18', title: 'Internal link through a redirect', severity: 'minor', engine: 'static',
+    confidence: 'high', page: `https://ex.com/${p}`, selector: `a.${p}`, found: `/${p}`, expected: `/${p}/`, breakpoint: null }))
+  const out = renderReport({ host: 'ex.com', env: 'dev', envReason: 'x', pages: 3, findings: [...findings, ...many],
+    diff: { fixed: [], remaining: [], added: [] }, snapshotAgeDays: 0, source: 'sitemap' })
+  assert.match(out, /<details class="rule group"><summary>.*Internal link through a redirect<\/b><span class="cnt">3 problems/)
+  assert.doesNotMatch(out, /<details class="rule group"[^>]*>.*tel: format/)
+})

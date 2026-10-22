@@ -315,11 +315,24 @@ function items(groups, claude, { totalPages, breakpointsByIdentity, suppressedSh
 }
 
 // Failed: every problem once, one list, the worst first.
+const FOLD_AT = 3
 function renderProblems(list) {
   if (!list.length) return '<p class="sub">No violations found: everything checked passed.</p>'
   const order = { critical: 0, major: 1, minor: 2, note: 3 }
   const sorted = [...list].sort((a, b) => (order[a.severity] ?? 9) - (order[b.severity] ?? 9) || (b.pages?.length || 0) - (a.pages?.length || 0))
-  return `<h2>Problems <span class="sub">${list.length}</span></h2>${sorted.slice(0, DEFECT_CAP * 5).map(card).join('')}${sorted.length > DEFECT_CAP * 5 ? `<p class="kv">…and ${sorted.length - DEFECT_CAP * 5} more defects not shown (list limit)</p>` : ''}`
+  const shown = sorted.slice(0, DEFECT_CAP * 5)
+  // A rule with many cards (a redirect per link) folds into one closed block, placed at its worst card.
+  const byRule = new Map()
+  for (const x of shown) byRule.set(x.title, [...(byRule.get(x.title) || []), x])
+  const done = new Set()
+  const body = shown.map(x => {
+    const same = byRule.get(x.title)
+    if (same.length < FOLD_AT) return card(x)
+    if (done.has(x.title)) return ''
+    done.add(x.title)
+    return `<details class="rule group"><summary><span class="chip ${CHIP[x.severity] || 'note'}">${esc(LABEL[x.severity] || x.severity)}</span> <b>${esc(x.title)}</b><span class="cnt">${same.length} problems</span></summary><div class="body">${same.map(card).join('')}</div></details>`
+  }).join('')
+  return `<h2>Problems <span class="sub">${list.length}</span></h2>${body}${sorted.length > shown.length ? `<p class="kv">…and ${sorted.length - shown.length} more defects not shown (list limit)</p>` : ''}`
 }
 
 const JOURNEY_STATUS = { ok: ['ok', 'passed'], defect: ['crit', 'had problems'], skipped: ['note', 'not done'] }
