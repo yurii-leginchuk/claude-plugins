@@ -50,7 +50,7 @@ export function buildPayload(run) {
     if (f.zone) g.zones.add(f.zone)
     if (f.page && !g.pages.has(f.page)) g.pages.set(f.page, f.where || null)
     if (f.breakpoint != null) g.breakpoints.add(f.breakpoint)
-    if (f.shot && existsSync(f.shot)) g.shots.add(f.shot)
+    if (f.shot && existsSync(f.shot) && !rejected.includes(f)) g.shots.add(f.shot)
     if (!g.spot && f.spot) g.spot = spotText(f.spot, f.shotWidth)
   }
   const files = new Map()
@@ -65,12 +65,13 @@ export function buildPayload(run) {
       breakpoints: [...g.breakpoints].sort((a, b) => a - b), evidence: [...g.shots].map(s => basename(s)), spot: g.spot || '',
     }
   })
+  // Pictures only for what failed (each defect's own); a check's screenshots are not sent for now.
   const checks = manual.checks.map(c => {
-    const evidence = (c.shots || []).map(src => basename(src))
-    for (const name of evidence) files.set(name, join(dir, 'visual', name))
     const codes = [...new Set(manual.findings.filter(f => f.manual === c.index).map(f => f.id))]
-    return { check: c.check, title: c.title || '', steps: c.steps || [], defects: codes, page: c.page, width: c.width, status: c.status, checked: c.checked, evidence }
+    return { check: c.check, title: c.title || '', steps: c.steps || [], defects: codes, page: c.page, width: c.width, status: c.status, checked: c.checked, evidence: [] }
   })
+  const withProblems = new Set([...kept].map(f => f.rule))
+  const rulesPassed = (input.rules || []).filter(r => !withProblems.has(r.id))
   const solid = kept.filter(f => f.confidence !== 'heuristic')
   return {
     payload: {
@@ -79,7 +80,7 @@ export function buildPayload(run) {
       stats: {
         distinct: countDistinct(solid), heuristics: countDistinct(kept.filter(f => f.confidence === 'heuristic')),
         diff: input.diff ? { added: input.diff.added?.length ?? 0, fixed: input.diff.fixed?.length ?? 0, remaining: input.diff.remaining?.length ?? 0 } : null,
-        browserCoverage: input.browserCoverage || null, rejected: new Set(rejected.map(defectIdentity)).size,
+        browserCoverage: input.browserCoverage || null, rejected: new Set(rejected.map(defectIdentity)).size, rulesPassed,
       },
       defects, manual: checks,
     },

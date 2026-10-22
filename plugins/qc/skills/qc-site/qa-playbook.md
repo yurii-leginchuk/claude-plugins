@@ -19,6 +19,10 @@ Not a defect, never report:
 - wording style, tone, length — only false, contradictory, placeholder or broken text counts;
 - an image that is there: it came from the design;
 - timing of something the visitor opens (a popup, a submenu) — see qc-browse «Timing».
+- a form that shows its errors only after Submit: Gravity Forms (and most WordPress form
+  plugins) validates on the server, so no inline error on blur is the standard behaviour. A
+  defect is an error that never shows after Submit, a wrong or missing error text, or the form
+  losing what was typed — check it only where a test submission is allowed.
 
 When unsure whether it is a defect or a choice, compare with the sibling pages of the same
 template: a block that is right on nine location pages and different on the tenth is a defect;
@@ -126,7 +130,10 @@ pieces is one defect.
 
 Record **one `check: "visual"` entry per agent batch** (or per page): `tiles` — every id looked
 at (`["T12-T19", "T40"]`), `ok` ones too; `checked` — what was compared. **Each defect once**,
-with `tile`: the piece it is on. The piece is its picture and the piece's pages are its pages —
+with `tile`: the piece it is on. Mark the spot on it: `box` — `{x, y, w, h}` in px of that piece
+(read them off the picture); the engine draws the frame. A defect without `box` gets its spot
+found on the live page by `qc evidence` (its `selector`, or the words quoted in `found`), so
+quote the text of the spot when there is any. The piece is its picture and the piece's pages are its pages —
 do not repeat a defect per page or per width; a defect seen at two widths names one piece and
 says the other width in `where`. Give a tighter crop in `shots` only when the piece alone does
 not show the spot:

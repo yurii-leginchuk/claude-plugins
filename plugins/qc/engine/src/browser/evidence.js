@@ -298,6 +298,17 @@ export async function captureEvidence(host, { force = false, launchBrowserImpl =
     const id = defectIdentity(f)
     if (!byIdentity.has(id)) byIdentity.set(id, f)
   }
+  // Claude's own defects (the review file) get their spot outlined the same way,
+  // found by their selector or the words they quote; a picture marked by the
+  // agent itself (box) is kept as it is.
+  if (existsSync(join(dir, 'review.json'))) {
+    const { reviewedRun } = await import('../review.js')
+    for (const f of reviewedRun(host).kept) {
+      if (f.engine !== 'claude' || f.marked || !/^https?:/.test(String(f.page))) continue
+      const id = `claude:${defectIdentity(f)}`
+      if (!byIdentity.has(id)) byIdentity.set(id, { ...f, shot: undefined, shotWidth: undefined })
+    }
+  }
   const todo = []
   const summary = { defects: byIdentity.size, captured: 0, already: 0, browserShots: 0, invisible: 0, notFound: [] }
   for (const [identity, f] of byIdentity) {

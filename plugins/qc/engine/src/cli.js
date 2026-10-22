@@ -603,9 +603,12 @@ export async function audit(input, flags, { fetchImpl } = {}) {
     }))
     .filter(v => v.shots.length)
 
+  // Every rule this run executed, so the report can list the ones with no problem as passed.
+  const ruleTitles = [...(await allRules()).filter(r => ranNow.includes(r.id)), ...(browserCoverage ? await allBrowserRules() : [])]
+    .map(r => ({ id: r.id, title: r.title }))
   const reportInput = {
     host, env, envReason: reason, pages: pages.length, diff,
-    snapshotAgeDays: cacheAgeDays, source, sitemapStatus, browserCoverage, visual, ranAt: Date.now(),
+    snapshotAgeDays: cacheAgeDays, source, sitemapStatus, browserCoverage, visual, rules: ruleTitles, ranAt: Date.now(),
   }
   const html = renderReport({ ...reportInput, findings, ids: idsFor(findings, pages.length) })
   const runDir = saveRun(host, findings, html, ranNow)

@@ -194,7 +194,7 @@ test('truncates a rule group page list at 200 and says so visibly', () => {
 // findings" row, hiding that the calibration had split them at all. Assert
 // the rendered HTML now shows two separate <details class="rule"> rows,
 // each with its own correct chip and its own count.
-test('a rule that emits two severities renders as two separate rows with distinct chips, not one merged row', () => {
+test('a rule that emits two severities renders under both severities, each with its own count', () => {
   const findings = [
     ...Array.from({ length: 3 }, (_, i) => ({
       rule: 'E3', title: 'target=_blank rules', severity: 'major', engine: 'static', confidence: 'high',
@@ -211,47 +211,12 @@ test('a rule that emits two severities renders as two separate rows with distinc
     host: 'ex.com', env: 'prod', envReason: '', pages: 8, findings,
     diff: { fixed: [], remaining: [], added: findings }, snapshotAgeDays: 0, source: 'sitemap',
   })
-  const ruleRows = [...out.matchAll(/<details class="rule">[\s\S]*?<\/details>/g)]
-  const e3Rows = ruleRows.filter(m => m[0].includes('>E3<'))
-  assert.equal(e3Rows.length, 2, 'E3 major and minor findings must render as two separate rows')
-
-  const majorRow = e3Rows.find(m => /chip maj/.test(m[0]))
-  const minorRow = e3Rows.find(m => /chip min/.test(m[0]))
-  assert.ok(majorRow, 'expected a row with the major chip')
-  assert.ok(minorRow, 'expected a row with the minor chip')
-  assert.match(majorRow[0], /3 findings/, 'major row counts only its own 3 findings')
-  assert.match(minorRow[0], /5 findings/, 'minor row counts only its own 5 findings')
-  // No single row should claim all 8 -- that would mean they were re-merged.
-  assert.doesNotMatch(majorRow[0], /8 findings/)
-  assert.doesNotMatch(minorRow[0], /8 findings/)
+  const sections = [...out.matchAll(/<section class="sev">[\s\S]*?<\/section>/g)].map(m => m[0])
+  const major = sections.find(x => /chip maj">Major/.test(x))
+  const minor = sections.find(x => /chip min">Minor/.test(x))
+  assert.match(major, /E3 · target=_blank rules<\/b><span class="cnt">1 problem · 3 pages/)
+  assert.match(minor, /E3 · target=_blank rules<\/b><span class="cnt">1 problem · 5 pages/)
 })
-
-test('truncates the page index at 500 and says so visibly', () => {
-  const findings = []
-  for (let i = 0; i < 600; i++) {
-    findings.push({
-      rule: 'E4', title: 'tel: format', severity: 'major', engine: 'static', confidence: 'high',
-      page: `https://ex.com/idx-${i}`, selector: 'a.phone', found: `tel:855-607-87${i}`,
-      expected: 'tel:+18556078758', breakpoint: null,
-    })
-  }
-  const out = renderReport({
-    host: 'ex.com', env: 'prod', envReason: '', pages: 600, findings,
-    diff: { fixed: [], remaining: [], added: [] }, snapshotAgeDays: 1, source: 'sitemap',
-  })
-  const shownInIndex = [...out.matchAll(/https:\/\/ex\.com\/idx-\d+/g)]
-  // Each unique page can also appear inside the rule-group page list (capped
-  // separately at 200), so the total mentions can exceed 500 but the page
-  // index table itself must stop at 500 rows and say so.
-  assert.match(out, /and 100 more/) // 600 unique pages - 500 shown = 100 not shown
-  assert.ok(shownInIndex.length > 0)
-})
-
-// ---------------------------------------------------------------------------
-// Judgement call 3: heuristic findings must be visually and textually
-// unmistakable as unconfirmed — their own section, excluded from the verdict
-// and from the severity tiles.
-// ---------------------------------------------------------------------------
 
 test('a heuristic-only findings list renders Pass but still shows the heuristic section', () => {
   const findings = [
@@ -295,8 +260,8 @@ test('a missing diff object renders without throwing and shows zero new/fixed', 
     // diff intentionally omitted
   })
   assert.match(out, /<!doctype html>/i)
-  assert.match(out, /<b>0<\/b>\s*<span>new<\/span>/)
-  assert.match(out, /<b>0<\/b>\s*<span>fixed<\/span>/)
+  assert.match(out, /<b>0<\/b> new/)
+  assert.match(out, /<b>0<\/b> fixed/)
 })
 
 test('snapshotAgeDays of 0 renders as fresh, not as "0 days" or NaN', () => {
@@ -479,10 +444,10 @@ test('every distinct defect gets its own page list, not one merged list', () => 
     host: 'ex.com', env: 'prod', envReason: '', pages: 3, findings,
     diff: { fixed: [], remaining: [], added: findings }, snapshotAgeDays: 0, source: 'sitemap',
   })
-  const group = out.match(/<details class="rule">[\s\S]*?<\/details>/)[0]
-  const defects = [...group.matchAll(/<div class="defect"[ >]/g)]
+  const group = out.match(/<details class="rule group"[\s\S]*?<\/div><\/details>/)[0]
+  const defects = [...group.matchAll(/<article class="defect"[ >]/g)]
   assert.equal(defects.length, 2, 'expected one block per distinct defect')
-  const alpha = group.split('a.beta')[0]
+  const alpha = group.split('<article').find(c => c.includes('a.alpha'))
   assert.match(alpha, /https:\/\/ex\.com\/1/)
   assert.match(alpha, /https:\/\/ex\.com\/2/)
   assert.doesNotMatch(alpha, /https:\/\/ex\.com\/3/, '/3 belongs to the beta defect only')
@@ -498,7 +463,7 @@ test('the group summary states how many distinct defects it holds', () => {
     host: 'ex.com', env: 'prod', envReason: '', pages: 4, findings,
     diff: { fixed: [], remaining: [], added: findings }, snapshotAgeDays: 0, source: 'sitemap',
   })
-  assert.match(out, /4 defects · 4 pages · 4 findings/)
+  assert.match(out, /E4 · tel: format<\/b><span class="cnt">4 problems · 4 pages/)
 })
 
 test('a group holding more distinct defects than the cap truncates visibly', () => {
@@ -548,13 +513,13 @@ function repeatedDefectReport(extra = {}) {
 
 test('the report leads with distinct defects, with occurrences beside them', () => {
   const out = repeatedDefectReport()
-  assert.match(out, /<b>3 defects<\/b>/, 'three distinct defects')
+  assert.match(out, /<b>3 problems<\/b>/, 'three distinct defects')
   assert.match(out, /8 occurrences/, 'eight raw occurrences')
 })
 
 test('the distinct breakdown per severity is rendered, not just the totals', () => {
   const out = repeatedDefectReport()
-  assert.match(out, /1 critical · 2 major · 0 minor · 0 note/)
+  assert.match(out, /<b>1<\/b><span>Critical<\/span><\/div><div class="tile sev-maj"><b>2<\/b><span>Major<\/span><\/div><div class="tile sev-min"><b>0<\/b><span>Minor/)
 })
 
 test('the diff row renders remaining alongside new and fixed', () => {
@@ -563,9 +528,9 @@ test('the diff row renders remaining alongside new and fixed', () => {
     diff: { fixed: [1, 2], remaining: [1, 2, 3, 4], added: [1] },
     snapshotAgeDays: 0, source: 'sitemap',
   })
-  assert.match(out, /<b>1<\/b><span>new<\/span>/)
-  assert.match(out, /<b>2<\/b><span>fixed<\/span>/)
-  assert.match(out, /<b>4<\/b><span>remaining<\/span>/)
+  assert.match(out, /<b>1<\/b> new/)
+  assert.match(out, /<b>2<\/b> fixed/)
+  assert.match(out, /<b>4<\/b> remaining/)
 })
 
 test('a missing diff object still renders remaining as zero', () => {
@@ -573,7 +538,7 @@ test('a missing diff object still renders remaining as zero', () => {
     host: 'ex.com', env: 'prod', envReason: '', pages: 1, findings: [],
     snapshotAgeDays: 0, source: 'sitemap',
   })
-  assert.match(out, /<b>0<\/b><span>remaining<\/span>/)
+  assert.match(out, /<b>0<\/b> remaining/)
 })
 
 test('a non-ok sitemapStatus is stated in the header as a possibly incomplete page list', () => {
@@ -592,4 +557,20 @@ test('the sitemap status value is escaped like every other interpolated field', 
   const out = repeatedDefectReport({ sitemapStatus: '<script>alert(1)</script>' })
   assert.doesNotMatch(out, /<script>alert\(1\)<\/script>/)
   assert.match(out, /&lt;script&gt;/)
+})
+
+test('two tabs: failed is open by default with the problems, passed lists rules with no problem as text', () => {
+  const out = renderReport({
+    host: 'ex.com', env: 'prod', envReason: '', pages: 2, snapshotAgeDays: 0, source: 'sitemap',
+    findings: [{ rule: 'E4', title: 'tel: format', severity: 'major', engine: 'static', confidence: 'high', page: 'https://ex.com/', selector: 'a.phone', found: 'tel:855', expected: 'tel:+1855', breakpoint: null }],
+    rules: [{ id: 'E4', title: 'tel: format' }, { id: 'I6', title: 'Page title' }],
+    manualChecks: [{ index: 0, check: 'journey', title: 'Call', steps: ['Tapped the phone'], page: 'https://ex.com/', width: 360, status: 'ok', shots: ['visual/j.png'] }],
+  })
+  assert.match(out, /data-tab="failed" aria-selected="true">Failed <span class="n">1<\/span>/)
+  assert.match(out, /<section id="panel-passed" role="tabpanel" hidden>/)
+  const passed = out.split('id="panel-passed"')[1]
+  assert.match(passed, /<b>I6<\/b> Page title/)
+  assert.doesNotMatch(passed, /<b>E4<\/b>/, 'a rule with a problem is not passed')
+  assert.match(passed, /Call/)
+  assert.doesNotMatch(out, /visual\/j\.png/, 'no pictures for what passed')
 })

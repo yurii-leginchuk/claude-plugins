@@ -3,8 +3,8 @@
 // sub-pixel different heights on the page differ by anti-aliasing only, so
 // equal pixels are too strict: the pictures are compared as 8×8-block grey
 // averages, where that noise is gone and a changed word or a moved icon is not.
-import { readFileSync, openSync, readSync, closeSync } from 'node:fs'
-import { inflateSync } from 'node:zlib'
+import { readFileSync, writeFileSync, openSync, readSync, closeSync } from 'node:fs'
+import { inflateSync, deflateSync, crc32 } from 'node:zlib'
 
 export function pngSize(file) {
   const b = Buffer.alloc(8)
@@ -84,4 +84,35 @@ export function samePicture(a, b, tolerance = 6) {
     }
   }
   return true
+}
+
+// An 8-bit RGB/RGBA PNG back from decodePng's pixels (filter 0 on every row).
+export function encodePng({ width, height, channels, data }) {
+  const stride = width * channels
+  const raw = Buffer.alloc((stride + 1) * height)
+  for (let y = 0; y < height; y++) data.copy(raw, y * (stride + 1) + 1, y * stride, (y + 1) * stride)
+  const chunk = (type, body) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(body.length)
+    const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(Buffer.concat([Buffer.from(type, 'latin1'), body])) >>> 0)
+    return Buffer.concat([len, Buffer.from(type, 'latin1'), body, crc])
+  }
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4); ihdr[8] = 8; ihdr[9] = channels === 4 ? 6 : 2
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))])
+}
+
+// The spot outlined on a picture: a 4 px red frame around box {x, y, w, h} (px), kept inside the picture.
+export function markBox(file, box, out) {
+  const img = decodePng(readFileSync(file))
+  const { width, height, channels, data } = img
+  const x0 = Math.max(0, Math.round(box.x) - 4), y0 = Math.max(0, Math.round(box.y) - 4)
+  const x1 = Math.min(width - 1, Math.round(box.x + box.w) + 4), y1 = Math.min(height - 1, Math.round(box.y + box.h) + 4)
+  if (x1 <= x0 || y1 <= y0) throw new Error(`box ${JSON.stringify(box)} is outside the ${width}×${height} picture`)
+  const paint = (x, y) => { const i = (y * width + x) * channels; data[i] = 224; data[i + 1] = 36; data[i + 2] = 94; if (channels === 4) data[i + 3] = 255 }
+  for (let t = 0; t < 4; t++) {
+    for (let x = x0; x <= x1; x++) { paint(x, Math.min(y1, y0 + t)); paint(x, Math.max(y0, y1 - t)) }
+    for (let y = y0; y <= y1; y++) { paint(Math.min(x1, x0 + t), y); paint(Math.max(x0, x1 - t), y) }
+  }
+  writeFileSync(out, encodePng(img))
+  return out
 }

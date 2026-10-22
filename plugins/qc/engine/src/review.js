@@ -9,9 +9,10 @@ import { join, extname } from 'node:path'
 import { latestRunDir, snapshotDir, loadSnapshot } from './crawl/store.js'
 import { defectIdentity, verdict, countDistinct } from './report/json.js'
 import { renderReport, scopeOf } from './report/html.js'
-import { inlineScreenshots } from './report/inline.js'
+import { linkScreenshots } from './report/inline.js'
 import { CATEGORIES } from './report/category.js'
-import { attachEvidence } from './browser/evidence.js'
+import { attachEvidence, loadEvidence } from './browser/evidence.js'
+import { markBox } from './browser/png.js'
 
 const VERDICTS = new Set(['confirmed', 'false-positive', 'unsure'])
 const STATUSES = new Set(['ok', 'defect', 'skipped'])
@@ -63,7 +64,8 @@ export const MANUAL_TITLES = {
 // Every defect Claude records must carry its evidence (a screenshot, or a
 // quote for a content defect) and the verifier's result: one it could not
 // reproduce is dropped, one it could not check either way only needs a look.
-function manualOf(review, dir) {
+function manualOf(review, dir, host = null) {
+  const evidence = host ? loadEvidence(host) : {}
   const pieces = new Map((tilesOf(dir)?.tiles || []).map(t => [t.id, t]))
   const checks = []
   const findings = []
@@ -107,6 +109,14 @@ function manualOf(review, dir) {
       if (!manualIds.has(key)) manualIds.set(key, `M${manualIds.size + 1}`)
       const how = m.fromCache ? 'found by Claude on an earlier QC, the same picture now' : m.check === 'content' ? 'found by Claude while reading the pages' : m.check === 'journey' ? `found by Claude on the journey «${m.title}»` : 'checked by Claude in Playwright'
       const piecePages = piece ? [...new Set((piece.places || [piece]).map(p => p.page || piece.page))] : null
+      // The spot outlined: the agent's box on its picture, else qc evidence's crop of the page, else the plain picture.
+      let shot = shots.length ? join(dir, piece ? `visual/tile-${d.tile}.png` : shots[d.shot] || shots[0]) : null
+      let marked = false
+      if (d.box && shot) {
+        if (!/\.png$/i.test(shot)) throw new Error(`${at}: box needs a PNG picture, got ${shot}`)
+        shot = markBox(shot, d.box, join(dir, 'visual', `mark-${i}-${manualIds.get(key)}.png`))
+        marked = true
+      }
       for (const page of d.pages?.length ? d.pages : piecePages || [m.page]) {
         findings.push({
           id: manualIds.get(key),
@@ -115,7 +125,7 @@ function manualOf(review, dir) {
           check: m.check, manual: i, page, breakpoint: width, category: CATEGORIES.includes(d.category) ? d.category : (m.check === 'content' ? 'copy' : 'dev'), selector: d.selector || null, found: d.found, expected: d.expected,
           where: d.where || null, zone: m.check === 'menu' ? 'header' : null,
           // the defect card shows its own picture: d.shot picks one of the check's shots, the first by default
-          ...(shots.length ? { shot: join(dir, piece ? `visual/tile-${d.tile}.png` : shots[d.shot] || shots[0]) } : {}),
+          ...(shot ? { shot } : {}), marked,
           review: { verdict: d.verified === 'unable' ? 'unsure' : 'confirmed', note: d.verified === 'unable' ? `${how}; the second check could not repeat it either way` : `${how}, repeated by a second check` },
         })
       }
@@ -123,6 +133,12 @@ function manualOf(review, dir) {
     if (m.status === 'defect' && !(m.defects || []).length) throw new Error(`${at}: status defect without defects`)
     checks.push({ index: i, check: m.check, title: m.title ? String(m.title) : null, steps: (m.steps || []).map(String), page: m.page, width, status: m.status, checked: m.checked ? String(m.checked) : null, shots })
   })
+  for (const f of findings) {
+    if (f.marked) continue
+    const e = evidence[`claude:${defectIdentity(f)}`]
+    if (e?.status === 'ok' && e.path && existsSync(e.path)) { f.shot = e.path; f.shotWidth = e.width; if (e.spot) f.spot = e.spot }
+    else if (e) f.evidenceStatus = e.status
+  }
   return { checks, findings, notReproduced }
 }
 
@@ -331,7 +347,7 @@ export function listFindings(host) {
 
 // The run's findings split by Claude's verdicts: kept (with notes, plus the
 // manual-check findings), rejected (false positives), and the manual checks.
-export function sortByReview(dir, findings, review) {
+export function sortByReview(dir, findings, review, host = null) {
   const ids = existsSync(join(dir, 'distinct.json')) ? JSON.parse(readFileSync(join(dir, 'distinct.json'), 'utf8')) : []
   const identityOf = new Map(ids.map(x => [x.id, x.identity]))
   const byIdentity = new Map()
@@ -357,7 +373,7 @@ export function sortByReview(dir, findings, review) {
     else if (r?.verdict === 'unsure' && isCandidate(f)) kept.push({ ...f, confidence: 'heuristic', review: r })
     else kept.push(r ? { ...f, review: r } : f)
   }
-  const manual = manualOf(review, dir)
+  const manual = manualOf(review, dir, host)
   kept.push(...manual.findings)
   return { kept, rejected, manual, byIdentity, unjudged: unjudged.size }
 }
@@ -366,7 +382,7 @@ export function sortByReview(dir, findings, review) {
 export function reviewedRun(host) {
   const { dir, findings, input } = runOf(host)
   const review = existsSync(join(dir, 'review.json')) ? JSON.parse(readFileSync(join(dir, 'review.json'), 'utf8')) : { items: [] }
-  return { dir, input, findings, review, ids: idsFor(findings, input.pages), ...sortByReview(dir, findings, review) }
+  return { dir, input, findings, review, ids: idsFor(findings, input.pages), ...sortByReview(dir, findings, review, host) }
 }
 
 export function applyReview(host, reviewPath) {
@@ -374,8 +390,8 @@ export function applyReview(host, reviewPath) {
   const review = JSON.parse(readFileSync(reviewPath, 'utf8'))
   review.manual = [...(review.manual || []).filter(m => !m?.fromCache), ...fromCache(host, dir, review)]
   attachEvidence(host, findings)
-  const { kept, rejected, manual, byIdentity, unjudged } = sortByReview(dir, findings, review)
-  inlineScreenshots([...kept, ...rejected])
+  const { kept, rejected, manual, byIdentity, unjudged } = sortByReview(dir, findings, review, host)
+  linkScreenshots(kept, dir)
   const tiles = tileCoverage(dir, review)
   const html = renderReport({ ...input, findings: kept, rejected, siteSummary: review.summary || null, manualChecks: manual.checks, ids: idsFor(findings, input.pages), unjudged, tiles })
   writeFileSync(join(dir, 'report.html'), html)

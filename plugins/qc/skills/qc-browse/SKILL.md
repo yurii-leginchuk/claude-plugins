@@ -150,7 +150,13 @@ A visual entry adds `"tiles": ["T12-T19"]` — the screen pieces (`qc tiles <hos
 the review counts them against every piece there is. A visual defect names its piece,
 `"tile": "T14"`: the piece is its picture (no `shots` needed) and every page that shows the same
 piece gets the defect, so it is written once. A defect with `tile` is also remembered by the
-piece's pixels, and the next QC reuses it while the pixels stay the same. A journey adds `"title": "Book a cleaning from a service page"` and `"steps": ["Opened …",
+piece's pixels, and the next QC reuses it while the pixels stay the same.
+
+**Every defect shows its spot outlined.** Give `box: {x, y, w, h}` (px, on the picture in
+`shots` or on the `tile`) and the engine draws a frame on it; or give `selector`, or quote the
+words of the spot in `found` («…»), and `qc evidence` finds it on the live page and crops it
+with the spot outlined (run `qc evidence`, then `qc review` again). A defect in the page's code
+(title, meta, schema) says so instead of a picture. A journey adds `"title": "Book a cleaning from a service page"` and `"steps": ["Opened …",
 "Tapped «Get a Quote»", …]` — one line per thing the visitor does, in order, and one screenshot
 per step in `shots`. `ok` entries go in too — the report shows what was looked at, not only what
 broke.
@@ -274,8 +280,10 @@ panel (C2, broken, when labels run past it), the panel within the screen (C6), n
 ## Publishing the report
 
 The report links its screenshots by relative path (`visual/<file>`), so they are published with it:
-`Artifact` with `file_path` = `reportPath` and `files` = one entry per file in `<runDir>/visual/`
-(`{"visual/<file>": "<runDir>/visual/<file>"}`). Limits per publish: 255 files and 64 MB — over that,
+`Artifact` with `file_path` = `reportPath` and `files` = one entry per file the report names
+(`grep -o 'visual/[^"]*' report.html | sort -u`; `{"visual/<file>": "<runDir>/visual/<file>"}`) —
+the folder also holds pictures the report no longer shows. An artifact version holds at most 511
+files. Limits per publish: 255 files and 64 MB — over that,
 publish the report with the first batch, then publish the rest to the same `url` in further calls
 (files left out are kept). Sources must sit under the working directory or the scratchpad; if the
 run dir does not, copy `report.html` and `visual/` into the scratchpad first.

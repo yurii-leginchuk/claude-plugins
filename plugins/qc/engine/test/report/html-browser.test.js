@@ -169,17 +169,17 @@ test('a defect seen at more than one breakpoint lists every width it occurred at
   // Exactly one <details class="rule"> row for C1 (the recurring identity
   // and the unrelated one share the same rule, so this also proves the two
   // findings collapsed into one row rather than rendering two).
-  const rows = [...html.matchAll(/<details class="rule">[\s\S]*?<\/details>/g)]
-  const c1Row = rows.find(m => m[0].includes('>C1<'))
-  assert.ok(c1Row, 'expected a C1 rule row')
+  const cards = [...html.matchAll(/<article class="defect"[\s\S]*?<\/article>/g)].map(m => m[0])
+  assert.equal(cards.length, 2, 'the recurring identity is one card, the unrelated defect another')
+  const c1Row = [cards.join('\n')]
 
   // The recurring identity's own breakpoints line lists both widths it
   // actually occurred at, sorted, aggregated across BOTH its occurrences --
   // not just whichever single finding rollUp happened to keep as `example`.
-  assert.match(c1Row[0], /breakpoints: <code>360, 768<\/code>/)
+  assert.match(c1Row[0], /· 360, 768 px/)
   // The unrelated defect (a different identity, different selector) lists
   // only its own width -- 1440 is never folded into the recurring row.
-  assert.match(c1Row[0], /breakpoints: <code>1440<\/code>/)
+  assert.match(c1Row[0], /· 1440 px/)
 })
 
 // ---------------------------------------------------------------------------
@@ -367,46 +367,39 @@ test('stale browser rows are called out as stale, not as a partial pass to resum
   assert.doesNotMatch(html, /is partial/)
 })
 
-test('the visual block shows every page at every width, defects or not, with a lightbox', () => {
+test('for now the report shows no full-page screenshots, only the pictures of what failed', () => {
   const html = renderReport({
     ...base, findings: [],
-    visual: [{ url: 'https://ex.com/clean/', type: 'service', title: 'Clean', shots: [{ width: 360, src: 'visual/a.jpg' }, { width: 1440, src: 'visual/b.jpg', cut: true }] },
-      { url: 'https://ex.com/', type: 'home', shots: [{ width: 360, src: 'visual/c.webp' }] }],
+    visual: [{ url: 'https://ex.com/clean/', type: 'service', title: 'Clean', shots: [{ width: 360, src: 'visual/a.jpg' }] }],
   })
-  assert.match(html, /<details class="rule vis" id="qc-visual">/, 'the block folds')
-  assert.ok(html.indexOf('data-type="home"') < html.indexOf('data-type="service"'), 'groups follow the page-type order')
-  assert.match(html, /<b>Services<\/b><span class="cnt">1 pages<\/span>/)
-  assert.match(html, /id="qc-page-find"/)
-  assert.match(html, /data-find="https:\/\/ex\.com\/clean\/ clean"/)
-  assert.match(html, /https:\/\/ex\.com\/clean\//)
-  assert.match(html, /data-full="visual\/a\.jpg"/)
-  assert.match(html, /<div class="shot-view" tabindex="0" role="region"[^>]*><img loading="lazy" src="visual\/a\.jpg"/, 'a scrollable window, not a cropped thumbnail')
-  assert.match(html, /1440 px \(cut\)/)
+  assert.doesNotMatch(html, /visual\/a\.jpg/)
   assert.match(html, /id="qc-lb"/)
 })
 
-test('without page screenshots or a menu check the report says so', () => {
+test('without a menu check the passed tab says what was not checked by hand', () => {
   const html = renderReport({ ...base, findings: [] })
-  assert.match(html, /No page screenshots/)
-  assert.match(html, /Not checked by hand: Mobile menu, Popups, Forms, FAQ and accordions, Keyboard focus, Contradictions in the text/)
+  assert.match(html, /Not checked by hand: Menu, Popups, Forms, FAQ and accordions, Keyboard focus, Copy/)
 })
 
-test("Claude's menu defects render in the menu block and count toward the verdict", () => {
+test("Claude's menu defects are failed problems that count; the ok menu check is passed", () => {
   const d = {
-    rule: 'D2', title: 'Mobile and desktop menus differ', severity: 'major', confidence: 'high', engine: 'claude', check: 'menu',
-    page: 'https://ex.com/', breakpoint: 360, selector: null, found: 'no “Blog” item', expected: 'the same set of links',
+    id: 'M1', rule: 'D2', title: 'Mobile and desktop menus differ', severity: 'major', confidence: 'high', engine: 'claude', check: 'menu', manual: 0,
+    page: 'https://ex.com/', breakpoint: 360, selector: null, found: 'no “Blog” item', expected: 'the same set of links', shotSrc: 'visual/mark-0-M1.png',
   }
   const html = renderReport({
     ...base, findings: [d],
-    manualChecks: [{ check: 'menu', page: 'https://ex.com/', width: 360, status: 'defect', checked: 'opens, full width', shots: ['visual/menu-0-0.png'] },
-      { check: 'menu', page: 'https://ex.com/', width: 768, status: 'ok', checked: 'all fine', shots: [] }],
+    manualChecks: [{ index: 0, check: 'menu', page: 'https://ex.com/', width: 360, status: 'defect', checked: 'opens, full width', shots: ['visual/menu-0-0.png'] },
+      { index: 1, check: 'menu', page: 'https://ex.com/', width: 768, status: 'ok', checked: 'all fine', shots: ['visual/menu-1-0.png'] }],
   })
   assert.doesNotMatch(html, /verdict v-Pass/, 'a menu defect counts')
-  assert.match(html, /no “Blog” item/)
-  assert.match(html, /data-full="visual\/menu-0-0\.png"/)
-  assert.match(html, /<span class="chip ok">ok<\/span>/)
-  assert.doesNotMatch(html.split('Claude’s manual checks')[0], /no “Blog” item/, 'not repeated in the static groups')
-  assert.match(html, /Not checked by hand: Popups/)
+  const [failed, passed] = html.split('id="panel-passed"')
+  assert.match(failed, /no “Blog” item/)
+  assert.match(failed, /<b>Menu<\/b>/, 'grouped under the check it came from')
+  assert.match(failed, /src="visual\/mark-0-M1\.png"/, 'the card shows its own outlined picture')
+  assert.match(passed, /<span class="chip ok">ok<\/span> <b>Menu<\/b>/)
+  assert.match(passed, /all fine/)
+  assert.doesNotMatch(html, /menu-1-0\.png/, 'no pictures for what passed')
+  assert.match(passed, /Not checked by hand: Popups/)
 })
 
 test('every page, path and URL the report names is a link', () => {
@@ -417,7 +410,7 @@ test('every page, path and URL the report names is a link', () => {
   assert.match(html, /<a href="https:\/\/ex\.com\/services\/x\/" target="_blank" rel="noopener">\/services\/x\/<\/a>/)
   assert.match(html, /<a href="https:\/\/ex\.com\/locations\/brooklyn\/"[^>]*>Brooklyn<\/a>/)
   assert.match(html, /<a href="https:\/\/ex\.com\/b\/"[^>]*>https:\/\/ex\.com\/b\/<\/a>\./, 'trailing punctuation stays outside the link')
-  assert.match(html, /<li><a href="https:\/\/ex\.com\/a\/"/, 'the page list links its pages')
+  assert.match(html, /<p class="kv where"><a href="https:\/\/ex\.com\/a\/"/, 'the card links its page')
   assert.doesNotMatch(renderReport({ ...base, findings: [{ ...f(), found: '[x](javascript:alert(1))' }] }), /href="javascript/)
 })
 
