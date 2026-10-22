@@ -65,7 +65,7 @@ function html(text) {
     last = m.index + m[0].length
   }
   // named and numeric entities (&rarr;, &#8217;) stay entities; they cannot open a tag
-  return `<div class="md">${(out + inline(text.slice(last))).replace(/&amp;([a-z][a-z0-9]{1,30}|#\d{1,6}|#x[0-9a-f]{1,6});/gi, '&$1;')}</div>`
+  return `<div class="md">${(out + inline(text.slice(last))).replace(/&amp;([a-z][a-z0-9]{1,30}|#\d{1,6}|#x[0-9a-f]{1,6});/gi, '&$1;').replace(/(<div class="(?:before|after)">)\s*(?:now|before|should be|after)\s*:\s*/gi, '$1')}</div>`
 }
 export function md(s) {
   let text = String(s ?? '').trim()
@@ -185,14 +185,14 @@ dialog.lb .bar{position:sticky;top:0;margin:0;padding:8px 12px;background:var(--
 dialog.lb button{font:inherit;background:none;border:1px solid var(--line);border-radius:6px;color:var(--fg);padding:2px 10px;cursor:pointer}
 dialog.lb img{display:block;max-width:100%;margin:0 auto}
 ul.md,ol.md{margin:4px 0;padding-left:20px}ul.md li,ol.md li{margin:2px 0}p.md{margin:4px 0}.kv>b+p.md,.kv>b+ul.md{margin-top:2px}
-.fix{border-left:3px solid var(--ok);padding-left:10px}.saw{font-size:14px}
+.saw{font-size:14px}
 .md table{border-collapse:collapse;margin:6px 0;font-size:13px}.md th,.md td{border:1px solid var(--line);padding:4px 8px;text-align:left}.md th{background:var(--card)}
 .md .ok{color:var(--ok);font-weight:600}.md .bad{color:var(--crit);font-weight:600}.md .warn{color:var(--maj);font-weight:600}.md .muted{color:var(--mut)}
 .md .callout{background:var(--card);border-left:3px solid var(--hi);padding:6px 10px;border-radius:0 6px 6px 0;margin:6px 0}
 .md .pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:6px 0}.md .before,.md .after{border:1px solid var(--line);border-radius:6px;padding:6px 10px}
 .md .before{border-left:3px solid var(--crit)}.md .after{border-left:3px solid var(--ok)}.md .value{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--card);padding:0 4px;border-radius:4px}
 .md pre{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:8px;overflow-x:auto;font-size:12px}.md kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;font-size:12px}
-.md mark{background:color-mix(in srgb,var(--hi) 25%,transparent);color:inherit}
+.md mark{background:color-mix(in srgb,var(--hi) 25%,transparent);color:inherit}.dbody{display:grid;gap:16px;margin-top:4px}@media (min-width:980px){.dbody:has(.shot){grid-template-columns:minmax(0,11fr) minmax(0,10fr);align-items:start}.dbody:has(.shot) .dshot{position:sticky;top:72px}}.dshot:empty{display:none}.dshot .shot{margin:0;max-width:none}.dshot .noshot{margin:0}.dtext{min-width:0;max-width:74ch}.dtext>.row{display:grid;grid-template-columns:72px minmax(0,1fr);gap:4px 14px;padding:12px 0;border-top:1px solid var(--line)}.dtext>.row:first-child{border-top:0;padding-top:2px}.dtext>.row>.lab{font-size:13px;font-weight:600;color:var(--mut);padding-top:2px}.dtext>.row>.val{min-width:0;overflow-wrap:anywhere}.dtext>.row>.val>.md>:first-child{margin-top:0}.dtext>.row>.val>.md>:last-child{margin-bottom:0}.dtext>.row.fix>.lab{color:var(--ok)}.dtext>.row.fix>.val{background:color-mix(in srgb,var(--ok) 7%,var(--bg));border-radius:8px;padding:10px 12px}.dtext>.row.note{font-size:14px;color:var(--mut)}@media (max-width:600px){.dtext>.row{grid-template-columns:minmax(0,1fr)}}.md .pair{display:block;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:0 12px;margin:10px 0}.md .pair>.before,.md .pair>.after{position:relative;border:0;border-radius:0;padding:8px 0 8px 86px}.md .pair>.after{border-top:1px solid var(--line)}.md .pair>.before::before,.md .pair>.after::before{position:absolute;left:0;top:10px;font-size:12px;font-weight:600}@media (max-width:600px){.md .pair>.before,.md .pair>.after{padding-left:0}.md .pair>.before::before,.md .pair>.after::before{position:static;display:block}}.md .pair>.before::before{content:"Now";color:var(--crit)}.md .pair>.after::before{content:"Should be";color:var(--ok)}.md .pair>.before{color:var(--mut)}.md ul,.md ol{margin:6px 0;padding-left:18px}.md li{margin:4px 0}.md li::marker{color:var(--mut)}.md .callout{background:none;border:0;border-top:1px dashed color-mix(in srgb,var(--ok) 40%,var(--line));border-radius:0;padding:8px 0 0;margin:10px 0 0;font-size:14px;color:var(--mut)}.md code,.md .value{font-size:.92em}
 hr.sep{border:0;border-top:1px dashed var(--line);margin:12px 0}
 [hidden]{display:none!important}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
@@ -260,12 +260,12 @@ function card(x) {
   return `<article class="defect"${x.id ? ` id="${esc(x.id)}"` : ''} data-cat="${esc(x.cat || 'dev')}">
 <details class="dcard"><summary><div class="dhead">${x.id ? `<a class="did" href="#${esc(x.id)}">${esc(x.id)}</a>` : ''}<span class="chip ${CHIP[x.severity] || 'note'}">${esc(LABEL[x.severity] || x.severity)}</span><b class="dtitle">${esc(x.title)}</b>${x.rule ? `<span class="sub">${esc(x.rule)}</span>` : ''}${scopeBadge(x.scope, pages.length)}</div>
 ${first ? `<p class="kv where">${rich(first)}${pages.length > 1 ? ` <span class="sub">and ${pages.length - 1} more</span>` : ''}${widths}</p>` : ''}</summary>
-${picture(x)}
-<div class="kv"><b>Problem:</b> ${md(x.found)}</div>
-${x.expected ? `<div class="kv fix"><b>Fix:</b> ${md(x.expected)}</div>` : ''}
-${x.note ? `<div class="kv sub">${md(x.note)}</div>` : ''}
+<div class="dbody"><div class="dshot">${picture(x)}</div><div class="dtext">
+<div class="row"><span class="lab">Problem</span><div class="val">${md(x.found)}</div></div>
+${x.expected ? `<div class="row fix"><span class="lab">Fix</span><div class="val">${md(x.expected)}</div></div>` : ''}
+${x.note ? `<div class="row note"><span class="lab">Agent</span><div class="val">${md(x.note.replace(/^Agent:\s*/, ''))}</div></div>` : ''}
 ${x.region ? `<p class="kv sub">${String(x.region).startsWith(UNNAMED_REGION_PREFIX) ? `region: shared Elementor container <code>${esc(x.region.slice(UNNAMED_REGION_PREFIX.length))}</code> (its name could not be determined)` : `region: <code>${esc(x.region)}</code>`}, shared by every page below: fix it once</p>` : ''}
-${pages.length > 1 || x.selector ? `<details class="more"><summary>Details</summary>${x.selector ? `<p class="kv sub">selector <code>${esc(x.selector)}</code></p>` : ''}${pages.length > 1 ? `<ul class="pages">${pages.slice(0, PAGE_LIST_CAP).map(p => `<li>${rich(p)}${x.where?.[p] ? `<div class="where">${rich(x.where[p])}</div>` : ''}</li>`).join('')}</ul>${pages.length > PAGE_LIST_CAP ? `<p class="kv sub">…and ${pages.length - PAGE_LIST_CAP} more pages not shown (list limit)</p>` : ''}` : ''}</details>` : ''}</details>
+${pages.length > 1 || x.selector ? `<details class="more"><summary>Details</summary>${x.selector ? `<p class="kv sub">selector <code>${esc(x.selector)}</code></p>` : ''}${pages.length > 1 ? `<ul class="pages">${pages.slice(0, PAGE_LIST_CAP).map(p => `<li>${rich(p)}${x.where?.[p] ? `<div class="where">${rich(x.where[p])}</div>` : ''}</li>`).join('')}</ul>${pages.length > PAGE_LIST_CAP ? `<p class="kv sub">…and ${pages.length - PAGE_LIST_CAP} more pages not shown (list limit)</p>` : ''}` : ''}</details>` : ''}</div></div></details>
 </article>`
 }
 
