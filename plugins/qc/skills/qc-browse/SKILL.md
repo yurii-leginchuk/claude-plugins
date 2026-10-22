@@ -156,7 +156,7 @@ piece's pixels, and the next QC reuses it while the pixels stay the same.
 `shots` or on the `tile`) and the engine draws a frame on it; or give `selector`, or quote the
 words of the spot in `found` («…»), and `qc evidence` finds it on the live page and crops it
 with the spot outlined (run `qc evidence`, then `qc review` again). A defect in the page's code
-(title, meta, schema) says so instead of a picture. A journey adds `"title": "Book a cleaning from a service page"` and `"steps": ["Opened …",
+(title, meta, schema) says so instead of a picture. A journey (one path, one form — a second way to do the same task is a journey of its own) adds `"title": "Book a cleaning from a service page"` and `"steps": ["Opened …",
 "Tapped «Get a Quote»", …]` — one line per thing the visitor does, in order, and one screenshot
 per step in `shots`. `ok` entries go in too — the report shows what was looked at, not only what
 broke.

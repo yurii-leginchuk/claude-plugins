@@ -83,6 +83,13 @@ At **every step** of a journey look at both sides:
 - visual: the screenshot of this state — overflow, overlap, cut labels, a sticky bar over the
   button, the overflow probe after opening anything.
 
+**One path per journey.** When the site offers two ways to do the same thing — a popup form
+and a form page, a header button and a hero button that open different forms, a phone in the
+header and one on a location page — each way is its own journey, named by its path («Request a
+quote through the popup», «Request a quote on the quote-form page»). Never carry on into a second
+form or a second entry point inside one journey: a defect must belong to exactly one form and
+one path, so the developer knows where to fix it. Each journey still runs at 360 and 1440.
+
 Record each journey as one `manual` entry with `check: "journey"` (format in qc-browse).
 
 ## Visual review of the screenshots
