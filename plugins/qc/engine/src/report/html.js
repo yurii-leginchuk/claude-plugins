@@ -161,7 +161,7 @@ button:focus-visible,input:focus-visible,a:focus-visible,summary:focus-visible{o
 .did{display:inline-block;font:700 13px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace;padding:2px 8px;border-radius:6px;text-decoration:none!important;background:var(--fg);color:var(--bg)}
 .ids .did{font-size:11px;padding:1px 6px}.did:hover{background:var(--hi)}
 .defect{background:var(--raise);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:10px 0;scroll-margin-top:80px}
-.dhead{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.dhead{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.dcard>summary{display:block;cursor:pointer;list-style:none;padding:0;margin:0;color:inherit;font-size:inherit;font-weight:inherit}.dcard>summary::-webkit-details-marker{display:none}.dcard>summary .dhead::after{content:"\\25B8";margin-left:auto;color:var(--mut)}.dcard[open]>summary .dhead::after{content:"\\25BE"}.dcard>summary .where{margin-bottom:0}.dcard[open]>summary{margin-bottom:8px}
 .dtitle{font-size:15px}
 .badge{margin-left:auto;font-size:12px;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:1px 9px;white-space:nowrap}
 .kv{margin:6px 0;overflow-wrap:anywhere}.where{color:var(--mut);font-size:13px}
@@ -258,14 +258,14 @@ function card(x) {
   const first = pages[0]
   const widths = x.widths && x.widths.length ? ` · ${x.widths.map(esc).join(', ')} px` : ''
   return `<article class="defect"${x.id ? ` id="${esc(x.id)}"` : ''} data-cat="${esc(x.cat || 'dev')}">
-<div class="dhead">${x.id ? `<a class="did" href="#${esc(x.id)}">${esc(x.id)}</a>` : ''}<span class="chip ${CHIP[x.severity] || 'note'}">${esc(LABEL[x.severity] || x.severity)}</span><b class="dtitle">${esc(x.title)}</b>${x.rule ? `<span class="sub">${esc(x.rule)}</span>` : ''}${scopeBadge(x.scope, pages.length)}</div>
-${first ? `<p class="kv where">${rich(first)}${pages.length > 1 ? ` <span class="sub">and ${pages.length - 1} more</span>` : ''}${widths}</p>` : ''}
+<details class="dcard"><summary><div class="dhead">${x.id ? `<a class="did" href="#${esc(x.id)}">${esc(x.id)}</a>` : ''}<span class="chip ${CHIP[x.severity] || 'note'}">${esc(LABEL[x.severity] || x.severity)}</span><b class="dtitle">${esc(x.title)}</b>${x.rule ? `<span class="sub">${esc(x.rule)}</span>` : ''}${scopeBadge(x.scope, pages.length)}</div>
+${first ? `<p class="kv where">${rich(first)}${pages.length > 1 ? ` <span class="sub">and ${pages.length - 1} more</span>` : ''}${widths}</p>` : ''}</summary>
 ${picture(x)}
 <div class="kv"><b>Problem:</b> ${md(x.found)}</div>
 ${x.expected ? `<div class="kv fix"><b>Fix:</b> ${md(x.expected)}</div>` : ''}
 ${x.note ? `<div class="kv sub">${md(x.note)}</div>` : ''}
 ${x.region ? `<p class="kv sub">${String(x.region).startsWith(UNNAMED_REGION_PREFIX) ? `region: shared Elementor container <code>${esc(x.region.slice(UNNAMED_REGION_PREFIX.length))}</code> (its name could not be determined)` : `region: <code>${esc(x.region)}</code>`}, shared by every page below: fix it once</p>` : ''}
-${pages.length > 1 || x.selector ? `<details class="more"><summary>Details</summary>${x.selector ? `<p class="kv sub">selector <code>${esc(x.selector)}</code></p>` : ''}${pages.length > 1 ? `<ul class="pages">${pages.slice(0, PAGE_LIST_CAP).map(p => `<li>${rich(p)}${x.where?.[p] ? `<div class="where">${rich(x.where[p])}</div>` : ''}</li>`).join('')}</ul>${pages.length > PAGE_LIST_CAP ? `<p class="kv sub">…and ${pages.length - PAGE_LIST_CAP} more pages not shown (list limit)</p>` : ''}` : ''}</details>` : ''}
+${pages.length > 1 || x.selector ? `<details class="more"><summary>Details</summary>${x.selector ? `<p class="kv sub">selector <code>${esc(x.selector)}</code></p>` : ''}${pages.length > 1 ? `<ul class="pages">${pages.slice(0, PAGE_LIST_CAP).map(p => `<li>${rich(p)}${x.where?.[p] ? `<div class="where">${rich(x.where[p])}</div>` : ''}</li>`).join('')}</ul>${pages.length > PAGE_LIST_CAP ? `<p class="kv sub">…and ${pages.length - PAGE_LIST_CAP} more pages not shown (list limit)</p>` : ''}` : ''}</details>` : ''}</details>
 </article>`
 }
 
@@ -382,7 +382,7 @@ window.qcShowTab=show;if(location.hash==='#passed')show('passed')})()</script>`
 const FIND = `<script>(()=>{const msg=document.getElementById('qc-find-msg');
 function go(raw,quiet){const id=String(raw||'').trim().toUpperCase().replace(/^#/,'');if(!id)return;const el=document.getElementById(id);
 if(!el||!/^[DM]\\d+$/.test(id)){if(!quiet&&msg)msg.textContent='No problem '+id+' in this report';return}
-if(window.qcShowTab)window.qcShowTab('failed');for(let p=el.parentElement;p;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true;
+if(window.qcShowTab)window.qcShowTab('failed');for(let p=el.parentElement;p;p=p.parentElement)if(p.tagName==='DETAILS')p.open=true;const own=el.querySelector(':scope > details.dcard');if(own)own.open=true;
 el.scrollIntoView({block:'center'});el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');if(msg)msg.textContent=''}
 const f=document.getElementById('qc-find-form');if(f)f.addEventListener('submit',e=>{e.preventDefault();go(document.getElementById('qc-find').value)});
 document.addEventListener('click',e=>{const a=e.target.closest('a.did, a.jlink');if(a){e.preventDefault();go(a.getAttribute('href'),true)}});
