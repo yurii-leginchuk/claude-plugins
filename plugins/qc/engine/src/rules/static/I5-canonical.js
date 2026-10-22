@@ -6,6 +6,8 @@ export default {
   severity: 'critical',
   engine: 'static',
   check(page, _site) {
+    // A page closed to indexing (a dev copy, a thank-you page) needs no canonical: Yoast drops it there.
+    if (page.robots && page.robots.index === false) return []
     if (!page.canonical) {
       return [finding(this, page, {
         selector: 'head', found: 'canonical missing', expected: page.url,

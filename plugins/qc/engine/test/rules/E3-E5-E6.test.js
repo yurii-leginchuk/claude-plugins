@@ -21,19 +21,24 @@ test('E3 flags an internal link opening in a new tab at major/high -- the agency
   assert.equal(f[0].confidence, 'high')
 })
 
-test('E3 flags an external link without target=_blank at minor/heuristic -- new-tab-or-not is a style preference', () => {
-  const f = E3.check(page([link({ raw: 'https://out.com/x', href: 'https://out.com/x', internal: false })]), {})
-  assert.equal(f.length, 1)
-  assert.equal(f[0].severity, 'minor')
-  assert.equal(f[0].confidence, 'heuristic')
+test('E3 does not check external pages or rel=noopener: client style, and browsers imply noopener', () => {
+  assert.deepEqual(E3.check(page([link({ raw: 'https://out.com/x', href: 'https://out.com/x' }), link({ raw: 'https://out.com/y', href: 'https://out.com/y', target: '_blank' })]), {}), [])
 })
 
-test('E3 flags an external target=_blank link missing rel=noopener at minor/high -- hygiene, not a live vuln since browsers imply noopener', () => {
-  const f = E3.check(page([link({ raw: 'https://out.com/x', href: 'https://out.com/x', internal: false, target: '_blank' })]), {})
-  assert.equal(f.length, 1)
-  assert.equal(f[0].severity, 'minor')
-  assert.equal(f[0].confidence, 'high')
-  assert.match(f[0].found, /without rel=noopener/)
+test('E3 wants files in a new tab, internal or external', () => {
+  const f = E3.check(page([
+    link({ raw: '/wp-content/uploads/a.pdf', href: 'https://ex.com/wp-content/uploads/a.pdf', internal: true }),
+    link({ raw: 'https://cdn.com/b.docx?x=1', href: 'https://cdn.com/b.docx?x=1' }),
+    link({ raw: '/wp-content/uploads/c.pdf', href: 'https://ex.com/wp-content/uploads/c.pdf', internal: true, target: '_blank' }),
+  ]), {})
+  assert.deepEqual(f.map(x => x.severity), ['minor', 'minor'])
+  assert.match(f[0].found, /file link/)
+})
+
+test('E3 flags a phone or anchor link that opens an empty tab', () => {
+  const f = E3.check(page([link({ raw: 'tel:+18005551212', protocol: 'tel:', target: '_blank', text: 'Call' }), link({ raw: '#contact', target: '_blank' })]), {})
+  assert.equal(f.length, 2)
+  assert.match(f[0].found, /empty tab/)
 })
 
 test('E3 accepts a correct external link', () => {

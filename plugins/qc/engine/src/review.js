@@ -107,7 +107,7 @@ function manualOf(review, dir, host = null) {
       if (d.verified === 'not-reproduced') { notReproduced++; continue }
       const key = `${i}|${d.rule}|${d.found}`
       if (!manualIds.has(key)) manualIds.set(key, `M${manualIds.size + 1}`)
-      const how = m.fromCache ? 'found by Claude on an earlier QC, the same picture now' : m.check === 'content' ? 'found by Claude while reading the pages' : m.check === 'journey' ? `found by Claude on the journey «${m.title}»` : 'checked by Claude in Playwright'
+      const how = m.fromCache ? 'found by the agent on an earlier QC, the same picture now' : m.check === 'content' ? 'found by the agent while reading the pages' : m.check === 'journey' ? `found by the agent on the journey «${m.title}»` : 'checked by the agent in Playwright'
       const piecePages = piece ? [...new Set((piece.places || [piece]).map(p => p.page || piece.page))] : null
       // The spot outlined: the agent's box on its picture, else qc evidence's crop of the page, else the plain picture.
       let shot = shots.length ? join(dir, piece ? `visual/tile-${d.tile}.png` : shots[d.shot] || shots[0]) : null
@@ -377,6 +377,13 @@ export function sortByReview(dir, findings, review, host = null) {
   }
   const manual = manualOf(review, dir, host)
   kept.push(...manual.findings)
+  // review.fixes: {"D12": "…", "M3": "…"}, the looked-up fix for a defect, kept apart from the verdicts.
+  const fixes = review.fixes && typeof review.fixes === 'object' ? review.fixes : {}
+  const codeOf = new Map(ids.map(x => [x.identity, x.id]))
+  for (let i = 0; i < kept.length; i++) {
+    const code = kept[i].engine === 'claude' ? kept[i].id : codeOf.get(defectIdentity(kept[i]))
+    if (code && fixes[code]) kept[i] = { ...kept[i], expected: String(fixes[code]) }
+  }
   return { kept, rejected, manual, byIdentity, unjudged: unjudged.size }
 }
 

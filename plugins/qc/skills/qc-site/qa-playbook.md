@@ -227,6 +227,17 @@ or as `expected` on a manual defect. Look it up, do not guess:
 - when the right value cannot be found, say what is missing and who has it («the client must
   send the new PDF»), never invent one.
 
-Write it in the small Markdown the report renders: a short paragraph or a «- » list, `code` for
-values to paste, **bold** for the one thing to change. The same Markdown works in `checked`:
-one fact per line («- Popup opened in 3 s»), not one long paragraph.
+Lead with the answer in one line, then the detail. Write it in HTML or in Markdown; the report
+renders both in its own style, so use its classes instead of inline styles (anything else is
+dropped):
+
+- `<div class="pair"><div class="before">now</div><div class="after">should be</div></div>` —
+  the wrong value next to the right one (a link, a phone, a text);
+- `<span class="value">…</span>` or `<code>` for a value to paste; `<span class="ok">`,
+  `<span class="bad">`, `<span class="warn">`, `<span class="muted">` for a word that needs a colour;
+- `<div class="callout">…</div>` for the one thing a developer must not miss;
+- `<ul>`, `<ol>`, `<table>`, `<b>`, `<mark>`, `<kbd>`, `<a href="https://…">`.
+
+The same goes for `checked` (what the agent saw): one fact per line, not one long paragraph. For
+a missing page or link, say plainly whether it exists somewhere (give the URL) or does not exist
+and must be created or asked from the client.

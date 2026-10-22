@@ -36,14 +36,40 @@ function rich(s) {
   return out + esc(str.slice(last))
 }
 
-// Claude's longer texts, written in a small Markdown: paragraphs (blank
-// line), lists («- » or «1. »), **bold** and `code`, with pages as links
-// (rich). A long single paragraph with no Markdown reads as one fact per
-// line. Everything still goes through esc(): no HTML from the text gets in.
+// The agent's longer texts: HTML from a short list of tags and the report's
+// own classes (so every report looks the same), or a small Markdown (lists,
+// **bold**, `code`). Anything else in them is escaped. A long single
+// paragraph with neither reads as one fact per line.
 const inline = (t) => rich(t).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>')
+const TAGS = new Set(['p', 'br', 'ul', 'ol', 'li', 'b', 'strong', 'i', 'em', 'code', 'pre', 'kbd', 'mark', 'small', 'h4', 'h5', 'blockquote', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'a', 'span', 'div', 'del', 'ins'])
+export const HTML_CLASSES = ['ok', 'bad', 'warn', 'muted', 'callout', 'before', 'after', 'pair', 'steps-list', 'value']
+function cleanTag(tag) {
+  const m = tag.match(/^<(\/?)([a-z0-9]+)([^>]*)>$/i)
+  if (!m || !TAGS.has(m[2].toLowerCase())) return esc(tag)
+  const name = m[2].toLowerCase()
+  if (m[1]) return `</${name}>`
+  const attrs = []
+  const cls = m[3].match(/\sclass\s*=\s*["']([^"']*)["']/i)
+  if (cls) { const ok = cls[1].split(/\s+/).filter(c => HTML_CLASSES.includes(c)); if (ok.length) attrs.push(`class="${ok.join(' ')}"`) }
+  if (name === 'a') {
+    const href = m[3].match(/\shref\s*=\s*["']([^"']*)["']/i)
+    if (href && /^https?:\/\//i.test(href[1])) attrs.push(`href="${esc(href[1])}" target="_blank" rel="noopener"`)
+  }
+  return `<${name}${attrs.length ? ' ' + attrs.join(' ') : ''}>`
+}
+function html(text) {
+  let out = ''
+  let last = 0
+  for (const m of text.matchAll(/<\/?[a-z][a-z0-9]*(?:\s[^<>]*)?>/gi)) {
+    out += inline(text.slice(last, m.index)) + cleanTag(m[0])
+    last = m.index + m[0].length
+  }
+  return `<div class="md">${out + inline(text.slice(last))}</div>`
+}
 export function md(s) {
   let text = String(s ?? '').trim()
   if (!text) return ''
+  if (/<\/?(p|ul|ol|li|b|strong|code|table|div|span|br|h4|h5|em|i|mark|kbd|pre|blockquote|small|del|ins|a)\b[^>]*>/i.test(text)) return html(text)
   if (!/\n/.test(text) && text.length > 280) text = text.split(/(?<=[.;])\s+(?=[A-Z«“"(])/).map(x => `- ${x}`).join('\n')
   return text.split(/\n\s*\n/).map(block => {
     const lines = block.split('\n').map(l => l.trim()).filter(Boolean)
@@ -159,6 +185,13 @@ dialog.lb button{font:inherit;background:none;border:1px solid var(--line);borde
 dialog.lb img{display:block;max-width:100%;margin:0 auto}
 ul.md,ol.md{margin:4px 0;padding-left:20px}ul.md li,ol.md li{margin:2px 0}p.md{margin:4px 0}.kv>b+p.md,.kv>b+ul.md{margin-top:2px}
 .fix{border-left:3px solid var(--ok);padding-left:10px}.saw{font-size:14px}
+.md table{border-collapse:collapse;margin:6px 0;font-size:13px}.md th,.md td{border:1px solid var(--line);padding:4px 8px;text-align:left}.md th{background:var(--card)}
+.md .ok{color:var(--ok);font-weight:600}.md .bad{color:var(--crit);font-weight:600}.md .warn{color:var(--maj);font-weight:600}.md .muted{color:var(--mut)}
+.md .callout{background:var(--card);border-left:3px solid var(--hi);padding:6px 10px;border-radius:0 6px 6px 0;margin:6px 0}
+.md .pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:6px 0}.md .before,.md .after{border:1px solid var(--line);border-radius:6px;padding:6px 10px}
+.md .before{border-left:3px solid var(--crit)}.md .after{border-left:3px solid var(--ok)}.md .value{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--card);padding:0 4px;border-radius:4px}
+.md pre{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:8px;overflow-x:auto;font-size:12px}.md kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;font-size:12px}
+.md mark{background:color-mix(in srgb,var(--hi) 25%,transparent);color:inherit}
 [hidden]{display:none!important}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 @media (max-width:600px){.badge{margin-left:0}.find input{width:7em}}
@@ -244,7 +277,7 @@ function claudeDefects(findings) {
   return [...byId.values()].map(d => ({ ...d, widths: [...d.widths].sort((a, b) => a - b) }))
 }
 
-const reviewNote = (r) => (r?.note ? `Claude: ${r.note}` : '')
+const reviewNote = (r) => (r?.note ? `Agent: ${r.note}` : '')
 
 // Engine groups (rollUp) and Claude's defects as cards with their group title.
 function items(groups, claude, { totalPages, breakpointsByIdentity, suppressedShots, candidates, ids }) {
@@ -265,7 +298,7 @@ function items(groups, claude, { totalPages, breakpointsByIdentity, suppressedSh
   }
   for (const d of claude) {
     out.push({
-      group: CHECK_LABEL[d.check] || 'Checked by Claude', rule: d.rule, id: d.id, severity: d.severity, title: d.title, found: d.found, expected: d.expected,
+      group: CHECK_LABEL[d.check] || 'Checked by the agent', rule: d.rule, id: d.id, severity: d.severity, title: d.title, found: d.found, expected: d.expected,
       pages: d.pages, widths: d.widths, selector: d.selector, scope: d.pages.length > 1 ? scopeOf({ pages: d.pages, zones: [] }, totalPages) : 'page',
       where: null, note: d.confidence === 'heuristic' ? reviewNote(d.review) : '', shotSrc: d.shotSrc, shotDataUri: d.shotDataUri, shotWidth: d.shotWidth ?? d.breakpoint, spot: d.spot,
       evidenceStatus: d.evidenceStatus, suppressed: false, cat: categoryOf(d),
@@ -294,9 +327,9 @@ const JOURNEY_STATUS = { ok: ['ok', 'passed'], defect: ['crit', 'had problems'],
 function journey(m, defs, { open = false } = {}) {
   const [cls, label] = JOURNEY_STATUS[m.status] || JOURNEY_STATUS.skipped
   return `<details class="rule journey"${open ? ' open' : ''}><summary><span class="chip ${cls}">${esc(label)}</span> <b>${esc(m.title)}</b><span class="cnt">${m.width != null ? `${esc(m.width)} px · ` : ''}${m.steps.length} steps</span></summary><div class="body">
-${defs.length ? `<ul class="found">${defs.map(d => `<li><a class="did" href="#${esc(d.id)}">${esc(d.id)}</a> <span class="chip ${CHIP[d.severity] || 'note'}">${esc(LABEL[d.severity] || d.severity)}</span> ${esc(d.title)}</li>`).join('')}</ul>` : ''}
+${defs.length ? `<ul class="found">${defs.map(d => `<li><div><a class="did" href="#${esc(d.id)}">${esc(d.id)}</a> <span class="chip ${CHIP[d.severity] || 'note'}">${esc(LABEL[d.severity] || d.severity)}</span> <b>${esc(d.title)}</b></div>${d.expected ? `<div class="kv fix"><b>Fix:</b> ${md(d.expected)}</div>` : ''}</li>`).join('')}</ul>` : ''}
 <p class="kv">start: ${rich(m.page)}</p><ol class="steps">${m.steps.map(st => `<li>${rich(st)}</li>`).join('')}</ol>
-${m.checked ? `<details class="more"${m.status === 'ok' ? '' : ' open'}><summary>What Claude saw</summary><div class="kv saw">${md(m.checked)}</div></details>` : ''}
+${m.checked ? `<details class="more"${m.status === 'ok' ? '' : ' open'}><summary>What the agent saw</summary><div class="kv saw">${md(m.checked)}</div></details>` : ''}
 ${m.status !== 'ok' && (m.shots || []).length ? `<div class="strip">${m.shots.map((src, i) => thumb(src, `${m.width != null ? `${m.width} px · ` : ''}step ${i + 1}`, m.width || 768)).join('')}</div>` : ''}</div></details>`
 }
 
@@ -306,9 +339,9 @@ function renderPassed({ manualChecks, claude, rulesPassed, tiles, browserCoverag
   const js = checks.filter(m => m.check === 'journey' && m.status === 'ok')
   const byCheck = Object.keys(CHECK_LABEL).filter(k => k !== 'journey').map(k => [k, checks.filter(m => m.check === k && m.status === 'ok')]).filter(([, rows]) => rows.length)
   const cov = browserCoverage ? `${browserCoverage.pagesDone} of ${browserCoverage.pagesTotal} pages in a browser${Array.isArray(browserCoverage.widths) && browserCoverage.widths.length ? ` at ${browserCoverage.widths.join(', ')} px` : ''}` : 'no browser pass'
-  return `<p class="sub">Checked: ${esc(pages)} pages read, ${esc(cov)}${tiles ? `, ${esc(tiles.seen)} of ${esc(tiles.total)} screen pieces looked at by Claude` : ''}.</p>
+  return `<p class="sub">Checked: ${esc(pages)} pages read, ${esc(cov)}${tiles ? `, ${esc(tiles.seen)} of ${esc(tiles.total)} screen pieces looked at by the agent` : ''}.</p>
 ${js.length ? `<h2>Visitor journeys that went through</h2>${js.map(m => journey(m, [])).join('')}` : ''}
-${byCheck.length ? `<h2>Checked by Claude and right</h2>${byCheck.map(([k, rows]) => `<details class="rule"><summary><span class="chip ok">ok</span> <b>${esc(CHECK_LABEL[k])}</b><span class="cnt">${rows.length} ${rows.length === 1 ? 'check' : 'checks'}</span></summary><div class="body"><p class="sub">${esc(CHECK_WHAT[k] || '')}</p>${rows.map(m => `<div class="check"><p class="kv">${m.width != null ? `<b>${esc(m.width)} px</b> · ` : ''}${rich(m.page)}</p>${m.checked ? `<div class="kv sub">${md(m.checked)}</div>` : ''}</div>`).join('')}</div></details>`).join('')}` : ''}
+${byCheck.length ? `<h2>Checked by the agent and right</h2>${byCheck.map(([k, rows]) => `<details class="rule"><summary><span class="chip ok">ok</span> <b>${esc(CHECK_LABEL[k])}</b><span class="cnt">${rows.length} ${rows.length === 1 ? 'check' : 'checks'}</span></summary><div class="body"><p class="sub">${esc(CHECK_WHAT[k] || '')}</p>${rows.map(m => `<div class="check"><p class="kv">${m.width != null ? `<b>${esc(m.width)} px</b> · ` : ''}${rich(m.page)}</p>${m.checked ? `<div class="kv sub">${md(m.checked)}</div>` : ''}</div>`).join('')}</div></details>`).join('')}` : ''}
 ${(() => { const none = ['menu', 'popup', 'form', 'faq', 'focus', 'content'].filter(k => !checks.some(m => m.check === k)); return none.length ? `<p class="sub">Not checked by hand: ${none.map(k => esc(CHECK_LABEL[k])).join(', ')}.</p>` : '' })()}
 ${rulesPassed.length ? `<h2>Automatic checks with no problems</h2><div class="rules-ok">${rulesPassed.map(r => `<div><span class="chip ok">ok</span> <b>${esc(r.id)}</b> ${esc(r.title)}</div>`).join('')}</div>` : ''}`
 }
@@ -415,8 +448,8 @@ export function renderReport({
     failedUrls.length ? `Did not open in the browser pass: ${esc(failedUrls.length)} ${failedUrls.length === 1 ? 'page' : 'pages'} — ${failedUrls.slice(0, PAGE_LIST_CAP).map(x => `${rich(typeof x === 'string' ? x : x?.url)}${x?.error ? ` (${esc(x.error)})` : ''}`).join(', ')}${failedUrls.length > PAGE_LIST_CAP ? ` and ${failedUrls.length - PAGE_LIST_CAP} more` : ''}.` : '',
     dropped.length ? `Excluded widths (not measured): <code>${dropped.map(esc).join(', ')}</code>. Check them with <code>qc browse ${esc(host)} --breakpoints ${esc(dropped.join(','))} --force</code>.` : '',
     stale ? `The browser pass is out of date for ${esc(browserCoverage.stalePages)} pages: they were checked before this crawl. Run <code>qc browse ${esc(host)}</code> again.` : '',
-    unjudged ? `${esc(unjudged)} ${unjudged === 1 ? 'candidate' : 'candidates'} from the scripts were not checked by Claude and are not shown.` : '',
-    tiles && (tiles.seen < tiles.total || tiles.missing) ? `Claude looked at ${esc(tiles.seen)} of ${esc(tiles.total)} screen pieces${tiles.missing ? `; ${esc(tiles.missing)} page widths have none` : ''}: small visual problems there may be missed.` : '',
+    unjudged ? `${esc(unjudged)} ${unjudged === 1 ? 'candidate' : 'candidates'} from the scripts were not checked by the agent and are not shown.` : '',
+    tiles && (tiles.seen < tiles.total || tiles.missing) ? `The agent looked at ${esc(tiles.seen)} of ${esc(tiles.total)} screen pieces${tiles.missing ? `; ${esc(tiles.missing)} page widths have none` : ''}: small visual problems there may be missed.` : '',
     snapshotAgeDays > STALENESS_WARNING_DAYS ? `The snapshot is more than ${esc(STALENESS_WARNING_DAYS)} days old, so the data may be out of date. Run again with <code>--fresh</code>.` : '',
     sitemapStatus && sitemapStatus !== 'ok' ? `Sitemap: <b>${esc(sitemapStatus)}</b>. The page list may be incomplete.` : '',
   ].filter(Boolean)
@@ -447,9 +480,9 @@ ${oversizeBytes != null ? `<div class="note-box">The report is over the recommen
 <form class="find" id="qc-find-form" role="search"><label for="qc-find">Find</label><input id="qc-find" name="qc-find" placeholder="D12 or M3" autocomplete="off" spellcheck="false"><button type="submit">Go</button><span id="qc-find-msg" class="sub" aria-live="polite"></span></form></div></header>
 <main>
 <section id="panel-failed" role="tabpanel">
-${failedJourneys.length ? `<h2>Visitor journeys with problems</h2><p class="sub">Claude did what a visitor comes to do, step by step; ${failedJourneys.length} of ${journeys.length} ran into a problem.</p>${failedJourneys.map(m => journey(m, defsOf(m), { open: true })).join('')}` : ''}
+${failedJourneys.length ? `<h2>Visitor journeys with problems</h2><p class="sub">The agent did what a visitor comes to do, step by step; ${failedJourneys.length} of ${journeys.length} ran into a problem.</p>${failedJourneys.map(m => journey(m, defsOf(m), { open: true })).join('')}` : ''}
 ${renderProblems(problems)}
-${unsure.length ? `<details class="rule unsure"><summary><span class="chip note">needs a look</span> <b>Unconfirmed heuristics and unsure finds</b><span class="cnt">${unsure.length} — not counted</span></summary><div class="body"><p class="sub">The scripts or Claude could not tell either way; a person should look before filing a task.</p>${unsure.slice(0, DEFECT_CAP * 2).map(card).join('')}</div></details>` : ''}
+${unsure.length ? `<details class="rule unsure"><summary><span class="chip note">needs a look</span> <b>Unconfirmed heuristics and unsure finds</b><span class="cnt">${unsure.length} — not counted</span></summary><div class="body"><p class="sub">The scripts or the agent could not tell either way; a person should look before filing a task.</p>${unsure.slice(0, DEFECT_CAP * 2).map(card).join('')}</div></details>` : ''}
 </section>
 <section id="panel-passed" role="tabpanel" hidden>
 ${renderPassed({ manualChecks: checks, claude: claudeSolid, rulesPassed, tiles, browserCoverage, pages })}

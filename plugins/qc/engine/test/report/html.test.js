@@ -582,3 +582,11 @@ test('Claude writes a small Markdown: lists, bold and code render, HTML in it do
   const long = 'Popup opened in about 3 s. Service Type is a custom dropdown. '.repeat(6)
   assert.match(md(long), /^<ul class="md"><li>Popup opened in about 3 s\.<\/li>/, 'a long paragraph reads as one fact per line')
 })
+
+test('the agent may write HTML with the report classes; other tags, attributes and classes are dropped', async () => {
+  const { md } = await import('../../src/report/html.js')
+  const out = md('<div class="pair"><div class="before">Was <code>tel:401</code></div><div class="after" style="color:red" onclick="x()">Now</div></div><script>alert(1)</script><a href="javascript:x">j</a><span class="evil ok">ok</span>')
+  assert.match(out, /<div class="pair"><div class="before">Was <code>tel:401<\/code><\/div><div class="after">Now<\/div><\/div>/)
+  assert.doesNotMatch(out, /<script|onclick|style=|javascript:|evil/)
+  assert.match(out, /<span class="ok">ok<\/span>/)
+})

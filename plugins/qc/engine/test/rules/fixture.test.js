@@ -72,25 +72,9 @@ test('the fixture parses into the page this file makes claims about', () => {
 
 test('E3 is the only rule this page trips, and it reports exactly what is on the page', () => {
   const e3 = forRule('E3')
-  assert.equal(e3.length, 7)
-
-  // The only internal target=_blank link is the Privacy Policy in the quote
-  // form's consent checkbox, which the agency wants in a new tab.
-  assert.equal(e3.filter(f => f.severity === 'major').length, 0)
-  assert.ok(e3.every(f => f.where), 'the report says where each link is, not just `a`')
-
-  const missingNoopener = e3.filter(f => /without rel=noopener/.test(f.found))
-  assert.equal(missingNoopener.length, 6)
-  for (const f of missingNoopener) {
-    assert.equal(f.severity, 'minor', 'implied noopener since 2021 -- hygiene, not a vulnerability')
-    assert.equal(f.confidence, 'high', 'the absence is read straight off the markup')
-  }
-
-  const styleCall = e3.filter(f => /without target/.test(f.found) && !/rel=noopener/.test(f.found))
-  assert.equal(styleCall.length, 1)
-  assert.equal(styleCall[0].severity, 'minor')
-  assert.equal(styleCall[0].confidence, 'heuristic', 'a per-client style preference, never a verdict mover')
-
+  // External pages and rel=noopener are no longer checked; the Privacy Policy in the
+  // quote form's consent opens in a new tab, as the agency wants: nothing to report.
+  assert.equal(e3.length, 0)
   const others = ['E9', 'F12', 'G13', 'E16'].reduce((n, id) => n + forRule(id).length, 0)
   assert.equal(findings.length, e3.length + others, 'no other rule may fire on this page')
 })

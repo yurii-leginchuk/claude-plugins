@@ -243,7 +243,7 @@ test('E3: a Privacy Policy link inside a form must open in a new tab, not the ot
   const f = E3.check(p)
   assert.deepEqual(f.map(x => x.found), [
     'link “Terms” in a form opens in the same tab, so the filled-in form is lost',
-    'internal link with target=_blank: /about/',
+    'internal page link opens in a new tab: /about/',
   ])
 })
 
