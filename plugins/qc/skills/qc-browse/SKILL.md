@@ -152,6 +152,12 @@ the review counts them against every piece there is. A visual defect names its p
 piece gets the defect, so it is written once. A defect with `tile` is also remembered by the
 piece's pixels, and the next QC reuses it while the pixels stay the same.
 
+**Every defect names its `target`** — where it is, apart from how it is described: `"target":
+{"text": "<the exact words of the broken element, unique on the page>"}` and/or `"selector":
+"<a selector that matches only it>"` (a string is read as `text`). `qc evidence` outlines the
+target only, so quoting the right text in `found` for comparison can no longer put the frame on
+the wrong element. Check the text is unique (it appears once on the page at that width).
+
 **Every defect shows its spot outlined.** Give `box: {x, y, w, h}` (px, on the picture in
 `shots` or on the `tile`) and the engine draws a frame on it; or give `selector`, or quote the
 words of the spot in `found` («…»), and `qc evidence` finds it on the live page and crops it

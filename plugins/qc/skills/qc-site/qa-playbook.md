@@ -137,7 +137,7 @@ pieces is one defect.
 
 Record **one `check: "visual"` entry per agent batch** (or per page): `tiles` — every id looked
 at (`["T12-T19", "T40"]`), `ok` ones too; `checked` — what was compared. **Each defect once**,
-with `tile`: the piece it is on. Mark the spot on it: `box` — `{x, y, w, h}` in px of that piece
+with `tile`: the piece it is on. Give its `target` (the exact, unique words of the broken element, or its selector — see qc-browse) and mark the spot on the piece: `box` — `{x, y, w, h}` in px of that piece
 (read them off the picture); the engine draws the frame. A defect without `box` gets its spot
 found on the live page by `qc evidence` (its `selector`, or the words quoted in `found`), so
 quote the text of the spot when there is any. The piece is its picture and the piece's pages are its pages —

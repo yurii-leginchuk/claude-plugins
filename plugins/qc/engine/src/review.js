@@ -28,6 +28,18 @@ export const IMPACT = {
 // What the second, independent check (a fresh agent repeating the steps) made of it.
 const VERIFIED = new Set(['reproduced', 'not-reproduced', 'unable'])
 const CODE = /^[A-Z]\d{1,2}$/
+// Where the defect is on the page, apart from how it is described: the exact,
+// unique text of the broken element and/or its selector. qc evidence looks for
+// this only, so a quote of the right text in `found` cannot be outlined instead.
+export function targetOf(t) {
+  if (!t) return null
+  if (typeof t === 'string') return t.trim() ? { text: t.trim() } : null
+  const out = {}
+  if (typeof t.text === 'string' && t.text.trim()) out.text = t.text.trim()
+  if (typeof t.selector === 'string' && t.selector.trim()) out.selector = t.selector.trim()
+  return out.text || out.selector ? out : null
+}
+export const evidenceKey = (f) => `claude:${defectIdentity(f)}${f.target ? `|${f.target.selector || ''}|${f.target.text || ''}` : ''}`
 
 // What Claude checks by hand in Playwright (and, for `content`, by reading
 // the pages), with the taxonomy codes each check may report. The engine
@@ -124,6 +136,7 @@ function manualOf(review, dir, host = null) {
           confidence: d.verified === 'unable' ? 'heuristic' : 'high', engine: 'claude',
           check: m.check, manual: i, page, breakpoint: width, category: CATEGORIES.includes(d.category) ? d.category : (m.check === 'content' ? 'copy' : 'dev'), selector: d.selector || null, found: d.found, expected: d.expected,
           where: d.where || null, zone: m.check === 'menu' ? 'header' : null,
+          target: targetOf(d.target || review.targets?.[manualIds.get(key)]),
           // the defect card shows its own picture: d.shot picks one of the check's shots, the first by default
           ...(shot ? { shot } : {}), marked,
           review: { verdict: d.verified === 'unable' ? 'unsure' : 'confirmed', note: d.verified === 'unable' ? `${how}; the second check could not repeat it either way` : `${how}, repeated by a second check` },
@@ -135,7 +148,7 @@ function manualOf(review, dir, host = null) {
   })
   for (const f of findings) {
     if (f.marked) continue
-    const e = evidence[`claude:${defectIdentity(f)}`]
+    const e = evidence[evidenceKey(f)]
     if (e?.status === 'ok' && e.path && existsSync(e.path)) { f.shot = e.path; f.shotWidth = e.width; if (e.spot) f.spot = e.spot }
     else if (e) f.evidenceStatus = e.status
   }

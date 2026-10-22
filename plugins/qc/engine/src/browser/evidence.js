@@ -103,7 +103,7 @@ export function needles(f) {
 
 // Runs in the page; self-contained. Finds the spot, outlines it, returns its
 // box -- or {hidden} when the spot is there but nobody can see it.
-export function locateSpot({ sel, href, linkText, needles: ns, cores = [], notInLinks = false, notInChrome = false, pastEdge = false }) {
+export function locateSpot({ sel, href, linkText, needles: ns, cores = [], notInLinks = false, notInChrome = false, pastEdge = false, exact = false }) {
   const vis = (e) => {
     const r = e.getBoundingClientRect()
     if (r.width < 3 || r.height < 3) return false
@@ -114,7 +114,7 @@ export function locateSpot({ sel, href, linkText, needles: ns, cores = [], notIn
   const ok = (e) => vis(e) && !(notInLinks && e.closest('a')) && !(notInChrome && chrome(e))
   const byText = (list) => (linkText ? list.filter(a => norm(a.textContent) === norm(linkText)) : []).concat(list)
   const pick = (list) => list.find(a => ok(a) && !chrome(a)) || list.find(ok) || null
-  const precise = sel && /#|elementor-element-[0-9a-f]{6,}|\[/.test(sel)
+  const precise = sel && (exact || /#|elementor-element-[0-9a-f]{6,}|\[/.test(sel))
   let el = null
   let how = null
   if (href && href !== '#') {
@@ -302,10 +302,10 @@ export async function captureEvidence(host, { force = false, launchBrowserImpl =
   // found by their selector or the words they quote; a picture marked by the
   // agent itself (box) is kept as it is.
   if (existsSync(join(dir, 'review.json'))) {
-    const { reviewedRun } = await import('../review.js')
+    const { reviewedRun, evidenceKey } = await import('../review.js')
     for (const f of reviewedRun(host).kept) {
       if (f.engine !== 'claude' || f.marked || !/^https?:/.test(String(f.page))) continue
-      const id = `claude:${defectIdentity(f)}`
+      const id = evidenceKey(f)
       if (!byIdentity.has(id)) byIdentity.set(id, { ...f, shot: undefined, shotWidth: undefined })
     }
   }
@@ -341,9 +341,12 @@ export async function captureEvidence(host, { force = false, launchBrowserImpl =
       try {
         await preparePage(page, { width, url: f0.page })
         for (const { identity, f } of items) {
-          const sel = f.selector && !GENERIC.test(f.selector) ? f.selector : null
+          // A defect that names its target is looked for by that only.
+          const t = f.target
+          const sel = t ? (t.selector || null) : f.selector && !GENERIC.test(f.selector) ? f.selector : null
           const args = {
-            sel, href: f.locate?.href || null, linkText: f.locate?.text || null, needles: needles(f), cores: cores(f),
+            sel, href: f.locate?.href || null, linkText: f.locate?.text || null,
+            needles: t ? (t.text ? [t.text] : []) : needles(f), cores: t ? (t.text ? [t.text] : []) : cores(f), exact: Boolean(t?.selector),
             notInLinks: f.rule === 'E13', notInChrome: f.zone === 'main' || f.selector === 'main', pastEdge: ['C1', 'C8'].includes(f.rule),
           }
           let box = null
