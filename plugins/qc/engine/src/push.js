@@ -69,7 +69,8 @@ export function buildPayload(run) {
   const checks = manual.checks.map(c => {
     const evidence = c.status === 'ok' ? [] : (c.shots || []).map(src => basename(src))
     for (const name of evidence) files.set(name, join(dir, 'visual', name))
-    const codes = [...new Set(manual.findings.filter(f => f.manual === c.index).map(f => f.id))]
+    // the same defect found on two checks is one entry on the site: link each check to that entry's code
+    const codes = [...new Set(manual.findings.filter(f => f.manual === c.index).map(f => groups.get(defectIdentity(f))?.code || f.id))]
     return { check: c.check, title: c.title || '', steps: c.steps || [], defects: codes, page: c.page, width: c.width, status: c.status, checked: c.checked, evidence }
   })
   const withProblems = new Set([...kept].map(f => f.rule))

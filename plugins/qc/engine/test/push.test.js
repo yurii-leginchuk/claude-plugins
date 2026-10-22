@@ -42,3 +42,13 @@ test('nothing Cyrillic leaves for the reports site', () => {
   payload.manual[0].checked = 'всё ок'
   assert.deepEqual(nonEnglishFields(payload), ['D1.review.note', 'manual.0.checked'])
 })
+
+test('two checks that found the same defect both link to its one entry', () => {
+  const m = (id, manual) => ({ id, manual, engine: 'claude', rule: 'G3', title: 'Required field without *', severity: 'minor', confidence: 'high', check: 'journey', page: 'https://ex.com/', found: 'same', expected: 'x' })
+  const { payload } = buildPayload({
+    input: { host: 'ex.com', pages: 1 }, ids: {}, review: {}, dir: '/nowhere', rejected: [],
+    kept: [m('M1', 0), m('M2', 1)],
+    manual: { checks: [0, 1].map(index => ({ index, check: 'journey', title: 'Quote', steps: ['a'], page: 'https://ex.com/', width: 360, status: 'defect', shots: [] })), findings: [m('M1', 0), m('M2', 1)] },
+  })
+  assert.deepEqual(payload.manual.map(c => c.defects), [['M1'], ['M1']])
+})
