@@ -64,7 +64,8 @@ function html(text) {
     out += inline(text.slice(last, m.index)) + cleanTag(m[0])
     last = m.index + m[0].length
   }
-  return `<div class="md">${out + inline(text.slice(last))}</div>`
+  // named and numeric entities (&rarr;, &#8217;) stay entities; they cannot open a tag
+  return `<div class="md">${(out + inline(text.slice(last))).replace(/&amp;([a-z][a-z0-9]{1,30}|#\d{1,6}|#x[0-9a-f]{1,6});/gi, '&$1;')}</div>`
 }
 export function md(s) {
   let text = String(s ?? '').trim()
