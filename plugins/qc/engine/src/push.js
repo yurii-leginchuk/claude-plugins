@@ -6,7 +6,7 @@
 //
 // Credentials: ~/.config/qc/reports.json {url, user, appPassword} or
 // QC_REPORTS_URL / QC_REPORTS_USER / QC_REPORTS_APP_PASSWORD.
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync, statSync, writeFileSync } from 'node:fs'
 import { join, basename } from 'node:path'
 import { homedir } from 'node:os'
 import { reviewedRun } from './review.js'
@@ -132,6 +132,42 @@ async function call(cfg, method, path, body, fetchImpl) {
   return json
 }
 
+// The server takes about 1 MB per request (base64 included): a bigger PNG
+// goes as WebP, drawn through Chromium's canvas, under a .webp name.
+export const MAX_EVIDENCE_BYTES = 640 * 1024
+export async function shrinkLarge(files, payload, { launch = null } = {}) {
+  const big = [...files].filter(([name, path]) => /\.png$/i.test(name) && existsSync(path) && statSync(path).size > MAX_EVIDENCE_BYTES)
+  if (!big.length) return
+  const { launchBrowser } = await import('./browser/launch.js')
+  const { browser, newPage } = await (launch || launchBrowser)()
+  try {
+    const page = await newPage()
+    for (const [name, path] of big) {
+      const uri = `data:image/png;base64,${readFileSync(path).toString('base64')}`
+      let q = 0.85
+      let out = null
+      while (q >= 0.4) {
+        out = await page.evaluate(async ({ uri, q }) => {
+          const img = new Image(); img.src = uri; await img.decode()
+          const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight
+          c.getContext('2d').drawImage(img, 0, 0)
+          return c.toDataURL('image/webp', q).split(',')[1]
+        }, { uri, q })
+        if (out.length * 0.75 <= MAX_EVIDENCE_BYTES) break
+        q -= 0.15
+      }
+      const webp = name.replace(/\.png$/i, '.webp')
+      const to = path.replace(/\.png$/i, '.webp')
+      writeFileSync(to, Buffer.from(out, 'base64'))
+      files.delete(name)
+      files.set(webp, to)
+      for (const d of [...payload.defects, ...payload.manual]) d.evidence = (d.evidence || []).map(n => (n === name ? webp : n))
+    }
+  } finally {
+    await browser.close().catch(() => {})
+  }
+}
+
 export async function push(host, { fetchImpl = fetch, env = process.env } = {}) {
   const cfg = reportsConfig(env)
   const { payload, files } = buildPayload(reviewedRun(host))
@@ -139,6 +175,7 @@ export async function push(host, { fetchImpl = fetch, env = process.env } = {}) 
   if (bad.length) {
     throw new Error(`QC Reports takes English only; translate these fields of the review and run qc review again: ${bad.slice(0, 15).join(', ')}${bad.length > 15 ? ` and ${bad.length - 15} more` : ''}`)
   }
+  await shrinkLarge(files, payload)
   const saved = await call(cfg, 'POST', '/runs', payload, fetchImpl)
   const failed = []
   for (const [name, path] of files) {
