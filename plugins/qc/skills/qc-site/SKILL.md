@@ -246,9 +246,14 @@ user asks for it: translate the HTML artifact (`report.html`) and republish it; 
    file is missing, say so and skip this step rather than fail the QC. Give the printed `url` in the
    summary next to the Artifact link. «Fixed» marks are kept per site and defect, so they carry to
    the next scan; a defect marked fixed that this scan found again is flagged "came back".
+   The site gives every defect its own ID, kept for the site across scans: its topic and a number,
+   `LINK-14`. The printed `ids` maps this scan's codes to them (`{"D12": "LINK-14", "M3": "FORM-2"}`)
+   and each has its own page at `siteUrl` + ID + `/`.
 7. Summarise in chat, in the user’s language. Name every
-   defect by its id as the report shows it — `D12` for the engine's (the same as `qc findings`),
-   `M3` for your manual ones — so the reader can type it into the report's search:
+   defect by its site ID from `ids`, as a link to its page — `[LINK-14](<siteUrl>LINK-14/)` — so the
+   reader can open it, pass it on or type it into the report's search. When the push was skipped
+   (no credentials), use the scan's own codes instead — `D12` for the engine's (the same as
+   `qc findings`), `M3` for your manual ones:
    - What the site is (your About-the-site lines), then **the journeys first**: each one done or
      not at 360 and 1440, and what stopped it — «booking is broken on a phone» matters more than
      forty minor defects.

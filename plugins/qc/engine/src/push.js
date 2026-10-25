@@ -187,6 +187,8 @@ export async function push(host, { fetchImpl = fetch, env = process.env } = {}) 
   }
   return {
     host, url: saved.url, runKey: saved.run_key, defects: saved.defects, manual: saved.manual,
+    // the IDs the site shows (D12 → LINK-14) and where a defect's own page lives: <siteUrl><ID>/
+    ids: saved.ids || {}, siteUrl: saved.site_url || null,
     evidence: files.size - failed.length, evidenceFailed: failed,
   }
 }
