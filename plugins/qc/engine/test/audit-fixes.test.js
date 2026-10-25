@@ -168,15 +168,15 @@ test('qc findings lists distinct defects with ids, qc review moves false positiv
   write(shot, 'png')
   write(file, JSON.stringify({ items: [], manual: [
     { check: 'menu', page: 'https://ex.com/', width: 360, status: 'defect', checked: 'opens', shots: [shot],
-      defects: [{ rule: 'C6', impact: 'broken', verified: 'reproduced', found: 'menu sticks out 40 px on the right', expected: 'within the screen' }] },
+      defects: [{ rule: 'C6', title: 'Menu sticks out on the right', impact: 'broken', verified: 'reproduced', found: 'menu sticks out 40 px on the right', expected: 'within the screen' }] },
     { check: 'content', page: 'https://ex.com/', status: 'defect', checked: 'read 2 pages',
-      defects: [{ rule: 'H16', impact: 'broken', verified: 'reproduced', found: 'quote time: “under an hour” and “within 48 hours”', expected: 'one time frame', pages: ['https://ex.com/', 'https://ex.com/b/'] }] },
+      defects: [{ rule: 'H16', title: 'Two quote times', impact: 'broken', verified: 'reproduced', found: 'quote time: “under an hour” and “within 48 hours”', expected: 'one time frame', pages: ['https://ex.com/', 'https://ex.com/b/'] }] },
     { check: 'journey', title: 'Book a cleaning from the home page', page: 'https://ex.com/', width: 360, status: 'defect', shots: [shot],
       steps: ['Opened the home page', 'Tapped «Get a Quote»', 'Filled the form with a wrong email and sent it'],
       defects: [
-        { rule: 'G14', impact: 'blocker', verified: 'reproduced', found: 'the form jumps to the top after an error', expected: 'stays at the error' },
-        { rule: 'K4', impact: 'broken', verified: 'not-reproduced', found: 'the popup did not open', expected: 'it opens' },
-        { rule: 'C2', impact: 'cosmetic', verified: 'unable', found: 'the button label touches the edge', expected: 'padding' },
+        { title: 'Form jumps to the top after an error', rule: 'G14', impact: 'blocker', verified: 'reproduced', found: 'the form jumps to the top after an error', expected: 'stays at the error' },
+        { title: 'Popup does not open', rule: 'K4', impact: 'broken', verified: 'not-reproduced', found: 'the popup did not open', expected: 'it opens' },
+        { title: 'Button label touches the edge', rule: 'C2', impact: 'cosmetic', verified: 'unable', found: 'the button label touches the edge', expected: 'padding' },
       ] },
     { check: 'visual', page: 'https://ex.com/b/', width: 1440, status: 'ok', checked: 'looked at the full page', shots: [shot] },
   ], menu: [{ page: 'https://ex.com/', width: 768, status: 'ok', checked: 'fine' }] }))
@@ -202,14 +202,15 @@ test('qc findings lists distinct defects with ids, qc review moves false positiv
   assert.match(manualHtml, /\/\^\[DM\]\\d\+\$\//, 'the id pattern survives escaping')
   assert.match(manualHtml, /<ul class="found"><li><a class="did" href="#M\d+">/, 'the journey links its problems, the card is in the list once')
   assert.match(manualHtml, /<li><a href="https:\/\/ex\.com\/b\/"/, 'a content defect lists every page it names')
-  const bad = (d, m = {}) => { write(file, JSON.stringify({ manual: [{ check: 'menu', page: 'https://ex.com/', width: 360, status: 'defect', shots: [shot], defects: [{ rule: 'C6', impact: 'broken', verified: 'reproduced', found: 'a', expected: 'b', ...d }], ...m }] })); applyReview(host, file) }
+  const bad = (d, m = {}) => { write(file, JSON.stringify({ manual: [{ check: 'menu', page: 'https://ex.com/', width: 360, status: 'defect', shots: [shot], defects: [{ rule: 'C6', title: 'A', impact: 'broken', verified: 'reproduced', found: 'a', expected: 'b', ...d }], ...m }] })); applyReview(host, file) }
   assert.throws(() => bad({ rule: 'H16' }, { check: 'form' }), /rule for form must be one of/)
   assert.throws(() => bad({ rule: 'nonsense' }), /rule for menu must be a taxonomy code/)
   assert.throws(() => bad({ impact: undefined, severity: 'major' }), /impact must be one of/)
   assert.throws(() => bad({ verified: undefined }), /verified must be/)
   assert.throws(() => bad({}, { shots: [] }), /needs its evidence: .*screenshot/)
-  assert.throws(() => bad({}, { check: 'content', width: undefined, shots: [] }), /rule for content/)
-  assert.throws(() => { write(file, JSON.stringify({ manual: [{ check: 'content', page: 'https://ex.com/', status: 'defect', defects: [{ rule: 'H16', impact: 'broken', verified: 'reproduced', found: 'two times differ', expected: 'one' }] }] })); applyReview(host, file) }, /quoted in found/)
+  assert.throws(() => bad({ rule: 'nonsense' }, { check: 'content', width: undefined, shots: [] }), /rule for content must be a taxonomy code/)
+  assert.throws(() => bad({ title: undefined }), /needs a title/)
+  assert.throws(() => { write(file, JSON.stringify({ manual: [{ check: 'content', page: 'https://ex.com/', status: 'defect', defects: [{ rule: 'H16', title: 'Times differ', impact: 'broken', verified: 'reproduced', found: 'two times differ', expected: 'one' }] }] })); applyReview(host, file) }, /quoted in found/)
   assert.throws(() => { write(file, JSON.stringify({ manual: [{ check: 'journey', page: 'https://ex.com/', width: 360, status: 'ok', title: 'Call' }] })); applyReview(host, file) }, /journey needs a title and its steps/)
   assert.throws(() => { write(file, JSON.stringify({ manual: [{ check: 'visual', page: 'https://ex.com/', width: 360, status: 'defect', shots: [shot], defects: [{ rule: 'Z99', impact: 'broken', verified: 'reproduced', found: 'a', expected: 'b' }] }] })); applyReview(host, file) }, /needs a title/)
   assert.throws(() => { write(file, JSON.stringify({ manual: [{ check: 'popup', page: 'https://ex.com/', status: 'ok' }] })); applyReview(host, file) }, /width is required/)
@@ -382,7 +383,7 @@ test('qc quotes finds a content defect’s words on its page, Markdown and spaci
   const { writeFileSync: write } = await import('node:fs')
   const out = await audit(base, { fresh: true })
   const file = join(out.runDir, 'q.json')
-  write(file, JSON.stringify({ manual: [{ check: 'content', page: `${base}/a`, status: 'defect', defects: [{ rule: 'H3', found: 'the page says «# **Hello**…call» and «Goodbye»' }] }] }))
+  write(file, JSON.stringify({ manual: [{ check: 'content', page: `${base}/a`, status: 'defect', defects: [{ rule: 'H3', title: 'Typo', found: 'the page says «# **Hello**…call» and «Goodbye»' }] }] }))
   const r = checkQuotes(host, file)
   assert.deepEqual(r.items.map(q => q.onAPage), [true, false])
   assert.equal(r.notFound, 1)
@@ -397,7 +398,7 @@ test('a defect with a box gets its spot framed on its picture', () => withCache(
   write(shot, encodePng({ width: 40, height: 30, channels: 3, data: Buffer.alloc(40 * 30 * 3, 255) }))
   const file = join(out.runDir, 'r.json')
   write(file, JSON.stringify({ manual: [{ check: 'menu', page: 'https://ex.com/', width: 360, status: 'defect', shots: [shot],
-    defects: [{ rule: 'C6', impact: 'broken', verified: 'reproduced', found: 'menu past the edge', expected: 'inside', box: { x: 10, y: 8, w: 12, h: 10 } }] }] }))
+    defects: [{ rule: 'C6', title: 'Menu past the edge', impact: 'broken', verified: 'reproduced', found: 'menu past the edge', expected: 'inside', box: { x: 10, y: 8, w: 12, h: 10 } }] }] }))
   applyReview(host, file)
   const m1 = reviewedRun(host).kept.find(f => f.id === 'M1')
   assert.match(m1.shot, /visual\/mark-0-M1\.png$/)

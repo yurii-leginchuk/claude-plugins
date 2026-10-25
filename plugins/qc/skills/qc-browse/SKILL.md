@@ -144,7 +144,7 @@ Every check is recorded as one entry per page × width in the review file's `man
   "part": "accordion:8c0d489",
   "status": "ok|defect|skipped", "checked": "what was checked, with numbers",
   "shots": ["/Users/…/.qc-cache/site/manual/menu-360-open.png"],
-  "defects": [{ "rule": "D2", "impact": "broken", "verified": "reproduced", "category": "dev",
+  "defects": [{ "title": "Burger menu runs past the right edge", "rule": "D2", "impact": "broken", "verified": "reproduced", "category": "dev",
                 "found": "…", "expected": "…", "selector": "…", "shot": 0 }] }
 ```
 

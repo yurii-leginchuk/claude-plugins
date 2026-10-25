@@ -53,7 +53,8 @@ export const MANUAL_CHECKS = {
   form: ['G2', 'G3', 'G5', 'G6', 'G7', 'G11', 'G12', 'G14', 'J5'],
   faq: CODE,
   focus: ['J2', 'J5'],
-  content: ['H16', 'H8', 'H3', 'H12', 'E17'],
+  // the copy: any code that names what is wrong (H3 a typo or a broken sentence, H6 a placeholder, H16 two places that disagree)
+  content: CODE,
   // A visitor's task done end to end (find a price, book, buy, call) and
   // Claude's look at the page screenshots: any taxonomy code, with a title.
   journey: CODE,
@@ -118,7 +119,8 @@ function manualOf(review, dir, host = null) {
       if (!allows(m.check, d.rule)) throw new Error(`${at}: rule for ${m.check} must be ${MANUAL_CHECKS[m.check] instanceof RegExp ? 'a taxonomy code like C2' : `one of ${MANUAL_CHECKS[m.check].join(', ')}`}`)
       if (!IMPACT[d.impact]) throw new Error(`${at}: impact must be one of ${Object.keys(IMPACT).join(', ')}`)
       if (!d.found || !d.expected) throw new Error(`${at}: a defect needs found and expected`)
-      if (!d.title && !MANUAL_TITLES[d.rule]) throw new Error(`${at}: a ${d.rule} defect needs a title`)
+      // the title is the problem in a few words («Personal claim form asks for a business claim type»), not the rule's name
+      if (!d.title && !(m.fromCache && MANUAL_TITLES[d.rule])) throw new Error(`${at}: a defect needs a title: the problem in a few words, e.g. «Personal claim form asks for a business claim type»`)
       if (m.check === 'content' ? !/«[^»]+»|“[^”]+”|"[^"]+"/.test(d.found) : !shots.length) {
         throw new Error(`${at}: a defect needs its evidence: ${m.check === 'content' ? 'the words from the page, quoted in found' : 'a screenshot in shots'}`)
       }
@@ -139,7 +141,8 @@ function manualOf(review, dir, host = null) {
       for (const page of d.pages?.length ? d.pages : piecePages || [m.page]) {
         findings.push({
           id: manualIds.get(key),
-          rule: d.rule, title: d.title || MANUAL_TITLES[d.rule], severity: IMPACT[d.impact], impact: d.impact,
+          rule: d.rule, title: d.title || MANUAL_TITLES[d.rule], ruleTitle: MANUAL_TITLES[d.rule] || null, severity: IMPACT[d.impact], impact: d.impact,
+          ...(/^https:\/\/(www\.)?figma\.com\//.test(String(d.figma || m.figma || '')) ? { figma: String(d.figma || m.figma) } : {}),
           confidence: d.verified === 'unable' ? 'heuristic' : 'high', engine: 'claude',
           check: m.check, manual: i, page, breakpoint: width, category: CATEGORIES.includes(d.category) ? d.category : (m.check === 'content' ? 'copy' : 'dev'), selector: d.selector || null, found: d.found, expected: d.expected,
           where: d.where || null, zone: m.check === 'menu' ? 'header' : null,

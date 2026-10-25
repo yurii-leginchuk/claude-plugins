@@ -83,7 +83,7 @@ test('audit merges browser findings from browser.jsonl, reports coverage, and in
   assert.ok(summary.distinct.critical >= 1, 'and toward distinct, same as any static finding')
 
   const html = readFileSync(summary.reportPath, 'utf8')
-  assert.match(html, />C1</, 'the browser rule id reaches the report')
+  assert.match(html, />C1( ·|<)/, 'the browser rule id reaches the report')
   assert.match(html, /360/, 'the breakpoint reaches the report')
   assert.match(html, /<img[^>]+data:image\/png;base64/, 'the screenshot file was read and inlined as a data URI')
 })

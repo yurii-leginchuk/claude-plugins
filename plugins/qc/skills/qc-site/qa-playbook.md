@@ -265,6 +265,39 @@ review and its copy read. Posts share one template: the static audit reads all o
 browser pass and the visual review (every piece) take the newest 10 (`qc browse --posts 10`, the default), the
 copy agent reads the newest 10 in full and skims the rest's titles and intros.
 
+## Every defect says what it is, in its own title
+
+- **`title` is the problem in a few words**, written for someone scanning a list: «Personal
+  claim form asks for a business claim type», «Two sentences merged on Claims», «Hero is missing
+  the intro line under the H1». Never the rule's name («Pages contradict each other») — the
+  report shows the rule's code and name beside it. The engine refuses a manual defect without
+  a title.
+- **The code names what is wrong**, not the check you found it in. Copy: H3 a typo or a broken /
+  merged sentence, H1 lorem ipsum, H6 a placeholder, H7 an alt text, H2 text against the copy doc,
+  H8 the same text twice, H5 an outdated date, H9 a removed service or old data, H12 another
+  place's name, H17 the brand; **H16 only when two places on the site say different things**
+  (and name both). Links E…, forms G…, layout B…, design A….
+- **The first page is the one that shows it best**; a defect hidden in a closed popup, tab or
+  menu carries your own screenshot with it open (`shots`), because the engine's crop cannot
+  open it.
+
+## The live site and the strategy are references
+
+On a dev site with a live one (`--prod`, or `prodCompare` in the audit summary), and whenever
+the strategy sheet is given, every defect about content or a missing piece is checked against
+them before it is written:
+- **content that looks wrong** (a date under the wrong year, a duplicate link, a strange name):
+  open the same page on live. The same there → it is old content: say «the same on live», keep
+  the defect only if it is wrong for the visitor, and fix from the right source. Different on
+  live → a migration error: the fix is the live value, quoted, with its URL;
+- **an empty or missing page** (a body with nothing between header and footer, a page the menu
+  links to that has nothing): look it up on live and in the sheet. Live has the content → «copy
+  it from <live URL>» with what it holds; the sheet says the page is new or dropped → say so and
+  what to do (fill it from the copy doc in the sheet, remove it from the menu and the sitemap);
+  nowhere → «the client must send the content», and the defect is copy;
+- **any fix** that needs a value (a link, a phone, an address, a document, a text) looks there
+  first, then in the facts file; say which source the value came from.
+
 ## Every failed item says how to fix it
 
 The rule's own «expected» is generic («a working link», «a valid path»). For every defect that

@@ -11,7 +11,7 @@ import { join, basename } from 'node:path'
 import { homedir } from 'node:os'
 import { reviewedRun } from './review.js'
 import { defectIdentity, verdict, countDistinct } from './report/json.js'
-import { scopeOf } from './report/html.js'
+import { scopeOf, headlineOf } from './report/html.js'
 import { spotText } from './browser/evidence.js'
 import { categoryOf } from './report/category.js'
 
@@ -39,7 +39,9 @@ export function buildPayload(run) {
     const identity = defectIdentity(f)
     if (!groups.has(identity)) {
       groups.set(identity, {
-        code: f.engine === 'claude' ? f.id : ids[identity], identity, rule: f.rule, title: f.title,
+        code: f.engine === 'claude' ? f.id : ids[identity], identity, rule: f.rule,
+        // the head says the problem; the rule's own name goes beside the code
+        title: f.engine === 'claude' ? f.title : headlineOf(f.title, f.found), rule_title: f.engine === 'claude' ? (f.ruleTitle || '') : f.title, figma: f.figma || '',
         severity: f.severity, confidence: f.confidence || 'high', engine: f.engine || 'static', check: f.check || '',
         found: f.found ?? '', expected: f.expected ?? '', selector: f.selector ?? '', review: f.review || null,
         category: categoryOf(f),
@@ -61,7 +63,7 @@ export function buildPayload(run) {
     // the Figma side of a design defect travels as the first picture, named figma-…
     if (g.design) files.set(`figma-${basename(g.design)}`, g.design)
     return {
-      code: g.code, identity: g.identity, rule: g.rule, title: g.title, severity: g.severity, confidence: g.confidence,
+      code: g.code, identity: g.identity, rule: g.rule, title: g.title, rule_title: g.rule_title, figma: g.figma, severity: g.severity, confidence: g.confidence,
       engine: g.engine, check: g.check, category: g.category, found: g.found, expected: g.expected, selector: g.selector, review: g.review,
       scope: scopeOf({ zones: g.zones, pages, region: g.region }, input.pages),
       pages: pages.map(url => ({ url, where: g.pages.get(url) })), page_count: pages.length,

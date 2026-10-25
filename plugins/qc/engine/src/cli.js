@@ -18,7 +18,7 @@ import { loadFacts } from './lib/facts.js'
 import { resolveGbpLinks, gbpTargets } from './lib/gbp.js'
 import { buildProfile } from './lib/profile.js'
 import { pageType } from './lib/page-type.js'
-import { browsePages, BROWSE_POSTS } from './lib/kinds.js'
+import { browsePages, BROWSE_POSTS, SKIP_SECTIONS } from './lib/kinds.js'
 import { SWEEP } from './browser/sweep.js'
 import { listFindings, applyReview, idsFor } from './review.js'
 import { buildProdCompare, loadProdCompare, saveProdCompare } from './crawl/prod.js'
@@ -504,7 +504,9 @@ export async function audit(input, flags, { fetchImpl } = {}) {
   // A third-party script's console error (a captcha, a chat widget) is
   // rarely the site's to fix: it is shown for a human look, not counted.
   const liveBrowserIds = new Set([...(await allBrowserRules()).map(r => r.id), 'C8'])
-  const browserFindings = browserRows.flatMap(r => r.findings || [])
+  // popup bodies measured as pages by an older browse are not pages a visitor opens
+  const skipped = (u) => { try { return SKIP_SECTIONS.includes(new URL(u).pathname.split('/').filter(Boolean)[0]) } catch { return false } }
+  const browserFindings = browserRows.filter(r => !skipped(r.url)).flatMap(r => r.findings || [])
     .filter(f => liveBrowserIds.has(f.rule))
     .map(f => (f.rule === 'X1' && String(f.found).startsWith('[third-party]') ? { ...f, confidence: 'heuristic' } : f))
   const findings = [...staticFindings, ...browserFindings]
@@ -543,7 +545,7 @@ export async function audit(input, flags, { fetchImpl } = {}) {
       droppedWidths = metaSnap.meta.browserWidthsDropped
     }
     if (metaSnap?.meta?.browserPosts != null) metaPosts = metaSnap.meta.browserPosts === 'all' ? Infinity : metaSnap.meta.browserPosts
-    metaSections = { postSections: metaSnap?.meta?.browserPostSections || [], skipSections: metaSnap?.meta?.browserSkipSections || [] }
+    metaSections = { postSections: metaSnap?.meta?.browserPostSections || [], skipSections: (metaSnap?.meta?.browserSkipSections?.length ? metaSnap.meta.browserSkipSections : SKIP_SECTIONS) }
   } catch {
     // A corrupt snapshot is already the caller's problem elsewhere; the list
     // of excluded widths is not worth failing a whole report over.
@@ -959,7 +961,7 @@ export async function browse(input, flags) {
   const savedPosts = snap.meta.browserPosts === 'all' ? Infinity : (snap.meta.browserPosts ?? BROWSE_POSTS)
   const posts = postsLimit ?? savedPosts
   const postSections = postSectionsFlag ?? snap.meta.browserPostSections ?? []
-  const skipSections = skipSectionsFlag ?? snap.meta.browserSkipSections ?? []
+  const skipSections = skipSectionsFlag ?? (snap.meta.browserSkipSections?.length ? snap.meta.browserSkipSections : SKIP_SECTIONS)
   if (discoveredNow || posts !== savedPosts || postSectionsFlag || skipSectionsFlag) {
     saveSnapshot(host, {
       meta: {

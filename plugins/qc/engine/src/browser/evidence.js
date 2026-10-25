@@ -185,7 +185,8 @@ export function locateSpot({ sel, href, linkText, needles: ns, cores = [], notIn
         if (!norm(e.textContent).includes(want) || !ok(e)) continue
         const t = textOf(e)
         if (!t.includes(want)) continue
-        if (!best || t.length < textOf(best).length) best = e
+        // the page's own words beat the same words in the header or footer («News» the H1, not the footer link)
+        if (!best || (chrome(best) && !chrome(e)) || (chrome(best) === chrome(e) && t.length < textOf(best).length)) best = e
       }
       if (best) { el = best; how = `text: ${n.slice(0, 40)}`; break }
     }
@@ -342,7 +343,8 @@ export async function captureEvidence(host, { force = false, launchBrowserImpl =
   if (existsSync(join(dir, 'review.json'))) {
     const { reviewedRun, evidenceKey } = await import('../review.js')
     for (const f of reviewedRun(host).kept) {
-      if (f.engine !== 'claude' || f.marked || !/^https?:/.test(String(f.page))) continue
+      // a design defect keeps the agent's own section picture: it is the exact pair of the Figma one
+      if (f.engine !== 'claude' || f.marked || f.check === 'design' || !/^https?:/.test(String(f.page))) continue
       const id = evidenceKey(f)
       if (!byIdentity.has(id)) byIdentity.set(id, { ...f, shot: undefined, shotWidth: undefined })
     }

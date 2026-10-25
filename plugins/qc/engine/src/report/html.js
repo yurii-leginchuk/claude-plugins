@@ -262,11 +262,12 @@ function card(x) {
   const first = pages[0]
   const widths = x.widths && x.widths.length ? ` · ${x.widths.map(esc).join(', ')} px` : ''
   return `<article class="defect"${x.id ? ` id="${esc(x.id)}"` : ''} data-cat="${esc(x.cat || 'dev')}" data-sev="${esc(x.severity || 'note')}">
-<details class="dcard"><summary><div class="dhead">${x.id ? `<a class="did" href="#${esc(x.id)}">${esc(x.id)}</a>` : ''}<span class="chip ${CHIP[x.severity] || 'note'}">${esc(LABEL[x.severity] || x.severity)}</span><b class="dtitle">${esc(x.title)}</b>${x.rule ? `<span class="sub">${esc(x.rule)}</span>` : ''}${scopeBadge(x.scope, pages.length)}</div>
+<details class="dcard"><summary><div class="dhead">${x.id ? `<a class="did" href="#${esc(x.id)}">${esc(x.id)}</a>` : ''}<span class="chip ${CHIP[x.severity] || 'note'}">${esc(LABEL[x.severity] || x.severity)}</span><b class="dtitle">${esc(x.headline || x.title)}</b>${x.rule ? `<span class="sub">${esc(x.rule)}${x.groupTitle && x.groupTitle !== (x.headline || x.title) ? ` · ${esc(x.groupTitle)}` : ''}</span>` : ''}${scopeBadge(x.scope, pages.length)}</div>
 ${first ? `<p class="kv where">${rich(first)}${pages.length > 1 ? ` <span class="sub">and ${pages.length - 1} more</span>` : ''}${widths}</p>` : ''}</summary>
 <div class="dbody"><div class="dshot">${picture(x)}</div><div class="dtext">
 <div class="row"><span class="lab">Problem</span><div class="val">${md(x.found)}</div></div>
 ${x.expected ? `<div class="row fix"><span class="lab">Fix</span><div class="val">${md(x.expected)}</div></div>` : ''}
+${x.figma ? `<div class="row"><span class="lab">Design</span><div class="val"><a href="${esc(x.figma)}" target="_blank" rel="noopener">Open this frame in Figma</a></div></div>` : ''}
 ${x.note ? `<div class="row note"><span class="lab">Agent</span><div class="val">${md(x.note.replace(/^Agent:\s*/, ''))}</div></div>` : ''}
 ${x.region ? `<p class="kv sub">${String(x.region).startsWith(UNNAMED_REGION_PREFIX) ? `region: shared Elementor container <code>${esc(x.region.slice(UNNAMED_REGION_PREFIX.length))}</code> (its name could not be determined)` : `region: <code>${esc(x.region)}</code>`}, shared by every page below: fix it once</p>` : ''}
 ${pages.length > 1 || x.selector ? `<details class="more"><summary>Details</summary>${x.selector ? `<p class="kv sub">selector <code>${esc(x.selector)}</code></p>` : ''}${pages.length > 1 ? `<ul class="pages">${pages.slice(0, PAGE_LIST_CAP).map(p => `<li>${rich(p)}${x.where?.[p] ? `<div class="where">${rich(x.where[p])}</div>` : ''}</li>`).join('')}</ul>${pages.length > PAGE_LIST_CAP ? `<p class="kv sub">…and ${pages.length - PAGE_LIST_CAP} more pages not shown (list limit)</p>` : ''}` : ''}</details>` : ''}</div></div></details>
@@ -290,6 +291,13 @@ function claudeDefects(findings) {
 
 const reviewNote = (r) => (r?.note ? `Agent: ${r.note}` : '')
 
+// The card's head says the problem itself: the rule's name and, when it is
+// one short line, what was found («Gaps in the heading hierarchy: h1 → h3»).
+export function headlineOf(title, found) {
+  const f = String(found || '').trim()
+  return f && f.length <= 70 && !/[<\n]/.test(f) && f.toLowerCase() !== String(title).toLowerCase() ? `${title}: ${f}` : title
+}
+
 // Engine groups (rollUp) and Claude's defects as cards with their group title.
 function items(groups, claude, { totalPages, breakpointsByIdentity, suppressedShots, candidates, ids }) {
   const out = []
@@ -304,6 +312,7 @@ function items(groups, claude, { totalPages, breakpointsByIdentity, suppressedSh
         scope: scopeOf({ ...d, region: ex.region }, totalPages), region: ex.region || null,
         where: d.where, note: reviewNote(ex.review), shotSrc: ex.shotSrc, shotDataUri: ex.shotDataUri, shotWidth: ex.shotWidth, spot: ex.spot,
         evidenceStatus: ex.evidenceStatus, suppressed: suppressedShots.has(d.identity), cat: categoryOf(ex),
+        headline: headlineOf(g.title, d.found), groupTitle: g.title,
       })
     }
   }
@@ -313,6 +322,7 @@ function items(groups, claude, { totalPages, breakpointsByIdentity, suppressedSh
       pages: d.pages, widths: d.widths, selector: d.selector, scope: d.pages.length > 1 ? scopeOf({ pages: d.pages, zones: [] }, totalPages) : 'page',
       where: null, note: d.confidence === 'heuristic' ? reviewNote(d.review) : '', shotSrc: d.shotSrc, shotDataUri: d.shotDataUri, shotWidth: d.shotWidth ?? d.breakpoint, spot: d.spot, designSrc: d.designSrc,
       evidenceStatus: d.evidenceStatus, suppressed: false, cat: categoryOf(d),
+      headline: d.title, groupTitle: d.ruleTitle || d.title, figma: d.figma || null,
     })
   }
   return out
@@ -327,14 +337,15 @@ function renderProblems(list) {
   const shown = sorted.slice(0, DEFECT_CAP * 5)
   // A rule with many cards (a redirect per link) folds into one closed block, placed at its worst card.
   const byRule = new Map()
-  for (const x of shown) byRule.set(x.title, [...(byRule.get(x.title) || []), x])
+  const keyOf = (x) => x.rule || x.title
+  for (const x of shown) byRule.set(keyOf(x), [...(byRule.get(keyOf(x)) || []), x])
   const done = new Set()
   const body = shown.map(x => {
-    const same = byRule.get(x.title)
+    const same = byRule.get(keyOf(x))
     if (same.length < FOLD_AT) return card(x)
-    if (done.has(x.title)) return ''
-    done.add(x.title)
-    return `<details class="rule group"><summary><span class="chip ${CHIP[x.severity] || 'note'}">${esc(LABEL[x.severity] || x.severity)}</span> <b>${esc(x.title)}</b><span class="cnt">${same.length} problems</span></summary><div class="body">${same.map(card).join('')}</div></details>`
+    if (done.has(keyOf(x))) return ''
+    done.add(keyOf(x))
+    return `<details class="rule group"><summary><span class="chip ${CHIP[x.severity] || 'note'}">${esc(LABEL[x.severity] || x.severity)}</span> <b>${esc(x.groupTitle || x.title)}</b>${x.rule ? ` <span class="sub">${esc(x.rule)}</span>` : ''}<span class="cnt">${same.length} problems</span></summary><div class="body">${same.map(card).join('')}</div></details>`
   }).join('')
   return `<h2>Problems <span class="sub">${list.length}</span></h2>${body}${sorted.length > shown.length ? `<p class="kv">…and ${sorted.length - shown.length} more defects not shown (list limit)</p>` : ''}`
 }

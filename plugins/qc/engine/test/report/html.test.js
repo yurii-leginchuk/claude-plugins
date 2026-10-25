@@ -595,7 +595,7 @@ test('folds a rule with three or more problems into one closed block', () => {
     confidence: 'high', page: `https://ex.com/${p}`, selector: `a.${p}`, found: `/${p}`, expected: `/${p}/`, breakpoint: null }))
   const out = renderReport({ host: 'ex.com', env: 'dev', envReason: 'x', pages: 3, findings: [...findings, ...many],
     diff: { fixed: [], remaining: [], added: [] }, snapshotAgeDays: 0, source: 'sitemap' })
-  assert.match(out, /<details class="rule group"><summary>.*Internal link through a redirect<\/b><span class="cnt">3 problems/)
+  assert.match(out, /<details class="rule group"><summary>.*Internal link through a redirect<\/b> <span class="sub">I18<\/span><span class="cnt">3 problems/)
   assert.doesNotMatch(out, /<details class="rule group"[^>]*>.*tel: format/)
 })
 
@@ -604,4 +604,15 @@ test('a design defect shows the Figma section next to the site', () => {
     page: 'https://ex.com/s/', breakpoint: 1440, found: '3 cards', expected: '4 cards', shotSrc: 'visual/manual-0-1.png', designSrc: 'visual/manual-0-0.png', review: { verdict: 'confirmed' } }
   const out = renderReport({ host: 'ex.com', env: 'dev', envReason: 'x', pages: 1, findings: [f], diff: { fixed: [], remaining: [], added: [] }, snapshotAgeDays: 0, source: 'sitemap' })
   assert.match(out, /<div class="vs"><figure class="shot"><button type="button" data-full="visual\/manual-0-0\.png"[^]*?Figma design<\/figcaption><\/figure><figure class="shot"><button type="button" data-full="visual\/manual-0-1\.png"/)
+})
+
+test('the card head says the problem, not only the rule; a design defect links its Figma frame', async () => {
+  const { headlineOf } = await import('../../src/report/html.js')
+  assert.equal(headlineOf('Gaps in the heading hierarchy', 'skipped level: h1 → h3'), 'Gaps in the heading hierarchy: skipped level: h1 → h3')
+  assert.equal(headlineOf('Page title', 'x'.repeat(90)), 'Page title')
+  const f = { id: 'M2', rule: 'H3', title: 'Two sentences merged on Claims', ruleTitle: 'Typo', severity: 'minor', engine: 'claude', confidence: 'high', check: 'design',
+    page: 'https://ex.com/c/', found: '«youReport»', expected: 'split', figma: 'https://www.figma.com/design/KEY/x?node-id=1-2', review: { verdict: 'confirmed' } }
+  const out = renderReport({ host: 'ex.com', env: 'dev', envReason: 'x', pages: 1, findings: [f], diff: { fixed: [], remaining: [], added: [] }, snapshotAgeDays: 0, source: 'sitemap' })
+  assert.match(out, /<b class="dtitle">Two sentences merged on Claims<\/b><span class="sub">H3 · Typo<\/span>/)
+  assert.match(out, /href="https:\/\/www\.figma\.com\/design\/KEY\/x\?node-id=1-2"[^>]*>Open this frame in Figma/)
 })

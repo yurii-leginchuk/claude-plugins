@@ -99,6 +99,7 @@ Every defect is a `manual` entry's defect under `check: "design"`, one entry per
   "checked": "Figma frame «Service — Desktop» (node 12:345) vs the page at 1440; 9 sections aligned",
   "shots": ["…/design/services-x/figma/s04-why-us.png", "…/design/services-x/page/s04-why-us.png"],
   "defects": [{ "rule": "A5", "impact": "wrong", "verified": "reproduced", "category": "dev",
+    "figma": "https://www.figma.com/design/KEY/Site?node-id=12-401",
     "title": "«Why us» has 3 cards, the design has 4",
     "found": "3 cards in «Why us»: Licensed, Insured, Local", "expected": "4 cards as in Figma: add «24/7 response» (the copy doc has its text)",
     "target": {"text": "Why choose us"}, "design": 0, "shot": 1 }] }
@@ -107,6 +108,10 @@ Every defect is a `manual` entry's defect under `check: "design"`, one entry per
 - `shots` holds the pair — Figma first, the page second; `design` points at the Figma picture and
   `shot` at the page one, and the report shows them side by side («Figma design» / the site, with
   the spot outlined).
+- `figma` on the defect: the link to its frame or section node
+  (`https://www.figma.com/design/<KEY>/…?node-id=12-345`); the report shows «Open this frame in
+  Figma» on the card. Put it on every design defect.
+- `title` says the difference in a few words (««Why us» has 3 cards, the design has 4»).
 - `impact` from the playbook's table, `verified` from the second check (`qa-playbook.md`),
   `category`: `dev` for layout, images, counts, fonts and colours; `copy` for text against the
   doc; `seo` only for meta the doc prescribes.

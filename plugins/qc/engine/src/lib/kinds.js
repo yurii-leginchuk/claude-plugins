@@ -22,6 +22,8 @@ export const isThankYouUrl = (url) => { try { return /thank/i.test(new URL(url).
 // does not mark as posts; `skipSections` are left out (popup bodies published
 // as pages).
 export const BROWSE_POSTS = 10
+// Popup bodies and builder templates are published as pages but no visitor opens them as one.
+export const SKIP_SECTIONS = ['jet-popup', 'elementor_library', 'elementor-hf', 'e-floating-buttons']
 const sectionOf = (url) => { try { return new URL(url).pathname.split('/').filter(Boolean)[0] || '' } catch { return '' } }
 export function browsePages(pages, posts = BROWSE_POSTS, { postSections = [], skipSections = [] } = {}) {
   const isEntry = (p) => isPost(p) || (postSections.includes(sectionOf(p.url)) && new URL(p.url).pathname.split('/').filter(Boolean).length > 1)
